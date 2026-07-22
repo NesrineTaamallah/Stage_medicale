@@ -1,20 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
 :root {
-  --ink: #10233a;
-  --teal: #0e7c86;
-  --teal-deep: #0b5e66;
-  --teal-tint: #e4f1f1;
-  --paper: #f5f7f6;
-  --card: #ffffff;
-  --slate: #5b6b73;
-  --slate-soft: #8b9aa1;
-  --line: #dde5e3;
-  --amber: #c98a2c;
-  --error: #c1503d;
-  --error-tint: #fbeae7;
-  --success: #3a7d5c;
-  --success-tint: #e8f3ee;
+  /* ---------- Palette clinique ---------- */
+  --ink: #20343A;          /* Base Textes */
+  --teal: #1E7F8C;         /* Identité / Boutons */
+  --teal-deep: #175F69;    /* variante foncée, hover/press */
+  --teal-tint: #DFF1F3;    /* fond teinté teal, léger */
+  --highlight: #63C9D6;    /* Lumière / Surbrillance */
+  --highlight-tint: #E3F8FA;
+
+  --paper: #EAF7FB;        /* Fond Principal */
+  --card: #FFFFFF;
+  --slate: #55707A;        /* texte secondaire, dérivé de --ink */
+  --slate-soft: #8CA6AD;
+  --line: #CFE7EC;
+
+  --amber: #C98A2C;
+  --error: #C1503D;
+  --error-tint: #FBEAE7;
+  --success: #2E8F72;
+  --success-tint: #E4F5EE;
 
   --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
   --font-body: 'IBM Plex Sans', 'Segoe UI', sans-serif;
@@ -32,9 +37,6 @@ body {
 }
 
 /* ---------- Signature : tracé EEG ---------- */
-/* Un seul élément mémorable, réutilisé partout comme fil conducteur.
-   Pulsation lente et discrète — désactivée si l'utilisateur préfère moins
-   de mouvement. */
 .eeg-trace {
   height: 28px;
   width: 100%;
@@ -66,9 +68,20 @@ body {
   margin: 72px auto;
   background: var(--card);
   padding: 36px 32px 32px;
-  border-radius: 14px;
+  border-radius: 16px;
   border-top: 3px solid var(--teal);
-  box-shadow: 0 1px 2px rgba(16, 35, 58, 0.04), 0 12px 32px rgba(16, 35, 58, 0.08);
+  box-shadow: 0 1px 2px rgba(30, 127, 140, 0.06), 0 20px 40px -8px rgba(30, 127, 140, 0.16);
+  position: relative;
+}
+
+.auth-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 0;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(30, 127, 140, 0.06);
 }
 
 .auth-card h1 {
@@ -113,7 +126,7 @@ input, select {
 input:focus-visible, select:focus-visible {
   outline: none;
   border-color: var(--teal);
-  box-shadow: 0 0 0 3px var(--teal-tint);
+  box-shadow: 0 0 0 3px var(--highlight-tint);
 }
 
 /* Champs de code : lecture façon instrument */
@@ -136,13 +149,17 @@ button {
   font-size: 14.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.05s ease;
+  transition: background 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
 }
 button:hover { background: var(--teal-deep); }
 button:active { transform: scale(0.99); }
 button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px var(--teal-tint), 0 0 0 1px var(--teal);
+  box-shadow: 0 0 0 3px var(--highlight-tint), 0 0 0 1px var(--teal);
+}
+button:disabled {
+  background: var(--slate-soft);
+  cursor: not-allowed;
 }
 
 button.secondary {
@@ -155,22 +172,29 @@ button.secondary {
 }
 button.secondary:hover { background: var(--teal-tint); border-color: var(--teal); }
 
+/* Bouton actif dans une barre d'onglets (ex: nav admin) */
+button:not(.secondary):not([type="submit"]):not(:disabled) {
+  box-shadow: 0 4px 12px -4px rgba(30, 127, 140, 0.4);
+}
+
 /* ---------- États ---------- */
 .error {
   color: var(--error);
   background: var(--error-tint);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 9px 11px;
   font-size: 13px;
   margin-top: 14px;
+  border-left: 3px solid var(--error);
 }
 .success {
   color: var(--success);
   background: var(--success-tint);
-  border-radius: 7px;
+  border-radius: 8px;
   padding: 9px 11px;
   font-size: 13px;
   margin-top: 14px;
+  border-left: 3px solid var(--success);
 }
 .hint {
   font-size: 12.5px;
@@ -189,15 +213,16 @@ button.secondary:hover { background: var(--teal-tint); border-color: var(--teal)
   display: block;
   margin: 18px auto;
   border: 10px solid var(--card);
-  border-radius: 4px;
-  box-shadow: 0 0 0 1.5px var(--line), 0 8px 20px rgba(16, 35, 58, 0.08);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1.5px var(--line), 0 12px 28px -6px rgba(30, 127, 140, 0.22);
 }
 
 /* ---------- Tableaux de bord ---------- */
 .dashboard {
-  max-width: 760px;
-  margin: 48px auto;
-  padding: 0 20px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+  width: 100%;
 }
 
 .dashboard header {
@@ -216,14 +241,18 @@ button.secondary:hover { background: var(--teal-tint); border-color: var(--teal)
   color: var(--ink);
   margin: 0;
   letter-spacing: -0.2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .card {
   background: var(--card);
   padding: 26px;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid var(--line);
-  box-shadow: 0 1px 2px rgba(16, 35, 58, 0.03);
+  box-shadow: 0 1px 2px rgba(30, 127, 140, 0.04), 0 8px 20px -10px rgba(30, 127, 140, 0.12);
 }
 
 .card h2 {
@@ -234,8 +263,7 @@ button.secondary:hover { background: var(--teal-tint); border-color: var(--teal)
   margin: 0 0 4px;
 }
 
-/* Badge de rôle — utile pour distinguer clinicien / chercheur / admin
-   d'un coup d'œil dans l'en-tête du dashboard. */
+/* Badge de rôle — clinicien / chercheur / admin, visible d'un coup d'œil */
 .role-badge {
   display: inline-flex;
   align-items: center;
@@ -246,14 +274,15 @@ button.secondary:hover { background: var(--teal-tint); border-color: var(--teal)
   text-transform: uppercase;
   color: var(--teal-deep);
   background: var(--teal-tint);
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 10px;
-  margin-top: 6px;
 }
 
 @media (max-width: 480px) {
   .auth-card { margin: 32px 16px; padding: 28px 22px 24px; }
-  .dashboard { margin: 28px auto; }
+  .dashboard { margin: 0 auto; padding: 24px 16px 48px; }
+  .dashboard header { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
 
 .badge {
@@ -265,7 +294,22 @@ button.secondary:hover { background: var(--teal-tint); border-color: var(--teal)
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-.badge-warning { background: #fdf3e0; color: var(--amber); }
+.badge-warning { background: #FBF0DD; color: var(--amber); }
 .badge-error   { background: var(--error-tint); color: var(--error); }
 .badge-success { background: var(--success-tint); color: var(--success); }
 .badge-muted   { background: var(--line); color: var(--slate); }
+
+/* ---------- Tables ---------- */
+table {
+  border-color: var(--line);
+}
+thead tr {
+  color: var(--slate);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+tbody tr:hover {
+  background: var(--highlight-tint);
+}

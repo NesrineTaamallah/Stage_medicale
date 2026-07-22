@@ -32,6 +32,10 @@ const totpValidateSchema = z.object({
   code: z.string().regex(/^\d{6}$/, 'Le code doit contenir exactement 6 chiffres.'),
 });
 
+const userIdParamSchema = z.object({
+  id: z.string().uuid('Identifiant utilisateur invalide.'),
+});
+
 module.exports = {
   loginSchema,
   changePasswordSchema,
