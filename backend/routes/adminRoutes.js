@@ -11,6 +11,11 @@ const {
   resendTempPassword,
   unlockUser,
   toggleActive,
+  getOverview,
+  getLogs,
+  getAnomalies,
+  getUserTimeline,
+  exportLogsCsv,
 } = require('../controllers/adminController');
 
 function validateParams(schema) {
@@ -30,5 +35,16 @@ router.post('/users/:id/reset-2fa', requireAuth, requireRole('admin'), validateP
 router.post('/users/:id/resend-temp-password', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), resendTempPassword); // nouveau
 router.post('/users/:id/unlock', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), unlockUser); // nouveau
 router.post('/users/:id/toggle-active', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), toggleActive); // nouveau
+
+// --- Onglet Vue d'ensemble ---
+router.get('/overview', requireAuth, requireRole('admin'), getOverview); // nouveau
+
+// --- Onglet Logs & Sécurité ---
+// NB : /logs/export et /logs/anomalies et /logs/user/:id doivent être déclarés
+// avant toute route générique pour éviter les conflits de matching Express.
+router.get('/logs/export', requireAuth, requireRole('admin'), exportLogsCsv); // nouveau
+router.get('/logs/anomalies', requireAuth, requireRole('admin'), getAnomalies); // nouveau
+router.get('/logs/user/:id', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), getUserTimeline); // nouveau
+router.get('/logs', requireAuth, requireRole('admin'), getLogs); // nouveau
 
 module.exports = router;

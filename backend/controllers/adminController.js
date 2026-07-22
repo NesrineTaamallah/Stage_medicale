@@ -280,6 +280,346 @@ async function toggleActive(req, res) {
   }
 }
 
+/**
+ * GET /admin/overview
+ * Alimente l'onglet "Vue d'ensemble" : compteurs clés, alertes, activité
+ * récente, statut email, et comptes en attente de 1ère connexion > 24h.
+ */
+async function getOverview(req, res) {
+  try {
+    const [byRole, statusCounts, recentLockAlerts, recentActivity, lastEmailLog, pendingFirstLogin] =
+      await Promise.all([
+        pool.query(`SELECT role, COUNT(*)::int AS count FROM users GROUP BY role`),
+        pool.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE last_login_at IS NULL)::int AS never_logged_in,
+            COUNT(*) FILTER (WHERE locked_until IS NOT NULL AND locked_until > now())::int AS locked_now,
+            COUNT(*) FILTER (WHERE NOT is_active)::int AS inactive_accounts,
+            COUNT(*)::int AS total_users
+          FROM users
+        `),
+        pool.query(`
+          SELECT COUNT(*)::int AS count
+          FROM access_logs
+          WHERE action LIKE 'LOGIN_ATTEMPT_LOCKED%' AND created_at > now() - interval '1 hour'
+        `),
+        pool.query(`
+          SELECT al.id, al.action, al.success, al.ip_address, al.created_at, u.email AS user_email
+          FROM access_logs al
+          LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD|RESET_2FA|UNLOCK_ACCOUNT|DEACTIVATE_ACCOUNT|REACTIVATE_ACCOUNT)'
+          ORDER BY al.created_at DESC
+          LIMIT 10
+        `),
+        pool.query(`
+          SELECT action, success, created_at
+          FROM access_logs
+          WHERE action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `),
+        pool.query(`
+          SELECT id, email, role, created_at, temp_password_created_at
+          FROM users
+          WHERE must_change_password = true
+            AND COALESCE(temp_password_created_at, created_at) < now() - interval '24 hours'
+          ORDER BY COALESCE(temp_password_created_at, created_at) ASC
+        `),
+      ]);
+
+    const roleCounts = { admin: 0, clinicien: 0, chercheur: 0 };
+    byRole.rows.forEach((r) => { roleCounts[r.role] = r.count; });
+
+    const emailLog = lastEmailLog.rows[0] || null;
+
+    return res.json({
+      totalUsers: statusCounts.rows[0].total_users,
+      roleCounts,
+      neverLoggedIn: statusCounts.rows[0].never_logged_in,
+      lockedNow: statusCounts.rows[0].locked_now,
+      inactiveAccounts: statusCounts.rows[0].inactive_accounts,
+      alerts: {
+        lockoutsLastHour: recentLockAlerts.rows[0].count,
+      },
+      recentActivity: recentActivity.rows,
+      emailStatus: emailLog
+        ? { success: emailLog.success, action: emailLog.action, at: emailLog.created_at }
+        : null,
+      pendingFirstLoginOver24h: pendingFirstLogin.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors du chargement de la vue d\'ensemble.' });
+  }
+}
+
+const KNOWN_ACTIONS = [
+  'LOGIN_ATTEMPT', 'LOGIN_ATTEMPT_LOCKED', 'LOGIN_ATTEMPT_WHILE_LOCKED',
+  'LOGIN_ATTEMPT_DISABLED_ACCOUNT', 'LOGIN_PASSWORD_OK', 'LOGIN_PASSWORD_OK_AWAITING_TOTP',
+  'LOGOUT', 'TOTP_ATTEMPT', 'TOTP_OK', 'CREATE_USER', 'CREATE_USER_EMAIL_FAILED',
+  'RESET_2FA', 'RESEND_TEMP_PASSWORD', 'RESEND_TEMP_PASSWORD_EMAIL_FAILED',
+  'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT',
+];
+
+/**
+ * GET /admin/logs
+ * Flux brut filtrable (onglet Logs & Sécurité, section A).
+ * Query params : action, userId, ip, dateFrom, dateTo, page, pageSize
+ */
+async function getLogs(req, res) {
+  const { action, userId, ip, dateFrom, dateTo } = req.query;
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 200);
+  const offset = (page - 1) * pageSize;
+
+  const conditions = [];
+  const params = [];
+
+  if (action) {
+    params.push(`${action}%`);
+    conditions.push(`al.action LIKE $${params.length}`);
+  }
+  if (userId) {
+    params.push(userId);
+    conditions.push(`al.user_id = $${params.length}`);
+  }
+  if (ip) {
+    params.push(`%${ip}%`);
+    conditions.push(`al.ip_address LIKE $${params.length}`);
+  }
+  if (dateFrom) {
+    params.push(dateFrom);
+    conditions.push(`al.created_at >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    conditions.push(`al.created_at <= $${params.length}`);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  try {
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM access_logs al ${whereClause}`,
+      params
+    );
+
+    params.push(pageSize);
+    params.push(offset);
+    const result = await pool.query(
+      `SELECT al.id, al.user_id, u.email AS user_email, al.action, al.success,
+              al.ip_address, al.created_at
+       FROM access_logs al
+       LEFT JOIN users u ON u.id = al.user_id
+       ${whereClause}
+       ORDER BY al.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+
+    return res.json({
+      rows: result.rows,
+      total: countResult.rows[0].count,
+      page,
+      pageSize,
+      knownActions: KNOWN_ACTIONS,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors du chargement des logs.' });
+  }
+}
+
+/**
+ * GET /admin/logs/anomalies
+ * Vue synthétique des patterns suspects (onglet Logs & Sécurité, section B).
+ * Heuristiques simples sur une fenêtre glissante (calculées à la volée —
+ * pas de table de score dédiée pour l'instant, cf. "idées à considérer plus tard").
+ */
+async function getAnomalies(req, res) {
+  try {
+    const [bruteForce, credentialStuffing, totpBypass, freq2fa, massAdminActivity] = await Promise.all([
+      pool.query(`
+        SELECT u.email, COUNT(*)::int AS attempts, MAX(al.created_at) AS last_attempt
+        FROM access_logs al
+        JOIN users u ON u.id = al.user_id
+        WHERE al.action IN ('LOGIN_ATTEMPT', 'LOGIN_ATTEMPT_LOCKED')
+          AND al.created_at > now() - interval '24 hours'
+        GROUP BY u.email
+        HAVING COUNT(*) FILTER (WHERE al.action = 'LOGIN_ATTEMPT_LOCKED') > 0
+        ORDER BY last_attempt DESC
+      `),
+      pool.query(`
+        SELECT al.ip_address, COUNT(DISTINCT al.user_id)::int AS distinct_users, MAX(al.created_at) AS last_attempt
+        FROM access_logs al
+        WHERE al.action LIKE 'LOGIN_ATTEMPT%'
+          AND al.ip_address IS NOT NULL
+          AND al.created_at > now() - interval '24 hours'
+        GROUP BY al.ip_address
+        HAVING COUNT(DISTINCT al.user_id) >= 4
+        ORDER BY distinct_users DESC
+      `),
+      pool.query(`
+        SELECT u.email, COUNT(*)::int AS failed_attempts, MAX(al.created_at) AS last_attempt
+        FROM access_logs al
+        JOIN users u ON u.id = al.user_id
+        WHERE al.action = 'TOTP_ATTEMPT' AND al.success = false
+          AND al.created_at > now() - interval '24 hours'
+        GROUP BY u.email
+        HAVING COUNT(*) >= 3
+        ORDER BY failed_attempts DESC
+      `),
+      pool.query(`
+        SELECT u.email, COUNT(*)::int AS resets, MAX(al.created_at) AS last_reset
+        FROM access_logs al
+        JOIN users u ON u.id = al.user_id
+        WHERE al.action LIKE 'RESET_2FA%'
+          AND al.created_at > now() - interval '7 days'
+        GROUP BY u.email
+        HAVING COUNT(*) >= 2
+        ORDER BY resets DESC
+      `),
+      pool.query(`
+        SELECT al.user_id, u.email AS admin_email, COUNT(*)::int AS created_count
+        FROM access_logs al
+        JOIN users u ON u.id = al.user_id
+        WHERE al.action LIKE 'CREATE_USER:%'
+          AND al.created_at > now() - interval '1 hour'
+        GROUP BY al.user_id, u.email
+        HAVING COUNT(*) >= 5
+        ORDER BY created_count DESC
+      `),
+    ]);
+
+    // Connexions à horaires inhabituels : approximation simple —
+    // connexions réussies entre 00h et 05h.
+    const unusualHours = await pool.query(`
+      SELECT u.email, al.created_at, al.ip_address
+      FROM access_logs al
+      JOIN users u ON u.id = al.user_id
+      WHERE al.action = 'LOGIN_PASSWORD_OK'
+        AND al.created_at > now() - interval '7 days'
+        AND EXTRACT(HOUR FROM al.created_at) BETWEEN 0 AND 5
+      ORDER BY al.created_at DESC
+      LIMIT 20
+    `);
+
+    return res.json({
+      bruteForceLockouts: bruteForce.rows,
+      credentialStuffingIps: credentialStuffing.rows,
+      totpBypassAttempts: totpBypass.rows,
+      frequent2faResets: freq2fa.rows,
+      massAdminActivity: massAdminActivity.rows,
+      unusualHourLogins: unusualHours.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors du calcul des anomalies.' });
+  }
+}
+
+/**
+ * GET /admin/logs/user/:id
+ * Timeline complète d'un compte (onglet Logs & Sécurité, section C).
+ */
+async function getUserTimeline(req, res) {
+  const { id } = req.params;
+  try {
+    const userResult = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    const logsResult = await pool.query(
+      `SELECT id, action, success, ip_address, created_at
+       FROM access_logs WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 500`,
+      [id]
+    );
+
+    return res.json({ user: userResult.rows[0], logs: logsResult.rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors du chargement de la timeline.' });
+  }
+}
+
+/**
+ * GET /admin/logs/export
+ * Export CSV des logs pour une période donnée (onglet Logs & Sécurité, section D).
+ */
+async function exportLogsCsv(req, res) {
+  const { action, userId, ip, dateFrom, dateTo } = req.query;
+  const conditions = [];
+  const params = [];
+
+  if (action) {
+    params.push(`${action}%`);
+    conditions.push(`al.action LIKE $${params.length}`);
+  }
+  if (userId) {
+    params.push(userId);
+    conditions.push(`al.user_id = $${params.length}`);
+  }
+  if (ip) {
+    params.push(`%${ip}%`);
+    conditions.push(`al.ip_address LIKE $${params.length}`);
+  }
+  if (dateFrom) {
+    params.push(dateFrom);
+    conditions.push(`al.created_at >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    conditions.push(`al.created_at <= $${params.length}`);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  try {
+    const result = await pool.query(
+      `SELECT al.created_at, u.email AS user_email, al.action, al.success, al.ip_address
+       FROM access_logs al
+       LEFT JOIN users u ON u.id = al.user_id
+       ${whereClause}
+       ORDER BY al.created_at DESC
+       LIMIT 10000`,
+      params
+    );
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      return /[",\n;]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+
+    const header = ['Date', 'Utilisateur', 'Action', 'Succès', 'Adresse IP'].join(';');
+    const lines = result.rows.map((r) => [
+      new Date(r.created_at).toISOString(),
+      r.user_email || '',
+      r.action,
+      r.success ? 'OUI' : 'NON',
+      r.ip_address || '',
+    ].map(escapeCsv).join(';'));
+
+    const adminId = req.user.sub;
+    await pool.query(
+      `INSERT INTO access_logs (user_id, action, success, ip_address)
+       VALUES ($1, $2, true, $3)`,
+      [adminId, 'EXPORT_LOGS_CSV', req.ip]
+    );
+
+    const csv = '\uFEFF' + [header, ...lines].join('\n'); // BOM pour Excel/accents FR
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="logs-export-${Date.now()}.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors de l\'export.' });
+  }
+}
+
 module.exports = {
   createUser,
   listUsers,
@@ -288,4 +628,9 @@ module.exports = {
   resendTempPassword, // nouveau
   unlockUser, // nouveau
   toggleActive, // nouveau
+  getOverview, // nouveau
+  getLogs, // nouveau
+  getAnomalies, // nouveau
+  getUserTimeline, // nouveau
+  exportLogsCsv, // nouveau
 };

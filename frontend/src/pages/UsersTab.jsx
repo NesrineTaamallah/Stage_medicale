@@ -18,7 +18,7 @@ function StatusBadges({ u }) {
   );
 }
 
-export default function UsersTab() {
+export default function UsersTab({ onNavigateToUserLogs }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -163,6 +163,12 @@ export default function UsersTab() {
                   <td>{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        className="secondary"
+                        onClick={() => onNavigateToUserLogs?.(u.id)}
+                      >
+                        Historique
+                      </button>
                       {u.tempPasswordStatus && (
                         <button
                           className="secondary"

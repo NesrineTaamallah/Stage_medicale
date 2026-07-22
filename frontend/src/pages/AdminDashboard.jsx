@@ -1,10 +1,26 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import UsersTab from './UsersTab';
+import OverviewTab from './OverviewTab';
+import LogsTab from './LogsTab';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('users'); // onglet Utilisateurs par défaut (voir spec)
+
+  // État de navigation croisée entre onglets (cf. spec "Navigation croisée")
+  const [logsFilters, setLogsFilters] = useState({});
+  const [focusUserId, setFocusUserId] = useState(null);
+
+  function goToLogs(filters) {
+    setLogsFilters(filters || {});
+    setTab('logs');
+  }
+
+  function goToUserTimeline(userId) {
+    setFocusUserId(userId);
+    setTab('logs');
+  }
 
   return (
     <div className="dashboard">
@@ -40,11 +56,15 @@ export default function AdminDashboard() {
       </nav>
 
       {tab === 'overview' && (
-        <div className="card"><p className="subtitle">Onglet Vue d'ensemble — à venir.</p></div>
+        <OverviewTab onNavigateToLogs={goToLogs} onNavigateToUser={goToUserTimeline} />
       )}
-      {tab === 'users' && <UsersTab />}
+      {tab === 'users' && <UsersTab onNavigateToUserLogs={goToUserTimeline} />}
       {tab === 'logs' && (
-        <div className="card"><p className="subtitle">Onglet Logs & Sécurité — à venir.</p></div>
+        <LogsTab
+          initialFilters={logsFilters}
+          focusUserId={focusUserId}
+          onFocusUserHandled={() => setFocusUserId(null)}
+        />
       )}
     </div>
   );
