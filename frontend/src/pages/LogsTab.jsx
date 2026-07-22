@@ -13,6 +13,7 @@ const ACTION_OPTIONS = [
   { value: 'UNLOCK_ACCOUNT', label: 'Déverrouillage de compte' },
   { value: 'DEACTIVATE_ACCOUNT', label: 'Désactivation' },
   { value: 'REACTIVATE_ACCOUNT', label: 'Réactivation' },
+  { value: 'VIEW_USER_TIMELINE', label: 'Consultation timeline utilisateur' },
   { value: 'LOGOUT', label: 'Déconnexion' },
 ];
 
@@ -214,6 +215,45 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
               <p className="hint">Aucune anomalie détectée sur la période analysée. 👍</p>
             ) : (
               <>
+                {anomalies.riskScores && anomalies.riskScores.length > 0 && (
+                  <div style={{ marginBottom: 18 }}>
+                    <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>
+                      Score de risque agrégé
+                    </p>
+                    <p className="hint" style={{ marginBottom: 8 }}>
+                      Hiérarchisation par sujet (utilisateur ou IP), tous patterns combinés — plus rapide qu'une lecture pattern par pattern.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {anomalies.riskScores.slice(0, 8).map((r, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '8px 10px',
+                            borderRadius: 6,
+                            background: r.score >= 50 ? 'var(--error-tint)' : 'var(--card)',
+                            border: '1px solid var(--line)',
+                          }}
+                        >
+                          <span
+                            className={`badge ${r.score >= 50 ? 'badge-error' : r.score >= 20 ? 'badge-warning' : 'badge-muted'}`}
+                            style={{ minWidth: 34, textAlign: 'center' }}
+                          >
+                            {r.score}
+                          </span>
+                          <span style={{ fontSize: 13, flex: 1 }}>
+                            <strong>{r.subject}</strong>
+                            <span className="hint" style={{ marginLeft: 8 }}>
+                              ({r.type === 'ip' ? 'IP' : 'utilisateur'}) — {r.reasons.join(', ')}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <AnomalySection
                   title="Brute-force ciblé"
                   description="Comptes ayant subi un verrouillage après plusieurs échecs de connexion (24h)."

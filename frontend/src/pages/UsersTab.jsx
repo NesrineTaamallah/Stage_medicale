@@ -28,13 +28,37 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
 
+  // Tri (correction #2)
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+
   // Formulaire de création (logique identique à l'existant)
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('clinicien');
   const [confirmAdmin, setConfirmAdmin] = useState(false);
+  const [showPreview, setShowPreview] = useState(false); // correction #1
   const [createMsg, setCreateMsg] = useState('');
   const [createErr, setCreateErr] = useState('');
   const [busyId, setBusyId] = useState(null);
+
+  function fmtLastLogin(dateStr) {
+    if (!dateStr) return 'Jamais connecté';
+    return new Date(dateStr).toLocaleString('fr-FR');
+  }
+
+  function toggleSort(field) {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortDir('desc');
+    }
+  }
+
+  function sortIndicator(field) {
+    if (sortBy !== field) return '';
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -85,11 +109,24 @@ export default function UsersTab({ onNavigateToUserLogs }) {
     }
   }
 
-  const filtered = users.filter((u) => {
-    const matchRole = roleFilter === 'all' || u.role === roleFilter;
-    const matchSearch = u.email.toLowerCase().includes(search.toLowerCase());
-    return matchRole && matchSearch;
-  });
+  const filtered = users
+    .filter((u) => {
+      const matchRole = roleFilter === 'all' || u.role === roleFilter;
+      const matchSearch = u.email.toLowerCase().includes(search.toLowerCase());
+      return matchRole && matchSearch;
+    })
+    .sort((a, b) => {
+      let va, vb;
+      if (sortBy === 'last_login_at') {
+        // "Jamais connecté" trié après les dates réelles, quel que soit le sens
+        va = a.last_login_at ? new Date(a.last_login_at).getTime() : -Infinity;
+        vb = b.last_login_at ? new Date(b.last_login_at).getTime() : -Infinity;
+      } else {
+        va = new Date(a.created_at).getTime();
+        vb = new Date(b.created_at).getTime();
+      }
+      return sortDir === 'asc' ? va - vb : vb - va;
+    });
 
   return (
     <div>
@@ -115,6 +152,48 @@ export default function UsersTab({ onNavigateToUserLogs }) {
               Je confirme vouloir créer un compte admin (action sensible)
             </label>
           )}
+          {email && (
+            <button
+              type="button"
+              className="secondary"
+              style={{ marginTop: 12 }}
+              onClick={() => setShowPreview((s) => !s)}
+            >
+              {showPreview ? "Masquer l'aperçu de l'email" : "Aperçu de l'email"}
+            </button>
+          )}
+
+          {showPreview && email && (
+            <div
+              style={{
+                marginTop: 12,
+                border: '1px solid var(--line)',
+                borderRadius: 8,
+                padding: '14px 16px',
+                background: 'var(--card)',
+                fontSize: 13.5,
+              }}
+            >
+              <p className="hint" style={{ marginTop: 0 }}>
+                À : <strong>{email}</strong> — Sujet : Votre accès au registre clinique — mot de passe temporaire
+              </p>
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                <p>Bonjour,</p>
+                <p>
+                  Un compte vous a été créé sur le registre clinique NeuroExo-Predict avec le rôle :{' '}
+                  <strong>{role}</strong>.
+                </p>
+                <p>
+                  Votre mot de passe temporaire est : <strong>••••••••</strong>{' '}
+                  <span className="hint">(généré à la création, non visible avant validation)</span>
+                </p>
+                <p>Ce mot de passe est <strong>valable 48h</strong> et devra être changé dès votre première connexion.</p>
+                <p><a href="#" onClick={(e) => e.preventDefault()}>Se connecter</a></p>
+                <p className="hint">Si vous n'êtes pas à l'origine de cette demande, contactez l'administrateur du système.</p>
+              </div>
+            </div>
+          )}
+
           {createMsg && <p className="success">{createMsg}</p>}
           {createErr && <p className="error">{createErr}</p>}
           <button type="submit">Créer l'utilisateur</button>
@@ -150,7 +229,12 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                 <th style={{ padding: '8px 6px' }}>Email</th>
                 <th>Rôle</th>
                 <th>Statut</th>
-                <th>Créé le</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('created_at')}>
+                  Créé le{sortIndicator('created_at')}
+                </th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('last_login_at')}>
+                  Dernière connexion{sortIndicator('last_login_at')}
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -161,6 +245,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                   <td>{u.role}</td>
                   <td><StatusBadges u={u} /></td>
                   <td>{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td className={!u.last_login_at ? 'hint' : undefined}>{fmtLastLogin(u.last_login_at)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button
@@ -173,7 +258,11 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                         <button
                           className="secondary"
                           disabled={busyId === u.id}
-                          onClick={() => runAction(u.id, 'resend-temp-password', `Renvoyer un nouveau mot de passe temporaire à ${u.email} ?`)}
+                          onClick={() => runAction(
+                            u.id,
+                            'resend-temp-password',
+                            `Renvoyer un nouveau mot de passe temporaire à ${u.email} ?\n\nAvant : ${u.tempPasswordStatus === 'expired' ? 'Mot de passe probablement expiré' : 'En attente de 1ère connexion'}\nAprès : Nouveau mot de passe généré, délai de 48h relancé, ancien mot de passe invalidé`
+                          )}
                         >
                           Renvoyer mdp
                         </button>
@@ -182,7 +271,11 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                         <button
                           className="secondary"
                           disabled={busyId === u.id}
-                          onClick={() => runAction(u.id, 'unlock')}
+                          onClick={() => runAction(
+                            u.id,
+                            'unlock',
+                            `Déverrouiller ${u.email} ?\n\nAvant : Verrouillé jusqu'au ${new Date(u.locked_until).toLocaleString('fr-FR')}\nAprès : Compte actif, compteur d'échecs remis à zéro`
+                          )}
                         >
                           Déverrouiller
                         </button>
@@ -191,7 +284,11 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                         <button
                           className="secondary"
                           disabled={busyId === u.id}
-                          onClick={() => runAction(u.id, 'reset-2fa', `Réinitialiser le 2FA de ${u.email} ?`)}
+                          onClick={() => runAction(
+                            u.id,
+                            'reset-2fa',
+                            `Réinitialiser le 2FA de ${u.email} ?\n\nAvant : 2FA actif\nAprès : 2FA désactivé — l'utilisateur devra re-scanner un nouveau QR code à sa prochaine connexion`
+                          )}
                         >
                           Reset 2FA
                         </button>
@@ -199,7 +296,11 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                       <button
                         className="secondary"
                         disabled={busyId === u.id}
-                        onClick={() => runAction(u.id, 'toggle-active', `${u.is_active ? 'Désactiver' : 'Réactiver'} le compte de ${u.email} ?`)}
+                        onClick={() => runAction(
+                          u.id,
+                          'toggle-active',
+                          `${u.is_active ? 'Désactiver' : 'Réactiver'} le compte de ${u.email} ?\n\nAvant : ${u.is_active ? 'Actif' : 'Désactivé'}\nAprès : ${u.is_active ? 'Désactivé — l\'utilisateur ne pourra plus se connecter' : 'Actif — l\'utilisateur pourra de nouveau se connecter'}`
+                        )}
                       >
                         {u.is_active ? 'Désactiver' : 'Réactiver'}
                       </button>
@@ -208,7 +309,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center' }}>Aucun utilisateur trouvé.</td></tr>
+                <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center' }}>Aucun utilisateur trouvé.</td></tr>
               )}
             </tbody>
           </table>

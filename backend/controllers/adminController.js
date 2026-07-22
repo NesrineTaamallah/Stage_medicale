@@ -358,7 +358,7 @@ const KNOWN_ACTIONS = [
   'LOGIN_ATTEMPT_DISABLED_ACCOUNT', 'LOGIN_PASSWORD_OK', 'LOGIN_PASSWORD_OK_AWAITING_TOTP',
   'LOGOUT', 'TOTP_ATTEMPT', 'TOTP_OK', 'CREATE_USER', 'CREATE_USER_EMAIL_FAILED',
   'RESET_2FA', 'RESEND_TEMP_PASSWORD', 'RESEND_TEMP_PASSWORD_EMAIL_FAILED',
-  'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT',
+  'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT', 'VIEW_USER_TIMELINE',
 ];
 
 /**
@@ -504,6 +504,50 @@ async function getAnomalies(req, res) {
       LIMIT 20
     `);
 
+    // --- Score de risque agrégé (par email et par IP) ---
+    // Pondération simple, volontairement lisible : chaque pattern détecté
+    // ajoute des points selon sa gravité. Pas de ML ici, juste une somme
+    // pondérée pour donner à l'admin une hiérarchisation immédiate plutôt
+    // que 6 listes séparées à parcourir une par une.
+    const WEIGHTS = {
+      bruteForce: 25,        // verrouillage réel = déjà confirmé comme grave
+      totpBypass: 15,        // tentative de contournement 2FA
+      freq2fa: 12,           // social engineering possible
+      unusualHour: 5,        // simple signal faible, pas une preuve
+      credentialStuffing: 20, // par IP
+      massAdmin: 30,         // par admin — activité massive anormale
+    };
+
+    const scoresByEmail = new Map();
+    const bump = (email, points, reason) => {
+      const entry = scoresByEmail.get(email) || { subject: email, score: 0, reasons: [] };
+      entry.score += points;
+      entry.reasons.push(reason);
+      scoresByEmail.set(email, entry);
+    };
+    bruteForce.rows.forEach((r) => bump(r.email, WEIGHTS.bruteForce, 'Verrouillage brute-force'));
+    totpBypass.rows.forEach((r) => bump(r.email, WEIGHTS.totpBypass, 'Contournement 2FA suspecté'));
+    freq2fa.rows.forEach((r) => bump(r.email, WEIGHTS.freq2fa, 'Resets 2FA fréquents'));
+    unusualHours.rows.forEach((r) => bump(r.email, WEIGHTS.unusualHour, 'Connexion à horaire inhabituel'));
+
+    const scoresByIp = new Map();
+    const bumpIp = (ip, points, reason) => {
+      const entry = scoresByIp.get(ip) || { subject: ip, score: 0, reasons: [] };
+      entry.score += points;
+      entry.reasons.push(reason);
+      scoresByIp.set(ip, entry);
+    };
+    credentialStuffing.rows.forEach((r) => bumpIp(r.ip_address, WEIGHTS.credentialStuffing, 'Énumération / credential stuffing'));
+
+    massAdminActivity.rows.forEach((r) => bump(r.admin_email, WEIGHTS.massAdmin, 'Activité admin anormalement élevée'));
+
+    const riskScores = [
+      ...[...scoresByEmail.values()].map((e) => ({ ...e, type: 'user' })),
+      ...[...scoresByIp.values()].map((e) => ({ ...e, type: 'ip' })),
+    ]
+      .map((e) => ({ ...e, score: Math.min(e.score, 100), reasons: [...new Set(e.reasons)] }))
+      .sort((a, b) => b.score - a.score);
+
     return res.json({
       bruteForceLockouts: bruteForce.rows,
       credentialStuffingIps: credentialStuffing.rows,
@@ -511,6 +555,7 @@ async function getAnomalies(req, res) {
       frequent2faResets: freq2fa.rows,
       massAdminActivity: massAdminActivity.rows,
       unusualHourLogins: unusualHours.rows,
+      riskScores, // nouveau — correction #7
     });
   } catch (err) {
     console.error(err);
@@ -524,6 +569,7 @@ async function getAnomalies(req, res) {
  */
 async function getUserTimeline(req, res) {
   const { id } = req.params;
+  const adminId = req.user.sub;
   try {
     const userResult = await pool.query('SELECT id, email, role FROM users WHERE id = $1', [id]);
     if (userResult.rows.length === 0) {
@@ -537,6 +583,15 @@ async function getUserTimeline(req, res) {
        LIMIT 500`,
       [id]
     );
+
+    // Traçabilité RGPD/santé : on journalise aussi la CONSULTATION d'une
+    // timeline, pas uniquement les actions correctives. Fire-and-forget :
+    // une erreur de log ne doit jamais bloquer l'affichage.
+    pool.query(
+      `INSERT INTO access_logs (user_id, action, success, ip_address)
+       VALUES ($1, $2, true, $3)`,
+      [adminId, `VIEW_USER_TIMELINE:${id}`, req.ip]
+    ).catch((e) => console.error('Log VIEW_USER_TIMELINE échoué :', e.message));
 
     return res.json({ user: userResult.rows[0], logs: logsResult.rows });
   } catch (err) {
