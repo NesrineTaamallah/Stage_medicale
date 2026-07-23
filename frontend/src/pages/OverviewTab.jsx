@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
+import { IconAlert } from '../components/Icons';
 
 const ACTION_LABELS = {
   CREATE_USER: 'Création de compte',
@@ -34,20 +35,20 @@ function StatCard({ label, value, tone }) {
       style={{
         background: 'var(--card)',
         border: '1px solid var(--line)',
-        borderRadius: 12,
+        borderRadius: 4,
         padding: '16px 18px',
         flex: '1 1 140px',
         minWidth: 140,
       }}
     >
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', color: 'var(--slate)', margin: 0 }}>
+      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate)', margin: 0 }}>
         {label}
       </p>
       <p
         style={{
           fontFamily: 'var(--font-display)',
           fontSize: 28,
-          fontWeight: 700,
+          fontWeight: 500,
           margin: '6px 0 0',
           color: tone === 'error' ? 'var(--error)' : tone === 'amber' ? 'var(--amber)' : 'var(--ink)',
         }}
@@ -98,11 +99,12 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser }) {
       {hasActiveAlert && (
         <div
           className="card"
-          style={{ borderLeft: '4px solid var(--error)', cursor: 'pointer' }}
+          style={{ borderLeft: '2px solid var(--error)', cursor: 'pointer' }}
           onClick={() => onNavigateToLogs?.({ action: 'LOGIN_ATTEMPT_LOCKED' })}
         >
-          <p style={{ margin: 0, color: 'var(--error)', fontWeight: 600 }}>
-            ⚠ {data.alerts.lockoutsLastHour} compte(s) verrouillé(s) dans la dernière heure
+          <p style={{ margin: 0, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IconAlert size={15} color="var(--error)" />
+            {data.alerts.lockoutsLastHour} compte(s) verrouillé(s) dans la dernière heure
           </p>
           <p className="hint" style={{ marginTop: 4 }}>Cliquez pour investiguer dans les logs.</p>
         </div>
@@ -110,6 +112,7 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser }) {
 
       {/* Compteurs clés */}
       <div className="card">
+        <p className="eyebrow" style={{ marginBottom: 4 }}>État du registre</p>
         <h2>Compteurs clés</h2>
         <p className="subtitle" style={{ marginBottom: 16 }}>État général des comptes, à date.</p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
