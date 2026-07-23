@@ -157,8 +157,8 @@ async function changePassword(req, res) {
     );
 
     await pool.query(
-      `INSERT INTO access_logs (user_id, action, success) VALUES ($1, $2, true)`,
-      [payload.sub, 'PASSWORD_CHANGED']
+      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
+      [payload.sub, 'PASSWORD_CHANGED', req.ip]
     );
 
     return res.json({ message: 'Mot de passe mis à jour. Vous pouvez maintenant vous connecter.' });
@@ -182,8 +182,8 @@ async function logout(req, res) {
     );
 
     await pool.query(
-      `INSERT INTO access_logs (user_id, action, success) VALUES ($1, $2, true)`,
-      [req.user.sub, 'LOGOUT']
+      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
+      [req.user.sub, 'LOGOUT', req.ip]
     );
 
     res.clearCookie('token', { ...COOKIE_OPTIONS, maxAge: undefined });

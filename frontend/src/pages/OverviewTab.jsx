@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
-import { IconAlert, IconUsers, IconShield, IconChart, IconSearch } from '../components/Icons';
+import { IconAlert, IconUsers, IconShield, IconChart, IconSearch, IconEyeOff, IconLock } from '../components/Icons';
 
 const ACTION_LABELS = {
   CREATE_USER: 'Création de compte',
@@ -47,36 +47,6 @@ function HeroStatCard({ label, value, Icon, tone = 'primary' }) {
       <div className="icon" style={{ width: 40, height: 40, borderRadius: 12, background: palette.bg, color: palette.color }}>
         <Icon size={18} />
       </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value, tone }) {
-  return (
-    <div
-      style={{
-        background: 'var(--card)',
-        border: '1px solid var(--line)',
-        borderRadius: 4,
-        padding: '16px 18px',
-        flex: '1 1 140px',
-        minWidth: 140,
-      }}
-    >
-      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate)', margin: 0 }}>
-        {label}
-      </p>
-      <p
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28,
-          fontWeight: 500,
-          margin: '6px 0 0',
-          color: tone === 'error' ? 'var(--error)' : tone === 'amber' ? 'var(--amber)' : 'var(--ink)',
-        }}
-      >
-        {value}
-      </p>
     </div>
   );
 }
@@ -140,20 +110,13 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser }) {
         </div>
       )}
 
-      {/* Compteurs clés */}
-      <div className="card">
-        <p className="eyebrow" style={{ marginBottom: 4 }}>État du registre</p>
-        <h2>Compteurs clés</h2>
-        <p className="subtitle" style={{ marginBottom: 16 }}>État général des comptes, à date.</p>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <StatCard label="Utilisateurs" value={data.totalUsers} />
-          <StatCard label="Admins" value={data.roleCounts.admin} />
-          <StatCard label="Cliniciens" value={data.roleCounts.clinicien} />
-          <StatCard label="Chercheurs" value={data.roleCounts.chercheur} />
-          <StatCard label="Jamais connectés" value={data.neverLoggedIn} tone={data.neverLoggedIn > 0 ? 'amber' : undefined} />
-          <StatCard label="Verrouillés" value={data.lockedNow} tone={data.lockedNow > 0 ? 'error' : undefined} />
-          <StatCard label="Désactivés" value={data.inactiveAccounts} />
-        </div>
+      {/* Compteurs clés — box indépendantes, même style que les 4 cartes du haut */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard label="Admins" value={data.roleCounts.admin} Icon={IconShield} tone="primary" />
+        <HeroStatCard label="Cliniciens" value={data.roleCounts.clinicien} Icon={IconUsers} tone="primary" />
+        <HeroStatCard label="Chercheurs" value={data.roleCounts.chercheur} Icon={IconUsers} tone="primary" />
+        <HeroStatCard label="Jamais connectés" value={data.neverLoggedIn} Icon={IconEyeOff} tone={data.neverLoggedIn > 0 ? 'amber' : 'primary'} />
+        <HeroStatCard label="Désactivés" value={data.inactiveAccounts} Icon={IconLock} tone={data.inactiveAccounts > 0 ? 'amber' : 'primary'} />
       </div>
 
       {/* Statut email */}
@@ -239,6 +202,11 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser }) {
                 <span>
                   {actionLabel(a.action)}
                   {a.user_email && <span className="hint" style={{ marginLeft: 8 }}>({a.user_email})</span>}
+                  {a.ip_address && (
+                    <span className="hint" style={{ marginLeft: 8, fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>
+                      · {a.ip_address}
+                    </span>
+                  )}
                 </span>
                 <span className="hint" style={{ margin: 0, whiteSpace: 'nowrap' }}>{timeAgo(a.created_at)}</span>
               </div>

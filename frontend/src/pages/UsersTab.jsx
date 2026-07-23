@@ -293,19 +293,19 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                       >
                         Historique
                       </button>
-                      {u.tempPasswordStatus && (
-                        <button
-                          className="secondary"
-                          disabled={busyId === u.id}
-                          onClick={() => runAction(
-                            u.id,
-                            'resend-temp-password',
-                            `Renvoyer un nouveau mot de passe temporaire à ${u.email} ?\n\nAvant : ${u.tempPasswordStatus === 'expired' ? 'Mot de passe probablement expiré' : 'En attente de 1ère connexion'}\nAprès : Nouveau mot de passe généré, délai de 48h relancé, ancien mot de passe invalidé`
-                          )}
-                        >
-                          Renvoyer mdp
-                        </button>
-                      )}
+                      <button
+                        className="secondary"
+                        disabled={busyId === u.id}
+                        onClick={() => runAction(
+                          u.id,
+                          'resend-temp-password',
+                          u.tempPasswordStatus
+                            ? `Renvoyer un nouveau mot de passe temporaire à ${u.email} ?\n\nAvant : ${u.tempPasswordStatus === 'expired' ? 'Mot de passe probablement expiré' : 'En attente de 1ère connexion'}\nAprès : Nouveau mot de passe généré, délai de 48h relancé, ancien mot de passe invalidé`
+                            : `Réinitialiser le mot de passe de ${u.email} ?\n\nÀ utiliser si l'utilisateur a oublié son mot de passe après l'avoir déjà changé.\nAprès : Un nouveau mot de passe temporaire (48h) est généré et envoyé par email, l'ancien mot de passe est immédiatement invalidé`
+                        )}
+                      >
+                        {u.tempPasswordStatus ? 'Renvoyer mdp' : 'Réinitialiser mdp'}
+                      </button>
                       {u.locked_until && new Date(u.locked_until) > new Date() && (
                         <button
                           className="secondary"

@@ -65,6 +65,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
 
   const [actionFilter, setActionFilter] = useState(initialFilters?.action || '');
   const [userIdFilter, setUserIdFilter] = useState(initialFilters?.userId || '');
+  const [ipFilter, setIpFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
@@ -84,6 +85,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
       const params = { page, pageSize };
       if (actionFilter) params.action = actionFilter;
       if (userIdFilter) params.userId = userIdFilter;
+      if (ipFilter) params.ip = ipFilter;
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       const { data } = await client.get('/admin/logs', { params });
@@ -94,7 +96,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     } finally {
       setLoading(false);
     }
-  }, [actionFilter, userIdFilter, dateFrom, dateTo, page]);
+  }, [actionFilter, userIdFilter, ipFilter, dateFrom, dateTo, page]);
 
   const fetchAnomalies = useCallback(async () => {
     setAnomaliesLoading(true);
@@ -134,7 +136,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   }
 
   function resetFilters() {
-    setActionFilter(''); setUserIdFilter('');
+    setActionFilter(''); setUserIdFilter(''); setIpFilter('');
     setDateFrom(''); setDateTo(''); setPage(1);
   }
 
@@ -142,6 +144,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     const params = new URLSearchParams();
     if (actionFilter) params.set('action', actionFilter);
     if (userIdFilter) params.set('userId', userIdFilter);
+    if (ipFilter) params.set('ip', ipFilter);
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
     // withCredentials est requis (cookie httpOnly) : on ouvre l'URL absolue du backend
@@ -194,20 +197,20 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
         </div>
       )}
 
-      {/* Alertes & anomalies */}
+      {/* Anomalies détectées */}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2>Alertes &amp; anomalies</h2>
-          <button className="secondary" onClick={() => setShowAnomalies((s) => !s)}>
+          <h2>Anomalies détectées</h2>
+          <button className="secondary" onClick={() => setShowAnomalies((v) => !v)}>
             {showAnomalies ? 'Masquer' : 'Afficher'}
           </button>
         </div>
         {showAnomalies && (
           <div style={{ marginTop: 12 }}>
             {anomaliesLoading ? (
-              <p className="subtitle">Analyse des patterns en cours...</p>
-            ) : !hasAnyAnomaly ? (
-              <p className="hint">Aucune anomalie détectée sur la période analysée. 👍</p>
+              <p className="subtitle">Chargement des anomalies...</p>
+            ) : !anomalies || !hasAnyAnomaly ? (
+              <p className="hint">Aucune anomalie détectée actuellement.</p>
             ) : (
               <>
                 {anomalies.riskScores && anomalies.riskScores.length > 0 && (
@@ -336,6 +339,13 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
             value={dateTo}
             onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
           />
+          <input
+            type="text"
+            placeholder="Filtrer par IP"
+            style={{ maxWidth: 160 }}
+            value={ipFilter}
+            onChange={(e) => { setIpFilter(e.target.value); setPage(1); }}
+          />
           <button className="secondary" onClick={resetFilters}>Réinitialiser</button>
           <button className="secondary" onClick={handleExport}>Exporter en CSV</button>
         </div>
@@ -360,6 +370,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                   <th style={{ padding: '8px 6px' }}>Date</th>
                   <th>Utilisateur</th>
                   <th>Action</th>
+                  <th>IP</th>
                   <th>Statut</th>
                 </tr>
               </thead>
@@ -373,11 +384,24 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                     <td style={{ padding: '8px 6px' }}>{fmtDate(l.created_at)}</td>
                     <td>{l.user_email || '—'}</td>
                     <td>{l.action}</td>
+                    <td>
+                      {l.ip_address ? (
+                        <span
+                          style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5 }}
+                          title="Filtrer sur cette IP"
+                          onClick={(e) => { e.stopPropagation(); setIpFilter(l.ip_address); setPage(1); }}
+                        >
+                          {l.ip_address}
+                        </span>
+                      ) : (
+                        <span className="hint">—</span>
+                      )}
+                    </td>
                     <td><SuccessBadge success={l.success} /></td>
                   </tr>
                 ))}
                 {logs.length === 0 && (
-                  <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
+                  <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
                 )}
               </tbody>
             </table>

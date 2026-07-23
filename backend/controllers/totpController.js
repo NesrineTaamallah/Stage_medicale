@@ -85,8 +85,8 @@ async function validateTotp(req, res) {
     const valid = await verifyTotpToken(code, decryptedSecret);
     if (!valid) {
       await pool.query(
-        `INSERT INTO access_logs (user_id, action, success) VALUES ($1, $2, false)`,
-        [user.id, 'TOTP_ATTEMPT']
+        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, false, $3)`,
+        [user.id, 'TOTP_ATTEMPT', req.ip]
       );
       return res.status(401).json({ error: 'Code TOTP invalide.' });
     }
@@ -102,8 +102,8 @@ async function validateTotp(req, res) {
     await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
 
     await pool.query(
-      `INSERT INTO access_logs (user_id, action, success) VALUES ($1, $2, true)`,
-      [user.id, 'TOTP_OK']
+      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
+      [user.id, 'TOTP_OK', req.ip]
     );
 
     return res.json({
