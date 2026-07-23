@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
+import { IconPlus, IconX } from '../components/Icons';
 
 function StatusBadges({ u }) {
   return (
@@ -33,6 +34,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   const [sortDir, setSortDir] = useState('desc');
 
   // Formulaire de création (logique identique à l'existant)
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('clinicien');
   const [confirmAdmin, setConfirmAdmin] = useState(false);
@@ -40,6 +42,16 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   const [createMsg, setCreateMsg] = useState('');
   const [createErr, setCreateErr] = useState('');
   const [busyId, setBusyId] = useState(null);
+
+  function openCreateModal() {
+    setEmail(''); setRole('clinicien'); setConfirmAdmin(false);
+    setShowPreview(false); setCreateMsg(''); setCreateErr('');
+    setShowCreateModal(true);
+  }
+
+  function closeCreateModal() {
+    setShowCreateModal(false);
+  }
 
   function fmtLastLogin(dateStr) {
     if (!dateStr) return 'Jamais connecté';
@@ -87,8 +99,9 @@ export default function UsersTab({ onNavigateToUserLogs }) {
     try {
       const { data } = await client.post('/admin/users', { email, role });
       setCreateMsg(`Compte créé pour ${data.user.email} (${data.user.role}).`);
-      setEmail(''); setConfirmAdmin(false);
+      setEmail(''); setConfirmAdmin(false); setShowPreview(false);
       fetchUsers();
+      setTimeout(() => setShowCreateModal(false), 900);
     } catch (err) {
       setCreateErr(err.response?.data?.error || 'Erreur.');
     }
@@ -130,78 +143,104 @@ export default function UsersTab({ onNavigateToUserLogs }) {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: 24 }}>
-        <h2>Créer un utilisateur</h2>
-        <form onSubmit={handleCreate}>
-          <label>Email</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
-          <label>Rôle</label>
-          <select value={role} onChange={e => setRole(e.target.value)}>
-            <option value="clinicien">Clinicien</option>
-            <option value="chercheur">Chercheur</option>
-            <option value="admin">Admin</option>
-          </select>
-          {role === 'admin' && (
-            <label style={{ textTransform: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-              <input
-                type="checkbox"
-                style={{ width: 'auto' }}
-                checked={confirmAdmin}
-                onChange={e => setConfirmAdmin(e.target.checked)}
-              />
-              Je confirme vouloir créer un compte admin (action sensible)
-            </label>
-          )}
-          {email && (
-            <button
-              type="button"
-              className="secondary"
-              style={{ marginTop: 12 }}
-              onClick={() => setShowPreview((s) => !s)}
-            >
-              {showPreview ? "Masquer l'aperçu de l'email" : "Aperçu de l'email"}
-            </button>
-          )}
-
-          {showPreview && email && (
-            <div
-              style={{
-                marginTop: 12,
-                border: '1px solid var(--line)',
-                borderRadius: 8,
-                padding: '14px 16px',
-                background: 'var(--card)',
-                fontSize: 13.5,
-              }}
-            >
-              <p className="hint" style={{ marginTop: 0 }}>
-                À : <strong>{email}</strong> — Sujet : Votre accès au registre clinique — mot de passe temporaire
-              </p>
-              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-                <p>Bonjour,</p>
-                <p>
-                  Un compte vous a été créé sur le registre clinique NeuroExo-Predict avec le rôle :{' '}
-                  <strong>{role}</strong>.
-                </p>
-                <p>
-                  Votre mot de passe temporaire est : <strong>••••••••</strong>{' '}
-                  <span className="hint">(généré à la création, non visible avant validation)</span>
-                </p>
-                <p>Ce mot de passe est <strong>valable 48h</strong> et devra être changé dès votre première connexion.</p>
-                <p><a href="#" onClick={(e) => e.preventDefault()}>Se connecter</a></p>
-                <p className="hint">Si vous n'êtes pas à l'origine de cette demande, contactez l'administrateur du système.</p>
+      {showCreateModal && (
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeCreateModal(); }}>
+          <div className="modal-panel">
+            <div className="modal-header">
+              <div>
+                <h2 style={{ marginBottom: 2 }}>Ajouter un utilisateur</h2>
+                <p className="hint" style={{ margin: 0 }}>Un mot de passe temporaire (48h) sera généré automatiquement.</p>
               </div>
+              <button type="button" className="modal-close" onClick={closeCreateModal} aria-label="Fermer">
+                <IconX size={18} />
+              </button>
             </div>
-          )}
 
-          {createMsg && <p className="success">{createMsg}</p>}
-          {createErr && <p className="error">{createErr}</p>}
-          <button type="submit">Créer l'utilisateur</button>
-        </form>
-      </div>
+            <form onSubmit={handleCreate} style={{ marginTop: 16 }}>
+              <label>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+              <label>Rôle</label>
+              <select value={role} onChange={e => setRole(e.target.value)}>
+                <option value="clinicien">Clinicien</option>
+                <option value="chercheur">Chercheur</option>
+                <option value="admin">Admin</option>
+              </select>
+              {role === 'admin' && (
+                <label style={{ textTransform: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: 'auto' }}
+                    checked={confirmAdmin}
+                    onChange={e => setConfirmAdmin(e.target.checked)}
+                  />
+                  Je confirme vouloir créer un compte admin (action sensible)
+                </label>
+              )}
+              {email && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setShowPreview((s) => !s)}
+                >
+                  {showPreview ? "Masquer l'aperçu de l'email" : "Aperçu de l'email"}
+                </button>
+              )}
+
+              {showPreview && email && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    padding: '14px 16px',
+                    background: 'var(--paper)',
+                    fontSize: 13.5,
+                  }}
+                >
+                  <p className="hint" style={{ marginTop: 0 }}>
+                    À : <strong>{email}</strong> — Sujet : Votre accès au registre clinique — mot de passe temporaire
+                  </p>
+                  <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                    <p>Bonjour,</p>
+                    <p>
+                      Un compte vous a été créé sur le registre clinique NeuroExo-Predict avec le rôle :{' '}
+                      <strong>{role}</strong>.
+                    </p>
+                    <p>
+                      Votre mot de passe temporaire est : <strong>••••••••</strong>{' '}
+                      <span className="hint">(généré à la création, non visible avant validation)</span>
+                    </p>
+                    <p>Ce mot de passe est <strong>valable 48h</strong> et devra être changé dès votre première connexion.</p>
+                    <p><a href="#" onClick={(e) => e.preventDefault()}>Se connecter</a></p>
+                    <p className="hint">Si vous n'êtes pas à l'origine de cette demande, contactez l'administrateur du système.</p>
+                  </div>
+                </div>
+              )}
+
+              {createMsg && <p className="success">{createMsg}</p>}
+              {createErr && <p className="error">{createErr}</p>}
+              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                <button type="button" className="secondary" onClick={closeCreateModal}>Annuler</button>
+                <button type="submit" style={{ flex: 1 }}>Créer l'utilisateur</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="card">
-        <h2>Liste des utilisateurs</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+          <h2>Liste des utilisateurs</h2>
+          <button
+            type="button"
+            style={{ width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px' }}
+            onClick={openCreateModal}
+          >
+            <IconPlus size={15} color="#fff" />
+            Ajouter un utilisateur
+          </button>
+        </div>
 
         <div style={{ display: 'flex', gap: 12, margin: '16px 0' }}>
           <input

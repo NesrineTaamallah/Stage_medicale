@@ -122,6 +122,24 @@ export function IconFolder({ size = 18, color = 'currentColor' }) {
   ));
 }
 
+export function IconHeart({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <path d="M12 20.5s-7.5-4.6-9.8-9.3C.8 7.8 2.6 4.5 6 4c2-.3 3.7.7 6 3 2.3-2.3 4-3.3 6-3 3.4.5 5.2 3.8 3.8 7.2C19.5 15.9 12 20.5 12 20.5z" />
+  ));
+}
+
+export function IconPlus({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <path d="M12 5v14M5 12h14" />
+  ));
+}
+
+export function IconX({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <path d="M6 6l12 12M18 6L6 18" />
+  ));
+}
+
 export function IconLogout({ size = 18, color = 'currentColor' }) {
   return base(size, color, (
     <>

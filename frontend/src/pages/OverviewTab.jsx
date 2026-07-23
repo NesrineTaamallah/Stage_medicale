@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
-import { IconAlert } from '../components/Icons';
+import { IconAlert, IconUsers, IconShield, IconChart, IconSearch } from '../components/Icons';
 
 const ACTION_LABELS = {
   CREATE_USER: 'Création de compte',
@@ -27,6 +27,28 @@ function timeAgo(dateStr) {
   if (hours < 24) return `il y a ${hours} h`;
   const days = Math.floor(hours / 24);
   return `il y a ${days} j`;
+}
+
+function HeroStatCard({ label, value, Icon, tone = 'primary' }) {
+  const palette = {
+    primary: { bg: 'var(--primary-tint)', color: 'var(--primary-deep)' },
+    success: { bg: 'var(--success-tint)', color: 'var(--success)' },
+    amber:   { bg: 'var(--amber-tint)', color: 'var(--amber)' },
+    error:   { bg: 'var(--error-tint)', color: 'var(--error)' },
+  }[tone];
+  return (
+    <div className="card" style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div>
+        <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
+        <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
+          {value}
+        </p>
+      </div>
+      <div className="icon" style={{ width: 40, height: 40, borderRadius: 12, background: palette.bg, color: palette.color }}>
+        <Icon size={18} />
+      </div>
+    </div>
+  );
 }
 
 function StatCard({ label, value, tone }) {
@@ -95,6 +117,14 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Cartes clés (vue rapide) */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard label="Utilisateurs Totaux" value={data.totalUsers} Icon={IconUsers} tone="primary" />
+        <HeroStatCard label="Comptes Actifs" value={data.totalUsers - data.inactiveAccounts} Icon={IconShield} tone="success" />
+        <HeroStatCard label="Comptes Verrouillés" value={data.lockedNow} Icon={IconChart} tone={data.lockedNow > 0 ? 'amber' : 'primary'} />
+        <HeroStatCard label="Alertes (1h)" value={data.alerts.lockoutsLastHour} Icon={IconSearch} tone={data.alerts.lockoutsLastHour > 0 ? 'error' : 'primary'} />
+      </div>
+
       {/* Alerte proéminente si activité de verrouillage récente */}
       {hasActiveAlert && (
         <div

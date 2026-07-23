@@ -114,6 +114,8 @@ async function login(req, res) {
 
     res.cookie('token', token, COOKIE_OPTIONS);
 
+    await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
+
     await pool.query(
       `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
       [user.id, 'LOGIN_PASSWORD_OK', req.ip]

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import EegTrace from '../components/EegTrace';
-import { IconShield, IconWave, IconUsers, IconFolder, IconArrowRight } from '../components/Icons';
+import BrandMark from '../components/BrandMark';
+import { IconShield, IconWave, IconUsers, IconFolder, IconArrowRight, IconLock } from '../components/Icons';
 
 const FEATURES = [
   {
@@ -29,152 +29,180 @@ export default function Home() {
   const navigate = useNavigate();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-      {/* ---------- En-tête ---------- */}
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', background: 'var(--paper)' }}>
+      {/* ---------- Barre de navigation ---------- */}
       <header
         style={{
-          maxWidth: 1040,
-          margin: '0 auto',
-          width: '100%',
-          padding: '28px 24px 0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          borderBottom: '1px solid var(--line)',
+          background: 'var(--card)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
         }}
       >
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
-          NeuroExo&#8209;Predict
-        </span>
-        <button
-          className="secondary"
-          style={{ width: 'auto' }}
-          onClick={() => navigate('/login')}
+        <div
+          style={{
+            maxWidth: 1120,
+            margin: '0 auto',
+            padding: '14px 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
         >
-          Connexion
-        </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <BrandMark size={32} />
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>
+              Registre Clinique
+            </span>
+          </div>
+
+          <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+            <a href="#fonctionnalites" style={{ fontSize: 13.5, color: 'var(--slate)', textDecoration: 'none', fontWeight: 500 }}>
+              Fonctionnalités
+            </a>
+            <a href="#apropos" style={{ fontSize: 13.5, color: 'var(--slate)', textDecoration: 'none', fontWeight: 500 }}>
+              À propos
+            </a>
+          </nav>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="secondary" style={{ width: 'auto' }} onClick={() => navigate('/login')}>
+              Connexion
+            </button>
+            <button style={{ width: 'auto', margin: 0 }} onClick={() => navigate('/login')}>
+              Commencer
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* ---------- Hero ---------- */}
-      <section style={{ padding: '48px 24px 64px' }}>
+      <section style={{ padding: '56px 24px 64px' }}>
         <div
           style={{
-            maxWidth: 1040,
+            maxWidth: 1120,
             margin: '0 auto',
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.15fr) minmax(0, 0.85fr)',
+            gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 0.95fr)',
             gap: 56,
             alignItems: 'center',
           }}
         >
           <div>
-            <p className="eyebrow">Registre clinique — accès professionnel</p>
             <h1
               style={{
                 fontFamily: 'var(--font-display)',
-                fontSize: 'clamp(32px, 4.2vw, 46px)',
-                fontWeight: 500,
+                fontSize: 'clamp(34px, 4.4vw, 48px)',
+                fontWeight: 800,
                 color: 'var(--ink)',
                 margin: '0 0 18px',
-                lineHeight: 1.12,
-                letterSpacing: '-0.5px',
+                lineHeight: 1.1,
+                letterSpacing: '-0.6px',
               }}
             >
-              Un registre pensé pour la rigueur du diagnostic neuro&#8209;exosquelette.
+              Plateforme<br />Médicale Sécurisée
             </h1>
-            <p style={{ fontSize: 15.5, color: 'var(--slate)', lineHeight: 1.65, margin: '0 0 30px', maxWidth: 480 }}>
-              NeuroExo‑Predict centralise les dossiers, les signaux EEG et les accès de votre équipe
-              clinique et de recherche, avec une authentification à deux facteurs obligatoire pour
-              chaque compte.
+            <p style={{ fontSize: 15.5, color: 'var(--slate)', lineHeight: 1.65, margin: '0 0 30px', maxWidth: 460 }}>
+              Registre clinique professionnel avec authentification sécurisée, authentification 2FA
+              et gestion administrative complète pour vos données médicales.
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <button
-                style={{ width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 24px' }}
+                style={{ width: 'auto', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 24px' }}
                 onClick={() => navigate('/login')}
               >
-                Accéder au registre
+                Se Connecter
                 <IconArrowRight size={16} color="#fff" />
               </button>
-              <span style={{ fontSize: 12.5, color: 'var(--slate-soft)' }}>
-                Accès réservé au personnel autorisé
-              </span>
+              <button
+                className="secondary"
+                style={{ width: 'auto', padding: '13px 22px' }}
+                onClick={() => document.getElementById('fonctionnalites')?.scrollIntoView({ behavior: 'smooth' })}
+              >
+                En Savoir Plus
+              </button>
             </div>
           </div>
 
-          {/* ---------- Panneau "tracé EEG" (signature) ---------- */}
+          {/* ---------- Panneau "Sécurité Maximale" ---------- */}
           <div
             style={{
-              background: 'var(--card)',
-              border: '1px solid var(--line)',
-              borderRadius: 4,
-              padding: '22px 22px 18px',
-              boxShadow: '0 1px 2px rgba(20,40,44,0.04)',
+              background: 'linear-gradient(135deg, var(--primary-soft), var(--accent-tint))',
+              borderRadius: 20,
+              padding: '48px 32px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
             }}
           >
             <div
               style={{
+                width: 76,
+                height: 76,
+                borderRadius: 20,
+                background: 'rgba(255,255,255,0.55)',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                marginBottom: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 20,
               }}
             >
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--slate-soft)', letterSpacing: 0.4 }}>
-                CANAL EEG — DÉMONSTRATION
-              </span>
-              <span className="badge badge-success">Signal actif</span>
+              <IconLock size={34} color="var(--primary-deep)" />
             </div>
-            {[0, 1, 2].map((i) => (
-              <EegTrace key={i} />
-            ))}
-            <hr className="hairline" style={{ margin: '4px 0 14px' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--slate-soft)' }}>
-              <span>Réf. dossier 000&#8209;000</span>
-              <span>2FA · TOTP</span>
-            </div>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 19, fontWeight: 700, margin: '0 0 8px', color: 'var(--ink)' }}>
+              Sécurité Maximale
+            </h3>
+            <p style={{ fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.6, margin: 0, maxWidth: 260 }}>
+              Vos données sont protégées par les protocoles de sécurité les plus avancés
+            </p>
           </div>
         </div>
       </section>
 
-      <hr className="hairline" style={{ maxWidth: 1040, margin: '0 auto', width: 'calc(100% - 48px)' }} />
-
       {/* ---------- Fonctionnalités ---------- */}
-      <section style={{ padding: '56px 24px', flex: 1 }}>
-        <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-          <p className="eyebrow">Ce que couvre la plateforme</p>
+      <section id="fonctionnalites" style={{ padding: '16px 24px 64px', flex: 1 }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+          <h2
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 30,
+              fontWeight: 800,
+              textAlign: 'center',
+              margin: '0 0 40px',
+              color: 'var(--ink)',
+            }}
+          >
+            Fonctionnalités Principales
+          </h2>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 0,
-              border: '1px solid var(--line)',
-              borderRadius: 4,
-              overflow: 'hidden',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+              gap: 20,
             }}
           >
-            {FEATURES.map(({ Icon, title, desc }, i) => (
+            {FEATURES.map(({ Icon, title, desc }) => (
               <div
                 key={title}
-                style={{
-                  padding: '26px 24px',
-                  background: 'var(--card)',
-                  borderRight: i % 2 === 0 ? '1px solid var(--line)' : 'none',
-                  borderBottom: i < 2 ? '1px solid var(--line)' : 'none',
-                }}
+                className="card"
+                style={{ padding: '26px 22px' }}
               >
                 <div
                   className="icon"
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 4,
-                    background: 'var(--teal-tint)',
-                    color: 'var(--teal-deep)',
-                    marginBottom: 14,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: 'var(--primary-tint)',
+                    color: 'var(--primary-deep)',
+                    marginBottom: 16,
                   }}
                 >
-                  <Icon size={17} />
+                  <Icon size={19} />
                 </div>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 500, margin: '0 0 6px', color: 'var(--ink)' }}>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 15.5, fontWeight: 700, margin: '0 0 6px', color: 'var(--ink)' }}>
                   {title}
                 </h3>
                 <p style={{ fontSize: 13, color: 'var(--slate)', lineHeight: 1.55, margin: 0 }}>{desc}</p>
@@ -186,20 +214,29 @@ export default function Home() {
 
       {/* ---------- Pied de page ---------- */}
       <footer
+        id="apropos"
         style={{
           borderTop: '1px solid var(--line)',
+          background: 'var(--card)',
           padding: '20px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          maxWidth: 1040,
-          margin: '0 auto',
-          width: 'calc(100% - 48px)',
-          fontSize: 12,
-          color: 'var(--slate-soft)',
         }}
       >
-        <span>© {new Date().getFullYear()} NeuroExo‑Predict</span>
-        <span>Registre clinique interne — usage professionnel uniquement</span>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            maxWidth: 1120,
+            margin: '0 auto',
+            width: '100%',
+            fontSize: 12,
+            color: 'var(--slate-soft)',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
+        >
+          <span>© {new Date().getFullYear()} Registre Clinique — NeuroExo‑Predict</span>
+          <span>Registre clinique interne — usage professionnel uniquement</span>
+        </div>
       </footer>
     </div>
   );

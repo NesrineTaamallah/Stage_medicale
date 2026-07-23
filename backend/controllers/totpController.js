@@ -99,6 +99,8 @@ async function validateTotp(req, res) {
 
     res.cookie('token', finalToken, COOKIE_OPTIONS);
 
+    await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
+
     await pool.query(
       `INSERT INTO access_logs (user_id, action, success) VALUES ($1, $2, true)`,
       [user.id, 'TOTP_OK']

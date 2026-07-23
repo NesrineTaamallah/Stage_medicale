@@ -65,7 +65,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
 
   const [actionFilter, setActionFilter] = useState(initialFilters?.action || '');
   const [userIdFilter, setUserIdFilter] = useState(initialFilters?.userId || '');
-  const [ipFilter, setIpFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
@@ -85,7 +84,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
       const params = { page, pageSize };
       if (actionFilter) params.action = actionFilter;
       if (userIdFilter) params.userId = userIdFilter;
-      if (ipFilter) params.ip = ipFilter;
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       const { data } = await client.get('/admin/logs', { params });
@@ -96,7 +94,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     } finally {
       setLoading(false);
     }
-  }, [actionFilter, userIdFilter, ipFilter, dateFrom, dateTo, page]);
+  }, [actionFilter, userIdFilter, dateFrom, dateTo, page]);
 
   const fetchAnomalies = useCallback(async () => {
     setAnomaliesLoading(true);
@@ -136,7 +134,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   }
 
   function resetFilters() {
-    setActionFilter(''); setUserIdFilter(''); setIpFilter('');
+    setActionFilter(''); setUserIdFilter('');
     setDateFrom(''); setDateTo(''); setPage(1);
   }
 
@@ -144,7 +142,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     const params = new URLSearchParams();
     if (actionFilter) params.set('action', actionFilter);
     if (userIdFilter) params.set('userId', userIdFilter);
-    if (ipFilter) params.set('ip', ipFilter);
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
     // withCredentials est requis (cookie httpOnly) : on ouvre l'URL absolue du backend
@@ -176,7 +173,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                       <th style={{ padding: '6px' }}>Date</th>
                       <th>Action</th>
                       <th>Statut</th>
-                      <th>IP</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -185,7 +181,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                         <td style={{ padding: '6px' }}>{fmtDate(l.created_at)}</td>
                         <td>{l.action}</td>
                         <td><SuccessBadge success={l.success} /></td>
-                        <td>{l.ip_address || '—'}</td>
                       </tr>
                     ))}
                     {timeline.logs.length === 0 && (
@@ -330,12 +325,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
             {ACTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <input
-            style={{ maxWidth: 180 }}
-            placeholder="Filtrer par IP..."
-            value={ipFilter}
-            onChange={(e) => { setIpFilter(e.target.value); setPage(1); }}
-          />
-          <input
             type="date"
             style={{ maxWidth: 160 }}
             value={dateFrom}
@@ -372,7 +361,6 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                   <th>Utilisateur</th>
                   <th>Action</th>
                   <th>Statut</th>
-                  <th>IP</th>
                 </tr>
               </thead>
               <tbody>
@@ -386,11 +374,10 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                     <td>{l.user_email || '—'}</td>
                     <td>{l.action}</td>
                     <td><SuccessBadge success={l.success} /></td>
-                    <td>{l.ip_address || '—'}</td>
                   </tr>
                 ))}
                 {logs.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
+                  <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
                 )}
               </tbody>
             </table>
