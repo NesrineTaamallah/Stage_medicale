@@ -12,6 +12,22 @@ const NAV_ITEMS = [
   { key: 'logs', Icon: IconSearch, label: 'Journaux' },
 ];
 
+/**
+ * Extrait un "Prénom Nom" présentable à partir d'un email du type
+ * prenom.nom@domaine.tld (format utilisé par tous les comptes du registre).
+ * Pas de casse-tête si le format ne matche pas : on retombe sur la partie
+ * locale de l'email telle quelle plutôt que d'afficher un email brut.
+ */
+function displayNameFromEmail(email) {
+  if (!email) return 'Administrateur';
+  const local = email.split('@')[0];
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length === 0) return local;
+  return parts
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('overview');
@@ -38,102 +54,110 @@ export default function AdminDashboard() {
     setTab('users');
   }
 
+  const displayName = displayNameFromEmail(user?.email);
+
   return (
-    <div style={{ minHeight: '100svh', background: 'var(--paper)' }}>
-      {/* ---------- Barre supérieure ---------- */}
-      <header style={{ background: 'var(--card)', borderBottom: '1px solid var(--line)' }}>
-        <div
-          style={{
-            maxWidth: 1120, margin: '0 auto', padding: '16px 24px',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap',
-          }}
-        >
+    <div style={{ minHeight: '100svh', background: 'var(--paper)', display: 'flex' }}>
+      {/* ---------- Barre latérale gauche ---------- */}
+      <aside
+        style={{
+          width: 248,
+          flexShrink: 0,
+          background: 'var(--card)',
+          borderRight: '1px solid var(--line)',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100svh',
+          position: 'sticky',
+          top: 0,
+        }}
+      >
+        <div style={{ padding: '22px 20px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <BrandMark size={38} />
             <div>
-              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, color: 'var(--ink)', margin: 0, lineHeight: 1.25 }}>
-                Admin Dashboard
+              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--ink)', margin: 0, lineHeight: 1.25 }}>
+                NeuroExo-Predict
               </p>
-              <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>
-                Plateforme Médicale · Gestion Administrative
+              <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: 0 }}>
+                Institut National de Neurologie
               </p>
             </div>
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Admin User</p>
-              <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate-soft)' }}>{user?.email}</p>
-            </div>
-            <button
-              className="secondary"
-              onClick={logout}
-              style={{ width: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px' }}
-            >
-              <IconLogout size={14} />
-              Déconnexion
-            </button>
-          </div>
         </div>
 
-        {/* ---------- Onglets horizontaux ---------- */}
-        <div style={{ maxWidth: 1120, margin: '0 auto', padding: '0 24px' }}>
-          <nav style={{ display: 'flex', gap: 6 }}>
-            {NAV_ITEMS.map((item) => {
-              const active = tab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setTab(item.key)}
-                  style={{
-                    width: 'auto',
-                    margin: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '11px 6px',
-                    fontSize: 13.5,
-                    fontWeight: 600,
-                    background: 'transparent',
-                    color: active ? 'var(--primary)' : 'var(--slate)',
-                    boxShadow: 'none',
-                    border: 'none',
-                    borderBottom: active ? '2px solid var(--primary)' : '2px solid transparent',
-                    borderRadius: 0,
-                  }}
-                >
-                  <item.Icon size={15} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '14px 12px', flex: 1 }}>
+          {NAV_ITEMS.map((item) => {
+            const active = tab === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setTab(item.key)}
+                style={{
+                  width: '100%',
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  background: active ? 'var(--primary-tint)' : 'transparent',
+                  color: active ? 'var(--primary)' : 'var(--slate)',
+                  boxShadow: 'none',
+                  border: 'none',
+                  borderLeft: active ? '3px solid var(--primary)' : '3px solid transparent',
+                  borderRadius: 8,
+                }}
+              >
+                <item.Icon size={16} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div style={{ padding: 16, borderTop: '1px solid var(--line)' }}>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Bienvenue,</p>
+          <p style={{ margin: '2px 0 2px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{displayName}</p>
+          <p style={{ margin: '0 0 12px', fontSize: 11.5, color: 'var(--slate-soft)', wordBreak: 'break-all' }}>{user?.email}</p>
+          <button
+            className="secondary"
+            onClick={logout}
+            style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 14px' }}
+          >
+            <IconLogout size={14} />
+            Déconnexion
+          </button>
         </div>
-      </header>
+      </aside>
 
       {/* ---------- Contenu ---------- */}
-      <div className="dashboard" style={{ maxWidth: 1120 }}>
-        {tab === 'overview' && (
-          <OverviewTab
-            onNavigateToLogs={goToLogs}
-            onNavigateToUser={goToUserTimeline}
-            onNavigateToUsersFilter={goToUsersFilter}
-          />
-        )}
-        {tab === 'users' && (
-          <UsersTab
-            onNavigateToUserLogs={goToUserTimeline}
-            initialQuickFilter={usersQuickFilter}
-            onQuickFilterHandled={() => setUsersQuickFilter(null)}
-          />
-        )}
-        {tab === 'logs' && (
-          <LogsTab
-            initialFilters={logsFilters}
-            focusUserId={focusUserId}
-            onFocusUserHandled={() => setFocusUserId(null)}
-          />
-        )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="dashboard" style={{ maxWidth: 1120 }}>
+          {tab === 'overview' && (
+            <OverviewTab
+              onNavigateToLogs={goToLogs}
+              onNavigateToUser={goToUserTimeline}
+              onNavigateToUsersFilter={goToUsersFilter}
+            />
+          )}
+          {tab === 'users' && (
+            <UsersTab
+              onNavigateToUserLogs={goToUserTimeline}
+              initialQuickFilter={usersQuickFilter}
+              onQuickFilterHandled={() => setUsersQuickFilter(null)}
+            />
+          )}
+          {tab === 'logs' && (
+            <LogsTab
+              initialFilters={logsFilters}
+              focusUserId={focusUserId}
+              onFocusUserHandled={() => setFocusUserId(null)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -352,19 +352,30 @@ async function getOverview(req, res) {
       pool.query(`
         SELECT d::date AS day,
                COALESCE(COUNT(DISTINCT al.user_id) FILTER (WHERE al.action = 'LOGIN_PASSWORD_OK' AND al.success = true), 0)::int AS count
-        FROM generate_series(CURRENT_DATE - interval '29 days', CURRENT_DATE, interval '1 day') d
-        LEFT JOIN access_logs al ON al.created_at::date = d::date
+        FROM generate_series(
+          (now() AT TIME ZONE 'Africa/Tunis')::date - interval '29 days',
+          (now() AT TIME ZONE 'Africa/Tunis')::date,
+          interval '1 day'
+        ) d
+        LEFT JOIN access_logs al ON (al.created_at AT TIME ZONE 'Africa/Tunis')::date = d::date
         GROUP BY d
         ORDER BY d
       `),
       // --- Historique actions admin par jour/type (7 jours), pour l'aire empilée ---
+      // NB : on calcule "aujourd'hui" dans le fuseau Africa/Tunis (pas CURRENT_DATE,
+      // qui tourne en UTC côté session Postgres et faisait "retarder" le graphe
+      // d'un jour entre minuit et 1h du matin heure de Tunis).
       pool.query(`
         SELECT d::date AS day,
                regexp_replace(al.action, ':.*$', '') AS action_type,
                COUNT(*)::int AS count
-        FROM generate_series(CURRENT_DATE - interval '6 days', CURRENT_DATE, interval '1 day') d
+        FROM generate_series(
+          (now() AT TIME ZONE 'Africa/Tunis')::date - interval '6 days',
+          (now() AT TIME ZONE 'Africa/Tunis')::date,
+          interval '1 day'
+        ) d
         LEFT JOIN access_logs al
-          ON al.created_at::date = d::date
+          ON (al.created_at AT TIME ZONE 'Africa/Tunis')::date = d::date
           AND al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD|RESET_2FA|UNLOCK_ACCOUNT|DEACTIVATE_ACCOUNT|REACTIVATE_ACCOUNT)'
         GROUP BY d, action_type
         ORDER BY d
@@ -383,9 +394,13 @@ async function getOverview(req, res) {
         SELECT d::date AS day,
                COUNT(*) FILTER (WHERE al.success)::int AS ok,
                COUNT(al.id)::int AS total
-        FROM generate_series(CURRENT_DATE - interval '6 days', CURRENT_DATE, interval '1 day') d
+        FROM generate_series(
+          (now() AT TIME ZONE 'Africa/Tunis')::date - interval '6 days',
+          (now() AT TIME ZONE 'Africa/Tunis')::date,
+          interval '1 day'
+        ) d
         LEFT JOIN access_logs al
-          ON al.created_at::date = d::date
+          ON (al.created_at AT TIME ZONE 'Africa/Tunis')::date = d::date
           AND al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
         GROUP BY d
         ORDER BY d
@@ -535,11 +550,19 @@ async function getLogs(req, res) {
 
     params.push(pageSize);
     params.push(offset);
+    // target_email : pour les actions du type "ACTION:<uuid>" (ex. DEACTIVATE_ACCOUNT,
+    // REACTIVATE_ACCOUNT, UNLOCK_ACCOUNT, VIEW_USER_TIMELINE, RESET_2FA...), on résout
+    // l'UUID cible vers l'email du compte concerné, pour affichage direct côté front
+    // (l'admin ne devrait jamais avoir à lire un UUID brut).
     const result = await pool.query(
       `SELECT al.id, al.user_id, u.email AS user_email, al.action, al.success,
-              al.ip_address, al.created_at, al.user_agent, al.session_id
+              al.ip_address, al.created_at, al.user_agent, al.session_id,
+              target_u.email AS target_email
        FROM access_logs al
        LEFT JOIN users u ON u.id = al.user_id
+       LEFT JOIN users target_u
+         ON al.action ~ ':[0-9a-fA-F-]{36}$'
+         AND target_u.id::text = split_part(al.action, ':', 2)
        ${whereClause}
        ORDER BY al.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -763,9 +786,14 @@ async function getUserTimeline(req, res) {
     }
 
     const logsResult = await pool.query(
-      `SELECT id, action, success, ip_address, created_at, user_agent, session_id
-       FROM access_logs WHERE user_id = $1
-       ORDER BY created_at DESC
+      `SELECT al.id, al.action, al.success, al.ip_address, al.created_at, al.user_agent, al.session_id,
+              target_u.email AS target_email
+       FROM access_logs al
+       LEFT JOIN users target_u
+         ON al.action ~ ':[0-9a-fA-F-]{36}$'
+         AND target_u.id::text = split_part(al.action, ':', 2)
+       WHERE al.user_id = $1
+       ORDER BY al.created_at DESC
        LIMIT 500`,
       [id]
     );

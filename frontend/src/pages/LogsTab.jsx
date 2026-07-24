@@ -1,5 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client';
+
+/**
+ * Découpe une action stockée en base (ex. "DEACTIVATE_ACCOUNT:5c2617e0-...")
+ * en libellé lisible + email du compte concerné, pour ne jamais afficher
+ * un UUID brut à l'admin. target_email est résolu côté backend (getLogs /
+ * getUserTimeline) via une jointure sur l'UUID cible.
+ */
+const ACTION_LABELS = {
+  VIEW_USER_TIMELINE: 'Consultation timeline',
+  DEACTIVATE_ACCOUNT: 'Désactivation de compte',
+  REACTIVATE_ACCOUNT: 'Réactivation de compte',
+  UNLOCK_ACCOUNT: 'Déverrouillage de compte',
+  RESET_2FA: 'Réinitialisation 2FA',
+  RESEND_TEMP_PASSWORD: 'Renvoi mot de passe temporaire',
+};
+
+function formatAction(action, targetEmail) {
+  const [type] = action.split(':');
+  const label = ACTION_LABELS[type] || type;
+  if (targetEmail) return `${label} — ${targetEmail}`;
+  return action;
+}
 
 const ACTION_OPTIONS = [
   { value: '', label: 'Toutes les actions' },
@@ -73,6 +95,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
 
   const [timeline, setTimeline] = useState(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const timelineRef = useRef(null);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -125,6 +148,12 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   async function openTimeline(userId) {
     setTimelineLoading(true);
     setTimeline(null);
+    // La timeline est déjà le premier bloc du DOM, mais si l'admin a cliqué
+    // sur une ligne loin en bas du tableau, il ne la voit pas apparaître :
+    // on scrolle explicitement jusqu'à elle.
+    requestAnimationFrame(() => {
+      timelineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     try {
       const { data } = await client.get(`/admin/logs/user/${userId}`);
       setTimeline(data);
@@ -258,7 +287,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Timeline utilisateur (vue détail, ouverte depuis navigation croisée ou clic sur une ligne) */}
       {(timelineLoading || timeline) && (
-        <div className="card" style={{ borderLeft: '3px solid var(--teal)' }}>
+        <div ref={timelineRef} className="card" style={{ borderLeft: '3px solid var(--teal)', scrollMarginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <h2>
               {timelineLoading ? 'Chargement de la timeline...' : timeline?.error ? 'Erreur' : `Timeline — ${timeline.user.email}`}
@@ -283,7 +312,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                     {timeline.logs.map((l) => (
                       <tr key={l.id} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px' }}>{fmtDate(l.created_at)}</td>
-                        <td>{l.action}</td>
+                        <td>{formatAction(l.action, l.target_email)}</td>
                         <td>
                           {l.user_agent ? (
                             <span className="hint" style={{ fontSize: 12 }} title={l.user_agent}>
@@ -524,7 +553,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                   >
                     <td style={{ padding: '8px 6px' }}>{fmtDate(l.created_at)}</td>
                     <td>{l.user_email || '—'}</td>
-                    <td>{l.action}</td>
+                    <td>{formatAction(l.action, l.target_email)}</td>
                     <td>
                       {l.ip_address ? (
                         <span
