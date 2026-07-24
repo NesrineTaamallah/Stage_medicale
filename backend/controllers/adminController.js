@@ -233,7 +233,7 @@ async function resendTempPassword(req, res) {
       await pool.query(
         `INSERT INTO access_logs (user_id, action, success, ip_address)
          VALUES ($1, $2, false, $3)`,
-        [adminId, `RESEND_TEMP_PASSWORD_EMAIL_FAILED:${id}`, req.ip]
+        [adminId, `RESEND_TEMP_PASSWORD_EMAIL_FAILED:${user.email}`, req.ip]
       );
 
       return res.status(502).json({
