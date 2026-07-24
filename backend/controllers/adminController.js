@@ -1,12 +1,33 @@
 const pool = require('../config/db');
-const { generateTempPassword, hashPassword } = require('../utils/passwordUtils');
+const { generateTempPassword, hashPassword, verifyPassword } = require('../utils/passwordUtils');
 const { sendTempPasswordEmail } = require('../utils/mailer');
 
 async function createUser(req, res) {
-  const { email, role } = req.body; // déjà validé (email + rôle) par le middleware validate
+  const { email, role, adminPassword } = req.body; // déjà validé (email + rôle) par le middleware validate
   const adminId = req.user.sub;
 
   try {
+    // Step-up auth : la création d'un compte admin est une action sensible.
+    // On exige que l'admin re-saisisse son propre mot de passe pour la confirmer,
+    // au-delà de la simple checkbox (qui ne protège que contre les mis-clics,
+    // pas contre une session laissée ouverte / un compte compromis).
+    if (role === 'admin') {
+      if (!adminPassword) {
+        return res.status(400).json({ error: 'Confirmez votre mot de passe pour créer un compte admin.' });
+      }
+      const selfResult = await pool.query('SELECT password_hash FROM users WHERE id = $1', [adminId]);
+      const selfHash = selfResult.rows[0]?.password_hash;
+      const passwordOk = selfHash && await verifyPassword(adminPassword, selfHash);
+      if (!passwordOk) {
+        await pool.query(
+          `INSERT INTO access_logs (user_id, action, success, ip_address)
+           VALUES ($1, $2, false, $3)`,
+          [adminId, 'CREATE_USER_STEPUP_AUTH_FAILED', req.ip]
+        );
+        return res.status(401).json({ error: 'Mot de passe incorrect. Création du compte admin annulée.' });
+      }
+    }
+
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'Un compte existe déjà avec cet email.' });
@@ -476,7 +497,7 @@ const KNOWN_ACTIONS = [
  * Query params : action, userId, ip, dateFrom, dateTo, page, pageSize
  */
 async function getLogs(req, res) {
-  const { action, userId, ip, dateFrom, dateTo } = req.query;
+  const { action, userId, ip, dateFrom, dateTo, emailFailed } = req.query;
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 1), 200);
   const offset = (page - 1) * pageSize;
@@ -484,7 +505,12 @@ async function getLogs(req, res) {
   const conditions = [];
   const params = [];
 
-  if (action) {
+  // Raccourci "emails échoués" utilisé par le bouton dédié de la Vue d'ensemble :
+  // regroupe les deux actions d'envoi d'email (création + renvoi) en échec,
+  // sans que l'admin ait à connaître les noms exacts des actions.
+  if (emailFailed === 'true') {
+    conditions.push(`(al.action LIKE 'CREATE_USER%' OR al.action LIKE 'RESEND_TEMP_PASSWORD%') AND al.success = false`);
+  } else if (action) {
     params.push(`${action}%`);
     conditions.push(`al.action LIKE $${params.length}`);
   }

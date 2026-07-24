@@ -21,6 +21,9 @@ const createUserSchema = z.object({
   role: z.enum(['clinicien', 'chercheur', 'admin'], {
     errorMap: () => ({ message: 'Rôle invalide.' }),
   }),
+  // Step-up auth : requis uniquement quand role === 'admin' (re-vérifié côté contrôleur,
+  // car zod seul ne peut pas exprimer facilement une dépendance conditionnelle propre ici).
+  adminPassword: z.string().optional(),
 });
 
 const totpCodeSchema = z.object({

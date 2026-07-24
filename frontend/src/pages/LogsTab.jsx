@@ -68,6 +68,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   const [ipFilter, setIpFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [emailFailedFilter, setEmailFailedFilter] = useState(!!initialFilters?.emailFailed);
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
@@ -83,7 +84,11 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     setError('');
     try {
       const params = { page, pageSize };
-      if (actionFilter) params.action = actionFilter;
+      if (emailFailedFilter) {
+        params.emailFailed = true;
+      } else if (actionFilter) {
+        params.action = actionFilter;
+      }
       if (userIdFilter) params.userId = userIdFilter;
       if (ipFilter) params.ip = ipFilter;
       if (dateFrom) params.dateFrom = dateFrom;
@@ -96,7 +101,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     } finally {
       setLoading(false);
     }
-  }, [actionFilter, userIdFilter, ipFilter, dateFrom, dateTo, page]);
+  }, [actionFilter, userIdFilter, ipFilter, dateFrom, dateTo, emailFailedFilter, page]);
 
   const fetchAnomalies = useCallback(async () => {
     setAnomaliesLoading(true);
@@ -323,8 +328,36 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
         <h2>Flux de logs</h2>
         <p className="subtitle">Historique chronologique complet, filtrable.</p>
 
+        {emailFailedFilter && (
+          <div
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 10,
+              padding: '6px 12px', borderRadius: 999, background: 'var(--primary-tint)',
+              color: 'var(--primary-deep)', fontSize: 12.5, fontWeight: 600,
+            }}
+          >
+            Filtre : Emails échoués (création + renvoi de mot de passe)
+            <button
+              type="button"
+              onClick={() => { setEmailFailedFilter(false); setPage(1); }}
+              style={{
+                width: 'auto', margin: 0, padding: 0, background: 'transparent', border: 'none',
+                boxShadow: 'none', color: 'inherit', cursor: 'pointer', fontWeight: 700, lineHeight: 1,
+              }}
+              aria-label="Retirer le filtre"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0' }}>
-          <select style={{ maxWidth: 240 }} value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}>
+          <select
+            style={{ maxWidth: 240 }}
+            value={actionFilter}
+            disabled={emailFailedFilter}
+            onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
+          >
             {ACTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <input

@@ -82,7 +82,26 @@ function ActionsMenu({ user, busy, open, onToggleOpen, onHistory, onResendPasswo
   );
 }
 
-export default function UsersTab({ onNavigateToUserLogs }) {
+const DORMANT_DAYS = 60;
+
+// Filtres rapides déclenchés depuis la Vue d'ensemble ("revue groupée") :
+// évite à l'admin de recréer manuellement le filtre qu'il vient de voir sur un compteur.
+const QUICK_FILTERS = {
+  dormant: {
+    label: 'Comptes dormants (> 60j sans connexion)',
+    test: (u) => {
+      if (!u.is_active || !u.last_login_at) return false;
+      const days = (Date.now() - new Date(u.last_login_at).getTime()) / (1000 * 60 * 60 * 24);
+      return days > DORMANT_DAYS;
+    },
+  },
+  tempPassword: {
+    label: 'Mots de passe temporaires en attente ou expirés',
+    test: (u) => !!u.tempPasswordStatus,
+  },
+};
+
+export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQuickFilterHandled }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,6 +110,14 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   // Filtres
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [quickFilter, setQuickFilter] = useState(initialQuickFilter || null);
+
+  useEffect(() => {
+    if (initialQuickFilter) {
+      setQuickFilter(initialQuickFilter);
+      onQuickFilterHandled?.();
+    }
+  }, [initialQuickFilter, onQuickFilterHandled]);
 
   // Tri (correction #2)
   const [sortBy, setSortBy] = useState('created_at');
@@ -101,6 +128,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('clinicien');
   const [confirmAdmin, setConfirmAdmin] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
   const [showPreview, setShowPreview] = useState(false); // correction #1
   const [createMsg, setCreateMsg] = useState('');
   const [createErr, setCreateErr] = useState('');
@@ -126,7 +154,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   }, []);
 
   function openCreateModal() {
-    setEmail(''); setRole('clinicien'); setConfirmAdmin(false);
+    setEmail(''); setRole('clinicien'); setConfirmAdmin(false); setAdminPassword('');
     setShowPreview(false); setCreateMsg(''); setCreateErr('');
     setShowCreateModal(true);
   }
@@ -177,11 +205,18 @@ export default function UsersTab({ onNavigateToUserLogs }) {
       setCreateErr('Cochez la confirmation pour créer un compte admin.');
       return;
     }
+    if (role === 'admin' && !adminPassword) {
+      setCreateErr('Ressaisissez votre mot de passe pour confirmer la création d\'un compte admin.');
+      return;
+    }
 
     try {
-      const { data } = await client.post('/admin/users', { email, role });
+      const { data } = await client.post('/admin/users', {
+        email, role,
+        ...(role === 'admin' ? { adminPassword } : {}),
+      });
       setCreateMsg(`Compte créé pour ${data.user.email} (${data.user.role}).`);
-      setEmail(''); setConfirmAdmin(false); setShowPreview(false);
+      setEmail(''); setConfirmAdmin(false); setAdminPassword(''); setShowPreview(false);
       fetchUsers();
       setTimeout(() => setShowCreateModal(false), 900);
     } catch (err) {
@@ -209,7 +244,8 @@ export default function UsersTab({ onNavigateToUserLogs }) {
     .filter((u) => {
       const matchRole = roleFilter === 'all' || u.role === roleFilter;
       const matchSearch = u.email.toLowerCase().includes(search.toLowerCase());
-      return matchRole && matchSearch;
+      const matchQuick = !quickFilter || QUICK_FILTERS[quickFilter].test(u);
+      return matchRole && matchSearch && matchQuick;
     })
     .sort((a, b) => {
       let va, vb;
@@ -258,6 +294,22 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                   />
                   Je confirme vouloir créer un compte admin (action sensible)
                 </label>
+              )}
+              {role === 'admin' && (
+                <>
+                  <label style={{ marginTop: 12 }}>Votre mot de passe (confirmation)</label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={e => setAdminPassword(e.target.value)}
+                    placeholder="Ressaisissez votre mot de passe admin"
+                    autoComplete="current-password"
+                    required
+                  />
+                  <p className="hint" style={{ marginTop: 4 }}>
+                    Confirmation renforcée (step-up auth) exigée pour toute création de compte admin.
+                  </p>
+                </>
               )}
               {email && (
                 <button
@@ -324,6 +376,29 @@ export default function UsersTab({ onNavigateToUserLogs }) {
             Ajouter un utilisateur
           </button>
         </div>
+
+        {quickFilter && QUICK_FILTERS[quickFilter] && (
+          <div
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 10,
+              padding: '6px 12px', borderRadius: 999, background: 'var(--primary-tint)',
+              color: 'var(--primary-deep)', fontSize: 12.5, fontWeight: 600,
+            }}
+          >
+            Filtre : {QUICK_FILTERS[quickFilter].label}
+            <button
+              type="button"
+              onClick={() => setQuickFilter(null)}
+              style={{
+                width: 'auto', margin: 0, padding: 0, background: 'transparent', border: 'none',
+                boxShadow: 'none', color: 'inherit', cursor: 'pointer', fontWeight: 700, lineHeight: 1,
+              }}
+              aria-label="Retirer le filtre"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 12, margin: '16px 0' }}>
           <input

@@ -18,6 +18,7 @@ export default function AdminDashboard() {
 
   const [logsFilters, setLogsFilters] = useState({});
   const [focusUserId, setFocusUserId] = useState(null);
+  const [usersQuickFilter, setUsersQuickFilter] = useState(null);
 
   function goToLogs(filters) {
     setLogsFilters(filters || {});
@@ -27,6 +28,14 @@ export default function AdminDashboard() {
   function goToUserTimeline(userId) {
     setFocusUserId(userId);
     setTab('logs');
+  }
+
+  // Boutons "revue groupée" de la Vue d'ensemble : envoie directement vers
+  // l'onglet Utilisateurs avec un filtre rapide déjà appliqué, plutôt que de
+  // laisser l'admin re-chercher les comptes un par un.
+  function goToUsersFilter(quickFilter) {
+    setUsersQuickFilter(quickFilter);
+    setTab('users');
   }
 
   return (
@@ -105,9 +114,19 @@ export default function AdminDashboard() {
       {/* ---------- Contenu ---------- */}
       <div className="dashboard" style={{ maxWidth: 1120 }}>
         {tab === 'overview' && (
-          <OverviewTab onNavigateToLogs={goToLogs} onNavigateToUser={goToUserTimeline} />
+          <OverviewTab
+            onNavigateToLogs={goToLogs}
+            onNavigateToUser={goToUserTimeline}
+            onNavigateToUsersFilter={goToUsersFilter}
+          />
         )}
-        {tab === 'users' && <UsersTab onNavigateToUserLogs={goToUserTimeline} />}
+        {tab === 'users' && (
+          <UsersTab
+            onNavigateToUserLogs={goToUserTimeline}
+            initialQuickFilter={usersQuickFilter}
+            onQuickFilterHandled={() => setUsersQuickFilter(null)}
+          />
+        )}
         {tab === 'logs' && (
           <LogsTab
             initialFilters={logsFilters}
