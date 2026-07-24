@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const { generateTempPassword, hashPassword, verifyPassword } = require('../utils/passwordUtils');
 const { sendTempPasswordEmail } = require('../utils/mailer');
+const { logAccess } = require('../utils/accessLog');
 
 async function createUser(req, res) {
   const { email, role, adminPassword } = req.body; // déjà validé (email + rôle) par le middleware validate
@@ -28,11 +29,7 @@ async function createUser(req, res) {
       const selfHash = selfResult.rows[0]?.password_hash;
       const passwordOk = selfHash && await verifyPassword(adminPassword, selfHash);
       if (!passwordOk) {
-        await pool.query(
-          `INSERT INTO access_logs (user_id, action, success, ip_address)
-           VALUES ($1, $2, false, $3)`,
-          [adminId, 'CREATE_USER_STEPUP_AUTH_FAILED', req.ip]
-        );
+        await logAccess({ userId: adminId, action: 'CREATE_USER_STEPUP_AUTH_FAILED', success: false, req });
         return res.status(401).json({ error: 'Mot de passe incorrect. Création du compte admin annulée.' });
       }
     }
@@ -64,11 +61,7 @@ async function createUser(req, res) {
       // Rollback : on supprime le compte tout juste créé
       await pool.query('DELETE FROM users WHERE id = $1', [newUser.id]);
 
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address)
-         VALUES ($1, $2, false, $3)`,
-        [adminId, `CREATE_USER_EMAIL_FAILED:${email}`, req.ip]
-      );
+      await logAccess({ userId: adminId, action: `CREATE_USER_EMAIL_FAILED:${email}`, success: false, req });
 
       return res.status(502).json({
         error:
@@ -77,11 +70,7 @@ async function createUser(req, res) {
       });
     }
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `CREATE_USER:${newUser.id}`, req.ip]
-    );
+    await logAccess({ userId: adminId, action: `CREATE_USER:${newUser.id}`, success: true, req });
 
     return res.status(201).json({
       message: 'Utilisateur créé, email envoyé avec le mot de passe temporaire.',
@@ -141,11 +130,7 @@ async function resetTotp(req, res) {
       return res.status(404).json({ error: 'Utilisateur introuvable.' });
     }
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `RESET_2FA:${id}`, req.ip]
-    );
+    await logAccess({ userId: adminId, action: `RESET_2FA:${id}`, success: true, req });
 
     return res.json({
       message: `2FA réinitialisé pour ${result.rows[0].email}. L'utilisateur devra reconfigurer un nouveau QR code à sa prochaine connexion.`,
@@ -230,22 +215,14 @@ async function resendTempPassword(req, res) {
         [previousHash, id]
       );
 
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address)
-         VALUES ($1, $2, false, $3)`,
-        [adminId, `RESEND_TEMP_PASSWORD_EMAIL_FAILED:${user.email}`, req.ip]
-      );
+      await logAccess({ userId: adminId, action: `RESEND_TEMP_PASSWORD_EMAIL_FAILED:${user.email}`, success: false, req });
 
       return res.status(502).json({
         error: "L'envoi de l'email a échoué. Rien n'a été modifié, réessayez.",
       });
     }
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `RESEND_TEMP_PASSWORD:${id}`, req.ip]
-    );
+    await logAccess({ userId: adminId, action: `RESEND_TEMP_PASSWORD:${id}`, success: true, req });
 
     return res.json({ message: `Nouveau mot de passe temporaire envoyé à ${user.email}.` });
   } catch (err) {
@@ -270,11 +247,7 @@ async function unlockUser(req, res) {
       return res.status(404).json({ error: 'Utilisateur introuvable.' });
     }
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `UNLOCK_ACCOUNT:${id}`, req.ip]
-    );
+    await logAccess({ userId: adminId, action: `UNLOCK_ACCOUNT:${id}`, success: true, req });
 
     return res.json({ message: `Compte de ${result.rows[0].email} déverrouillé.` });
   } catch (err) {
@@ -305,11 +278,12 @@ async function toggleActive(req, res) {
 
     const updated = result.rows[0];
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `${updated.is_active ? 'REACTIVATE' : 'DEACTIVATE'}_ACCOUNT:${id}`, req.ip]
-    );
+    await logAccess({
+      userId: adminId,
+      action: `${updated.is_active ? 'REACTIVATE' : 'DEACTIVATE'}_ACCOUNT:${id}`,
+      success: true,
+      req,
+    });
 
     return res.json({
       message: `Compte de ${updated.email} ${updated.is_active ? 'réactivé' : 'désactivé'}.`,
@@ -593,7 +567,7 @@ async function getLogs(req, res) {
  */
 async function getAnomalies(req, res) {
   try {
-    const [bruteForce, credentialStuffing, totpBypass, freq2fa, massAdminActivity] = await Promise.all([
+    const [bruteForce, credentialStuffing, totpBypass, freq2fa, massExport] = await Promise.all([
       pool.query(`
         SELECT u.email, COUNT(*)::int AS attempts, MAX(al.created_at) AS last_attempt
         FROM access_logs al
@@ -634,17 +608,69 @@ async function getAnomalies(req, res) {
         HAVING COUNT(*) >= 2
         ORDER BY resets DESC
       `),
+      // Exports CSV répétés en peu de temps — signal d'exfiltration possible.
       pool.query(`
-        SELECT al.user_id, u.email AS admin_email, COUNT(*)::int AS created_count
+        SELECT u.email, COUNT(*)::int AS exports, MAX(al.created_at) AS last_export
         FROM access_logs al
         JOIN users u ON u.id = al.user_id
-        WHERE al.action LIKE 'CREATE_USER:%'
-          AND al.created_at > now() - interval '1 hour'
-        GROUP BY al.user_id, u.email
+        WHERE al.action = 'EXPORT_LOGS_CSV'
+          AND al.created_at > now() - interval '10 minutes'
+        GROUP BY u.email
         HAVING COUNT(*) >= 5
-        ORDER BY created_count DESC
+        ORDER BY exports DESC
       `),
     ]);
+
+    // Succès après plusieurs échecs : un LOGIN_PASSWORD_OK précédé, pour le
+    // même compte, d'au moins 3 échecs (LOGIN_ATTEMPT/LOGIN_ATTEMPT_LOCKED)
+    // dans les 30 minutes précédentes. Plus grave qu'un simple verrouillage,
+    // car ici l'attaquant (ou quelqu'un) a fini par trouver le bon mot de passe.
+    const bruteForceSuccess = await pool.query(`
+      SELECT u.email, s.created_at AS success_at, s.ip_address, f.failed_count
+      FROM access_logs s
+      JOIN users u ON u.id = s.user_id
+      JOIN LATERAL (
+        SELECT COUNT(*)::int AS failed_count
+        FROM access_logs f
+        WHERE f.user_id = s.user_id
+          AND f.action IN ('LOGIN_ATTEMPT', 'LOGIN_ATTEMPT_LOCKED')
+          AND f.created_at BETWEEN s.created_at - interval '30 minutes' AND s.created_at
+      ) f ON true
+      WHERE s.action = 'LOGIN_PASSWORD_OK'
+        AND s.created_at > now() - interval '7 days'
+        AND f.failed_count >= 3
+      ORDER BY s.created_at DESC
+      LIMIT 20
+    `);
+
+    // Réactivation puis usage immédiat : un compte désactivé (DEACTIVATE_ACCOUNT)
+    // puis réactivé (REACTIVATE_ACCOUNT) par un admin DIFFÉRENT de celui qui
+    // avait désactivé, suivi d'une connexion réussie du compte réactivé dans
+    // l'heure. Signal possible de collusion ou de compte détourné.
+    const reactivationImmediateUse = await pool.query(`
+      SELECT
+        target.email AS target_email,
+        deact_admin.email AS deactivated_by,
+        react_admin.email AS reactivated_by,
+        react.created_at AS reactivated_at,
+        login.created_at AS login_at
+      FROM access_logs deact
+      JOIN access_logs react
+        ON react.action = 'REACTIVATE_ACCOUNT:' || split_part(deact.action, ':', 2)
+       AND react.created_at > deact.created_at
+       AND react.user_id IS DISTINCT FROM deact.user_id
+      JOIN access_logs login
+        ON login.user_id::text = split_part(deact.action, ':', 2)
+       AND login.action = 'LOGIN_PASSWORD_OK'
+       AND login.created_at BETWEEN react.created_at AND react.created_at + interval '1 hour'
+      JOIN users target ON target.id::text = split_part(deact.action, ':', 2)
+      JOIN users deact_admin ON deact_admin.id = deact.user_id
+      JOIN users react_admin ON react_admin.id = react.user_id
+      WHERE deact.action LIKE 'DEACTIVATE_ACCOUNT:%'
+        AND deact.created_at > now() - interval '30 days'
+      ORDER BY react.created_at DESC
+      LIMIT 20
+    `);
 
     // Connexions à horaires inhabituels : approximation simple —
     // connexions réussies entre 00h et 05h.
@@ -670,7 +696,9 @@ async function getAnomalies(req, res) {
       freq2fa: 12,           // social engineering possible
       unusualHour: 5,        // simple signal faible, pas une preuve
       credentialStuffing: 20, // par IP
-      massAdmin: 30,         // par admin — activité massive anormale
+      bruteForceSuccess: 35, // brute-force ABOUTI — plus grave qu'un simple verrouillage
+      reactivationImmediateUse: 30, // collusion / compte détourné possible
+      massExport: 22,        // exfiltration potentielle
     };
 
     const scoresByEmail = new Map();
@@ -684,6 +712,9 @@ async function getAnomalies(req, res) {
     totpBypass.rows.forEach((r) => bump(r.email, WEIGHTS.totpBypass, 'Contournement 2FA suspecté'));
     freq2fa.rows.forEach((r) => bump(r.email, WEIGHTS.freq2fa, 'Resets 2FA fréquents'));
     unusualHours.rows.forEach((r) => bump(r.email, WEIGHTS.unusualHour, 'Connexion à horaire inhabituel'));
+    bruteForceSuccess.rows.forEach((r) => bump(r.email, WEIGHTS.bruteForceSuccess, 'Brute-force abouti (succès après échecs)'));
+    reactivationImmediateUse.rows.forEach((r) => bump(r.target_email, WEIGHTS.reactivationImmediateUse, 'Réactivation puis connexion immédiate'));
+    massExport.rows.forEach((r) => bump(r.email, WEIGHTS.massExport, 'Exports CSV répétés (exfiltration ?)'));
 
     const scoresByIp = new Map();
     const bumpIp = (ip, points, reason) => {
@@ -693,8 +724,6 @@ async function getAnomalies(req, res) {
       scoresByIp.set(ip, entry);
     };
     credentialStuffing.rows.forEach((r) => bumpIp(r.ip_address, WEIGHTS.credentialStuffing, 'Énumération / credential stuffing'));
-
-    massAdminActivity.rows.forEach((r) => bump(r.admin_email, WEIGHTS.massAdmin, 'Activité admin anormalement élevée'));
 
     const riskScores = [
       ...[...scoresByEmail.values()].map((e) => ({ ...e, type: 'user' })),
@@ -708,9 +737,11 @@ async function getAnomalies(req, res) {
       credentialStuffingIps: credentialStuffing.rows,
       totpBypassAttempts: totpBypass.rows,
       frequent2faResets: freq2fa.rows,
-      massAdminActivity: massAdminActivity.rows,
       unusualHourLogins: unusualHours.rows,
-      riskScores, // nouveau — correction #7
+      bruteForceSuccesses: bruteForceSuccess.rows,
+      reactivationImmediateUse: reactivationImmediateUse.rows,
+      massExports: massExport.rows,
+      riskScores,
     });
   } catch (err) {
     console.error(err);
@@ -742,11 +773,8 @@ async function getUserTimeline(req, res) {
     // Traçabilité RGPD/santé : on journalise aussi la CONSULTATION d'une
     // timeline, pas uniquement les actions correctives. Fire-and-forget :
     // une erreur de log ne doit jamais bloquer l'affichage.
-    pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, `VIEW_USER_TIMELINE:${id}`, req.ip]
-    ).catch((e) => console.error('Log VIEW_USER_TIMELINE échoué :', e.message));
+    logAccess({ userId: adminId, action: `VIEW_USER_TIMELINE:${id}`, success: true, req })
+      .catch((e) => console.error('Log VIEW_USER_TIMELINE échoué :', e.message));
 
     return res.json({ user: userResult.rows[0], logs: logsResult.rows });
   } catch (err) {
@@ -814,11 +842,7 @@ async function exportLogsCsv(req, res) {
     ].map(escapeCsv).join(';'));
 
     const adminId = req.user.sub;
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address)
-       VALUES ($1, $2, true, $3)`,
-      [adminId, 'EXPORT_LOGS_CSV', req.ip]
-    );
+    await logAccess({ userId: adminId, action: 'EXPORT_LOGS_CSV', success: true, req });
 
     const csv = '\uFEFF' + [header, ...lines].join('\n'); // BOM pour Excel/accents FR
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

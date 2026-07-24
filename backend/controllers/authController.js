@@ -1,7 +1,8 @@
 const pool = require('../config/db');
-const { signToken, verifyToken } = require('../utils/jwtUtils');
+const { signToken, verifyToken, getJti } = require('../utils/jwtUtils');
 const { verifyPassword, hashPassword } = require('../utils/passwordUtils');
 const COOKIE_OPTIONS = require('../utils/cookieOptions');
+const { logAccess } = require('../utils/accessLog');
 require('dotenv').config();
 
 const MAX_ATTEMPTS = 5;
@@ -22,10 +23,7 @@ async function login(req, res) {
 
     if (!user) {
       await verifyPassword(password, DUMMY_HASH); // normalise le temps de réponse
-      await pool.query(
-        `INSERT INTO access_logs (action, success, ip_address) VALUES ($1, false, $2)`,
-        [`LOGIN_ATTEMPT:${email}`, req.ip]
-      );
+      await logAccess({ action: `LOGIN_ATTEMPT:${email}`, success: false, req });
       return res.status(401).json({ error: 'Identifiants invalides.' });
     }
 
@@ -34,19 +32,13 @@ async function login(req, res) {
     // compte à un attaquant) mais avant la vérification du mot de passe (pas la peine
     // de faire perdre du temps/tentatives à un compte déjà désactivé).
     if (user.is_active === false) {
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, false, $3)`,
-        [user.id, 'LOGIN_ATTEMPT_DISABLED_ACCOUNT', req.ip]
-      );
+      await logAccess({ userId: user.id, action: 'LOGIN_ATTEMPT_DISABLED_ACCOUNT', success: false, req });
       return res.status(403).json({ error: 'Ce compte a été désactivé. Contactez un administrateur.' });
     }
 
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
       const minutesLeft = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, false, $3)`,
-        [user.id, 'LOGIN_ATTEMPT_WHILE_LOCKED', req.ip]
-      );
+      await logAccess({ userId: user.id, action: 'LOGIN_ATTEMPT_WHILE_LOCKED', success: false, req });
       return res.status(423).json({
         error: `Compte temporairement verrouillé suite à trop d'échecs. Réessayez dans ${minutesLeft} min.`,
       });
@@ -66,10 +58,12 @@ async function login(req, res) {
         ]
       );
 
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, false, $3)`,
-        [user.id, shouldLock ? 'LOGIN_ATTEMPT_LOCKED' : 'LOGIN_ATTEMPT', req.ip]
-      );
+      await logAccess({
+        userId: user.id,
+        action: shouldLock ? 'LOGIN_ATTEMPT_LOCKED' : 'LOGIN_ATTEMPT',
+        success: false,
+        req,
+      });
 
       if (shouldLock) {
         return res.status(423).json({ error: `Trop d'échecs. Compte verrouillé pendant 15 minutes.` });
@@ -98,10 +92,13 @@ async function login(req, res) {
         { expiresIn: '10m' }
       );
 
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-        [user.id, 'LOGIN_PASSWORD_OK_AWAITING_TOTP', req.ip]
-      );
+      await logAccess({
+        userId: user.id,
+        action: 'LOGIN_PASSWORD_OK_AWAITING_TOTP',
+        success: true,
+        req,
+        sessionId: getJti(totpToken),
+      });
 
       return res.json({ requiresTotp: true, totpToken, role: user.role });
     }
@@ -116,10 +113,13 @@ async function login(req, res) {
 
     await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-      [user.id, 'LOGIN_PASSWORD_OK', req.ip]
-    );
+    await logAccess({
+      userId: user.id,
+      action: 'LOGIN_PASSWORD_OK',
+      success: true,
+      req,
+      sessionId: getJti(token),
+    });
 
     return res.json({
       message: 'Connexion réussie.',
@@ -156,10 +156,7 @@ async function changePassword(req, res) {
       [newHash, payload.sub]
     );
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-      [payload.sub, 'PASSWORD_CHANGED', req.ip]
-    );
+    await logAccess({ userId: payload.sub, action: 'PASSWORD_CHANGED', success: true, req, sessionId: payload.jti });
 
     return res.json({ message: 'Mot de passe mis à jour. Vous pouvez maintenant vous connecter.' });
   } catch (err) {
@@ -181,10 +178,7 @@ async function logout(req, res) {
       [req.user.jti, req.user.sub, req.user.exp]
     );
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-      [req.user.sub, 'LOGOUT', req.ip]
-    );
+    await logAccess({ userId: req.user.sub, action: 'LOGOUT', success: true, req });
 
     res.clearCookie('token', { ...COOKIE_OPTIONS, maxAge: undefined });
     return res.json({ message: 'Déconnexion réussie.' });

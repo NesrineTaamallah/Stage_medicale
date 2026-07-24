@@ -1,5 +1,6 @@
 const pool = require('../config/db');
-const { signToken, verifyToken } = require('../utils/jwtUtils');
+const { signToken, verifyToken, getJti } = require('../utils/jwtUtils');
+const { logAccess } = require('../utils/accessLog');
 const {
   generateTotpSecret,
   getOtpauthUrl,
@@ -84,10 +85,7 @@ async function validateTotp(req, res) {
     const decryptedSecret = decrypt(user.totp_secret);
     const valid = await verifyTotpToken(code, decryptedSecret);
     if (!valid) {
-      await pool.query(
-        `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, false, $3)`,
-        [user.id, 'TOTP_ATTEMPT', req.ip]
-      );
+      await logAccess({ userId: user.id, action: 'TOTP_ATTEMPT', success: false, req });
       return res.status(401).json({ error: 'Code TOTP invalide.' });
     }
 
@@ -101,10 +99,13 @@ async function validateTotp(req, res) {
 
     await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-      [user.id, 'TOTP_OK', req.ip]
-    );
+    await logAccess({
+      userId: user.id,
+      action: 'TOTP_OK',
+      success: true,
+      req,
+      sessionId: getJti(finalToken),
+    });
 
     return res.json({
       message: 'Authentification complète.',
@@ -165,10 +166,7 @@ async function selfResetAdminTotp(req, res) {
       return res.status(404).json({ error: 'Utilisateur introuvable.' });
     }
 
-    await pool.query(
-      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
-      [payload.sub, 'SELF_RESET_2FA_ADMIN', req.ip]
-    );
+    await logAccess({ userId: payload.sub, action: 'SELF_RESET_2FA_ADMIN', success: true, req, sessionId: payload.jti });
 
     return res.json({
       message: '2FA réinitialisée. Reconnectez-vous avec votre email et mot de passe pour configurer un nouveau QR code.',

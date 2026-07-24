@@ -298,12 +298,32 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                   )}
                 />
                 <AnomalySection
-                  title="Activité admin anormalement élevée"
-                  description="Création massive de comptes hors pattern habituel (1h)."
-                  items={anomalies.massAdminActivity}
+                  title="Brute-force abouti (succès après échecs)"
+                  description="Connexion réussie précédée d'au moins 3 échecs pour le même compte en moins de 30 min — plus grave qu'un simple verrouillage : le mot de passe a fini par être trouvé."
+                  items={anomalies.bruteForceSuccesses}
                   renderItem={(a) => (
                     <span>
-                      <strong>{a.admin_email}</strong> — {a.created_count} comptes créés en moins d'1h
+                      <strong>{a.email}</strong> — succès {fmtDate(a.success_at)} après {a.failed_count} échec(s), depuis {a.ip_address || 'IP inconnue'}
+                    </span>
+                  )}
+                />
+                <AnomalySection
+                  title="Réactivation puis usage immédiat"
+                  description="Compte désactivé puis réactivé par un admin différent, suivi d'une connexion dans l'heure — signal possible de collusion ou de compte détourné."
+                  items={anomalies.reactivationImmediateUse}
+                  renderItem={(a) => (
+                    <span>
+                      <strong>{a.target_email}</strong> — désactivé par {a.deactivated_by}, réactivé par {a.reactivated_by} le {fmtDate(a.reactivated_at)}, connecté à {fmtDate(a.login_at)}
+                    </span>
+                  )}
+                />
+                <AnomalySection
+                  title="Exports CSV répétés"
+                  description="Au moins 5 exports des logs en moins de 10 minutes — signal possible d'exfiltration de données."
+                  items={anomalies.massExports}
+                  renderItem={(a) => (
+                    <span>
+                      <strong>{a.email}</strong> — {a.exports} export(s), dernier {fmtDate(a.last_export)}
                     </span>
                   )}
                 />
