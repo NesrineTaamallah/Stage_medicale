@@ -21,39 +21,33 @@ function fmtDate(d) {
   return new Date(d).toLocaleString('fr-FR');
 }
 
+/**
+ * Parse volontairement simple (pas de lib externe) : suffisant pour repérer
+ * un changement d'appareil visuellement, pas pour du fingerprinting précis.
+ */
+function parseUserAgent(ua) {
+  if (!ua) return null;
+  let browser = 'Navigateur inconnu';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+
+  let os = 'OS inconnu';
+  if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/iPhone|iPad/.test(ua)) os = 'iOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  return `${browser} · ${os}`;
+}
+
 function SuccessBadge({ success }) {
   return (
     <span className={`badge ${success ? 'badge-success' : 'badge-error'}`}>
       {success ? 'Succès' : 'Échec'}
     </span>
-  );
-}
-
-function AnomalySection({ title, description, items, renderItem, emptyText }) {
-  if (!items || items.length === 0) {
-    return null; // n'afficher que les anomalies réellement détectées
-  }
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>{title}</p>
-      <p className="hint" style={{ marginBottom: 8 }}>{description}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {items.map((item, i) => (
-          <div
-            key={i}
-            style={{
-              background: 'var(--error-tint)',
-              borderLeft: '3px solid var(--error)',
-              borderRadius: 6,
-              padding: '8px 10px',
-              fontSize: 13,
-            }}
-          >
-            {renderItem(item)}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -75,6 +69,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   const [anomalies, setAnomalies] = useState(null);
   const [anomaliesLoading, setAnomaliesLoading] = useState(true);
   const [showAnomalies, setShowAnomalies] = useState(true);
+  const [expandedCategory, setExpandedCategory] = useState(null);
 
   const [timeline, setTimeline] = useState(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -157,7 +152,107 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   }
 
   const totalPages = Math.max(Math.ceil(total / pageSize), 1);
-  const hasAnyAnomaly = anomalies && Object.values(anomalies).some((arr) => arr.length > 0);
+  const hasAnyAnomaly = anomalies && Object.values(anomalies).some((arr) => Array.isArray(arr) && arr.length > 0);
+
+  // Config des catégories d'anomalies : une seule source de vérité pour
+  // l'icône, le libellé, la couleur de gravité et le rendu de détail,
+  // utilisée à la fois par les puces-résumé et l'accordéon déplié.
+  const ANOMALY_CATEGORIES = anomalies ? [
+    {
+      key: 'bruteForceSuccesses',
+      icon: '🔓',
+      title: 'Brute-force abouti',
+      severity: 'high',
+      description: "Connexion réussie précédée d'au moins 3 échecs pour le même compte en moins de 30 min — plus grave qu'un simple verrouillage : le mot de passe a fini par être trouvé.",
+      items: anomalies.bruteForceSuccesses,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — succès {fmtDate(a.success_at)} après {a.failed_count} échec(s), depuis {a.ip_address || 'IP inconnue'}</span>
+      ),
+    },
+    {
+      key: 'reactivationImmediateUse',
+      icon: '🔁',
+      title: 'Réactivation puis usage immédiat',
+      severity: 'high',
+      description: "Compte désactivé puis réactivé par un admin différent, suivi d'une connexion dans l'heure — signal possible de collusion ou de compte détourné.",
+      items: anomalies.reactivationImmediateUse,
+      renderItem: (a) => (
+        <span><strong>{a.target_email}</strong> — désactivé par {a.deactivated_by}, réactivé par {a.reactivated_by} le {fmtDate(a.reactivated_at)}, connecté à {fmtDate(a.login_at)}</span>
+      ),
+    },
+    {
+      key: 'bruteForceLockouts',
+      icon: '🔒',
+      title: 'Brute-force ciblé',
+      severity: 'high',
+      description: 'Comptes ayant subi un verrouillage après plusieurs échecs de connexion (24h).',
+      items: anomalies.bruteForceLockouts,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — {a.attempts} tentative(s), dernière {fmtDate(a.last_attempt)}</span>
+      ),
+    },
+    {
+      key: 'credentialStuffingIps',
+      icon: '🕸️',
+      title: 'Énumération / credential stuffing',
+      severity: 'medium',
+      description: 'IP tentant de se connecter sur plusieurs comptes différents (24h).',
+      items: anomalies.credentialStuffingIps,
+      renderItem: (a) => (
+        <span><strong>{a.ip_address}</strong> — {a.distinct_users} comptes distincts, dernière {fmtDate(a.last_attempt)}</span>
+      ),
+    },
+    {
+      key: 'totpBypassAttempts',
+      icon: '🛡️',
+      title: 'Contournement 2FA suspecté',
+      severity: 'medium',
+      description: 'Échecs de code TOTP répétés pour un même compte (24h).',
+      items: anomalies.totpBypassAttempts,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — {a.failed_attempts} échec(s), dernier {fmtDate(a.last_attempt)}</span>
+      ),
+    },
+    {
+      key: 'frequent2faResets',
+      icon: '♻️',
+      title: 'Réinitialisations 2FA fréquentes',
+      severity: 'medium',
+      description: 'Signal possible de social engineering (7 jours).',
+      items: anomalies.frequent2faResets,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — {a.resets} reset(s), dernier {fmtDate(a.last_reset)}</span>
+      ),
+    },
+    {
+      key: 'massExports',
+      icon: '📤',
+      title: 'Exports CSV répétés',
+      severity: 'medium',
+      description: "Au moins 5 exports des logs en moins de 10 minutes — signal possible d'exfiltration de données.",
+      items: anomalies.massExports,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — {a.exports} export(s), dernier {fmtDate(a.last_export)}</span>
+      ),
+    },
+    {
+      key: 'unusualHourLogins',
+      icon: '🌙',
+      title: 'Connexions à horaires inhabituels',
+      severity: 'low',
+      description: 'Connexions réussies entre 00h et 05h (7 jours).',
+      items: anomalies.unusualHourLogins,
+      renderItem: (a) => (
+        <span><strong>{a.email}</strong> — {fmtDate(a.created_at)} depuis {a.ip_address || 'IP inconnue'}</span>
+      ),
+    },
+  ].filter((c) => c.items && c.items.length > 0) : [];
+
+  const SEVERITY_COLOR = {
+    high: { bg: 'var(--error-tint)', border: 'var(--error)', badge: 'badge-error' },
+    medium: { bg: '#FFF7E6', border: '#E8A33D', badge: 'badge-warning' },
+    low: { bg: 'var(--card)', border: 'var(--line)', badge: 'badge-muted' },
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -180,6 +275,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                     <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--line)' }}>
                       <th style={{ padding: '6px' }}>Date</th>
                       <th>Action</th>
+                      <th>Appareil</th>
                       <th>Statut</th>
                     </tr>
                   </thead>
@@ -188,6 +284,15 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                       <tr key={l.id} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px' }}>{fmtDate(l.created_at)}</td>
                         <td>{l.action}</td>
+                        <td>
+                          {l.user_agent ? (
+                            <span className="hint" style={{ fontSize: 12 }} title={l.user_agent}>
+                              {parseUserAgent(l.user_agent)}
+                            </span>
+                          ) : (
+                            <span className="hint">—</span>
+                          )}
+                        </td>
                         <td><SuccessBadge success={l.success} /></td>
                       </tr>
                     ))}
@@ -215,128 +320,110 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
             {anomaliesLoading ? (
               <p className="subtitle">Chargement des anomalies...</p>
             ) : !anomalies || !hasAnyAnomaly ? (
-              <p className="hint">Aucune anomalie détectée actuellement.</p>
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px',
+                  borderRadius: 8, background: '#F0FBF6', border: '1px solid #BEE8D3',
+                }}
+              >
+                <span style={{ fontSize: 20 }}>✅</span>
+                <span style={{ fontSize: 13.5 }}>Aucune anomalie détectée actuellement. Tout est nominal.</span>
+              </div>
             ) : (
               <>
+                {/* Top risque : barres horizontales, triées, lecture en 3 secondes */}
                 {anomalies.riskScores && anomalies.riskScores.length > 0 && (
-                  <div style={{ marginBottom: 18 }}>
-                    <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>
-                      Score de risque agrégé
+                  <div style={{ marginBottom: 22 }}>
+                    <p style={{ margin: '0 0 2px', fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>
+                      Top risques — priorité de traitement
                     </p>
-                    <p className="hint" style={{ marginBottom: 8 }}>
-                      Hiérarchisation par sujet (utilisateur ou IP), tous patterns combinés — plus rapide qu'une lecture pattern par pattern.
+                    <p className="hint" style={{ marginBottom: 10 }}>
+                      Sujets (utilisateur ou IP) triés par score agrégé, tous patterns combinés.
                     </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {anomalies.riskScores.slice(0, 6).map((r, i) => {
+                        const pct = Math.max(r.score, 4); // largeur minimale visible même pour un score faible
+                        const color = r.score >= 50 ? '#D6484B' : r.score >= 20 ? '#E8A33D' : '#8CA0B3';
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ minWidth: 190, maxWidth: 190, fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              title={r.subject}
+                            >
+                              {r.type === 'ip' ? '🌐 ' : '👤 '}{r.subject}
+                            </span>
+                            <div style={{ flex: 1, background: '#EEF1F4', borderRadius: 999, height: 20, position: 'relative', overflow: 'hidden' }}>
+                              <div
+                                style={{
+                                  width: `${pct}%`, maxWidth: '100%', height: '100%', borderRadius: 999,
+                                  background: color, transition: 'width 0.3s ease',
+                                }}
+                              />
+                              <span style={{
+                                position: 'absolute', left: 8, top: 0, height: '100%',
+                                display: 'flex', alignItems: 'center', fontSize: 11.5, fontWeight: 700,
+                                color: r.score >= 20 ? '#fff' : 'var(--ink)',
+                              }}>
+                                {r.score}
+                              </span>
+                            </div>
+                            <span className="hint" style={{ fontSize: 12, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reasons.join(', ')}>
+                              {r.reasons.join(', ')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Résumé par catégorie : puces cliquables, détail replié par défaut */}
+                <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13.5, color: 'var(--ink)' }}>
+                  Détail par type de pattern
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: expandedCategory ? 12 : 0 }}>
+                  {ANOMALY_CATEGORIES.map((cat) => {
+                    const colors = SEVERITY_COLOR[cat.severity];
+                    const isOpen = expandedCategory === cat.key;
+                    return (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        onClick={() => setExpandedCategory(isOpen ? null : cat.key)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                          border: `1px solid ${isOpen ? colors.border : 'var(--line)'}`,
+                          background: isOpen ? colors.bg : 'var(--card)',
+                          fontSize: 12.5, fontWeight: 600, color: 'var(--ink)',
+                        }}
+                      >
+                        <span>{cat.icon}</span>
+                        <span>{cat.title}</span>
+                        <span className={`badge ${colors.badge}`} style={{ marginLeft: 2 }}>{cat.items.length}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {expandedCategory && ANOMALY_CATEGORIES.filter((c) => c.key === expandedCategory).map((cat) => (
+                  <div key={cat.key} style={{ marginTop: 4 }}>
+                    <p className="hint" style={{ marginBottom: 8 }}>{cat.description}</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {anomalies.riskScores.slice(0, 8).map((r, i) => (
+                      {cat.items.map((item, i) => (
                         <div
                           key={i}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            padding: '8px 10px',
-                            borderRadius: 6,
-                            background: r.score >= 50 ? 'var(--error-tint)' : 'var(--card)',
-                            border: '1px solid var(--line)',
+                            background: SEVERITY_COLOR[cat.severity].bg,
+                            borderLeft: `3px solid ${SEVERITY_COLOR[cat.severity].border}`,
+                            borderRadius: 6, padding: '8px 10px', fontSize: 13,
                           }}
                         >
-                          <span
-                            className={`badge ${r.score >= 50 ? 'badge-error' : r.score >= 20 ? 'badge-warning' : 'badge-muted'}`}
-                            style={{ minWidth: 34, textAlign: 'center' }}
-                          >
-                            {r.score}
-                          </span>
-                          <span style={{ fontSize: 13, flex: 1 }}>
-                            <strong>{r.subject}</strong>
-                            <span className="hint" style={{ marginLeft: 8 }}>
-                              ({r.type === 'ip' ? 'IP' : 'utilisateur'}) — {r.reasons.join(', ')}
-                            </span>
-                          </span>
+                          {cat.renderItem(item)}
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
-                <AnomalySection
-                  title="Brute-force ciblé"
-                  description="Comptes ayant subi un verrouillage après plusieurs échecs de connexion (24h)."
-                  items={anomalies.bruteForceLockouts}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — {a.attempts} tentative(s), dernière {fmtDate(a.last_attempt)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Énumération / credential stuffing"
-                  description="IP tentant de se connecter sur plusieurs comptes différents (24h)."
-                  items={anomalies.credentialStuffingIps}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.ip_address}</strong> — {a.distinct_users} comptes distincts, dernière {fmtDate(a.last_attempt)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Contournement 2FA suspecté"
-                  description="Échecs de code TOTP répétés pour un même compte (24h)."
-                  items={anomalies.totpBypassAttempts}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — {a.failed_attempts} échec(s), dernier {fmtDate(a.last_attempt)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Réinitialisations 2FA fréquentes"
-                  description="Signal possible de social engineering (7 jours)."
-                  items={anomalies.frequent2faResets}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — {a.resets} reset(s), dernier {fmtDate(a.last_reset)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Brute-force abouti (succès après échecs)"
-                  description="Connexion réussie précédée d'au moins 3 échecs pour le même compte en moins de 30 min — plus grave qu'un simple verrouillage : le mot de passe a fini par être trouvé."
-                  items={anomalies.bruteForceSuccesses}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — succès {fmtDate(a.success_at)} après {a.failed_count} échec(s), depuis {a.ip_address || 'IP inconnue'}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Réactivation puis usage immédiat"
-                  description="Compte désactivé puis réactivé par un admin différent, suivi d'une connexion dans l'heure — signal possible de collusion ou de compte détourné."
-                  items={anomalies.reactivationImmediateUse}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.target_email}</strong> — désactivé par {a.deactivated_by}, réactivé par {a.reactivated_by} le {fmtDate(a.reactivated_at)}, connecté à {fmtDate(a.login_at)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Exports CSV répétés"
-                  description="Au moins 5 exports des logs en moins de 10 minutes — signal possible d'exfiltration de données."
-                  items={anomalies.massExports}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — {a.exports} export(s), dernier {fmtDate(a.last_export)}
-                    </span>
-                  )}
-                />
-                <AnomalySection
-                  title="Connexions à horaires inhabituels"
-                  description="Connexions réussies entre 00h et 05h (7 jours)."
-                  items={anomalies.unusualHourLogins}
-                  renderItem={(a) => (
-                    <span>
-                      <strong>{a.email}</strong> — {fmtDate(a.created_at)} depuis {a.ip_address || 'IP inconnue'}
-                    </span>
-                  )}
-                />
+                ))}
               </>
             )}
           </div>
@@ -424,6 +511,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                   <th>Utilisateur</th>
                   <th>Action</th>
                   <th>IP</th>
+                  <th>Appareil</th>
                   <th>Statut</th>
                 </tr>
               </thead>
@@ -450,11 +538,24 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
                         <span className="hint">—</span>
                       )}
                     </td>
+                    <td>
+                      {l.user_agent ? (
+                        <span
+                          className="hint"
+                          style={{ fontSize: 12.5 }}
+                          title={`User-agent complet : ${l.user_agent}${l.session_id ? `\nSession (jti) : ${l.session_id}` : ''}`}
+                        >
+                          {parseUserAgent(l.user_agent)}
+                        </span>
+                      ) : (
+                        <span className="hint">—</span>
+                      )}
+                    </td>
                     <td><SuccessBadge success={l.success} /></td>
                   </tr>
                 ))}
                 {logs.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
+                  <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center' }}>Aucun log trouvé pour ces filtres.</td></tr>
                 )}
               </tbody>
             </table>

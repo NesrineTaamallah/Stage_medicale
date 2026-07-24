@@ -537,7 +537,7 @@ async function getLogs(req, res) {
     params.push(offset);
     const result = await pool.query(
       `SELECT al.id, al.user_id, u.email AS user_email, al.action, al.success,
-              al.ip_address, al.created_at
+              al.ip_address, al.created_at, al.user_agent, al.session_id
        FROM access_logs al
        LEFT JOIN users u ON u.id = al.user_id
        ${whereClause}
@@ -763,7 +763,7 @@ async function getUserTimeline(req, res) {
     }
 
     const logsResult = await pool.query(
-      `SELECT id, action, success, ip_address, created_at
+      `SELECT id, action, success, ip_address, created_at, user_agent, session_id
        FROM access_logs WHERE user_id = $1
        ORDER BY created_at DESC
        LIMIT 500`,
