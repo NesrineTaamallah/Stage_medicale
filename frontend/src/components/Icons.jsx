@@ -148,3 +148,41 @@ export function IconLogout({ size = 18, color = 'currentColor' }) {
     </>
   ));
 }
+
+export function IconDots({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <circle cx="12" cy="5.5" r="1.1" fill={color} stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill={color} stroke="none" />
+      <circle cx="12" cy="18.5" r="1.1" fill={color} stroke="none" />
+    </>
+  ));
+}
+
+export function IconHistory({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <path d="M3 11a9 9 0 1 1 2.6 6.4" />
+      <path d="M3 5v6h6" />
+      <path d="M12 8v4.5l3 2" />
+    </>
+  ));
+}
+
+export function IconMail({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
+    </>
+  ));
+}
+
+export function IconUnlock({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <rect x="4.5" y="11" width="15" height="9.5" rx="2" />
+      <path d="M8 11V7.5a4 4 0 0 1 7.4-2" />
+    </>
+  ));
+}

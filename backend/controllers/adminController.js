@@ -287,50 +287,139 @@ async function toggleActive(req, res) {
  */
 async function getOverview(req, res) {
   try {
-    const [byRole, statusCounts, recentLockAlerts, recentActivity, lastEmailLog, pendingFirstLogin] =
-      await Promise.all([
-        pool.query(`SELECT role, COUNT(*)::int AS count FROM users GROUP BY role`),
-        pool.query(`
-          SELECT
-            COUNT(*) FILTER (WHERE last_login_at IS NULL)::int AS never_logged_in,
-            COUNT(*) FILTER (WHERE locked_until IS NOT NULL AND locked_until > now())::int AS locked_now,
-            COUNT(*) FILTER (WHERE NOT is_active)::int AS inactive_accounts,
-            COUNT(*)::int AS total_users
-          FROM users
-        `),
-        pool.query(`
-          SELECT COUNT(*)::int AS count
-          FROM access_logs
-          WHERE action LIKE 'LOGIN_ATTEMPT_LOCKED%' AND created_at > now() - interval '1 hour'
-        `),
-        pool.query(`
-          SELECT al.id, al.action, al.success, al.ip_address, al.created_at, u.email AS user_email
-          FROM access_logs al
-          LEFT JOIN users u ON u.id = al.user_id
-          WHERE al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD|RESET_2FA|UNLOCK_ACCOUNT|DEACTIVATE_ACCOUNT|REACTIVATE_ACCOUNT)'
-          ORDER BY al.created_at DESC
-          LIMIT 10
-        `),
-        pool.query(`
-          SELECT action, success, created_at
-          FROM access_logs
-          WHERE action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
-          ORDER BY created_at DESC
-          LIMIT 1
-        `),
-        pool.query(`
-          SELECT id, email, role, created_at, temp_password_created_at
-          FROM users
-          WHERE must_change_password = true
-            AND COALESCE(temp_password_created_at, created_at) < now() - interval '24 hours'
-          ORDER BY COALESCE(temp_password_created_at, created_at) ASC
-        `),
-      ]);
+    const [
+      byRole, statusCounts, recentLockAlerts, recentActivity, lastEmailLog, pendingFirstLogin,
+      mfaAdoption, activeTrend, actionHistory7d, emailHealth24h, emailHealthDaily,
+      tempPasswordAges, dormantAccounts,
+    ] = await Promise.all([
+      pool.query(`SELECT role, COUNT(*)::int AS count FROM users GROUP BY role`),
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE last_login_at IS NULL)::int AS never_logged_in,
+          COUNT(*) FILTER (WHERE locked_until IS NOT NULL AND locked_until > now())::int AS locked_now,
+          COUNT(*) FILTER (WHERE NOT is_active)::int AS inactive_accounts,
+          COUNT(*)::int AS total_users
+        FROM users
+      `),
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM access_logs
+        WHERE action LIKE 'LOGIN_ATTEMPT_LOCKED%' AND created_at > now() - interval '1 hour'
+      `),
+      pool.query(`
+        SELECT al.id, al.action, al.success, al.ip_address, al.created_at, u.email AS user_email
+        FROM access_logs al
+        LEFT JOIN users u ON u.id = al.user_id
+        WHERE al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD|RESET_2FA|UNLOCK_ACCOUNT|DEACTIVATE_ACCOUNT|REACTIVATE_ACCOUNT)'
+        ORDER BY al.created_at DESC
+        LIMIT 10
+      `),
+      pool.query(`
+        SELECT action, success, created_at
+        FROM access_logs
+        WHERE action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `),
+      pool.query(`
+        SELECT id, email, role, created_at, temp_password_created_at
+        FROM users
+        WHERE must_change_password = true
+          AND COALESCE(temp_password_created_at, created_at) < now() - interval '24 hours'
+        ORDER BY COALESCE(temp_password_created_at, created_at) ASC
+      `),
+      // --- Adoption 2FA ---
+      pool.query(`
+        SELECT COUNT(*) FILTER (WHERE is_2fa_enabled)::int AS enabled, COUNT(*)::int AS total
+        FROM users
+      `),
+      // --- Tendance comptes actifs (connexions distinctes / jour, 30 derniers jours) ---
+      pool.query(`
+        SELECT d::date AS day,
+               COALESCE(COUNT(DISTINCT al.user_id) FILTER (WHERE al.action = 'LOGIN_PASSWORD_OK' AND al.success = true), 0)::int AS count
+        FROM generate_series(CURRENT_DATE - interval '29 days', CURRENT_DATE, interval '1 day') d
+        LEFT JOIN access_logs al ON al.created_at::date = d::date
+        GROUP BY d
+        ORDER BY d
+      `),
+      // --- Historique actions admin par jour/type (7 jours), pour l'aire empilée ---
+      pool.query(`
+        SELECT d::date AS day,
+               regexp_replace(al.action, ':.*$', '') AS action_type,
+               COUNT(*)::int AS count
+        FROM generate_series(CURRENT_DATE - interval '6 days', CURRENT_DATE, interval '1 day') d
+        LEFT JOIN access_logs al
+          ON al.created_at::date = d::date
+          AND al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD|RESET_2FA|UNLOCK_ACCOUNT|DEACTIVATE_ACCOUNT|REACTIVATE_ACCOUNT)'
+        GROUP BY d, action_type
+        ORDER BY d
+      `),
+      // --- Taux de succès email, 24 dernières heures ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE success)::int AS ok,
+          COUNT(*)::int AS total
+        FROM access_logs
+        WHERE action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
+          AND created_at > now() - interval '24 hours'
+      `),
+      // --- Taux de succès email par jour, 7 derniers jours (mini-tendance) ---
+      pool.query(`
+        SELECT d::date AS day,
+               COUNT(*) FILTER (WHERE al.success)::int AS ok,
+               COUNT(al.id)::int AS total
+        FROM generate_series(CURRENT_DATE - interval '6 days', CURRENT_DATE, interval '1 day') d
+        LEFT JOIN access_logs al
+          ON al.created_at::date = d::date
+          AND al.action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
+        GROUP BY d
+        ORDER BY d
+      `),
+      // --- Âge des mots de passe temporaires actifs (tous, pas seulement >24h) ---
+      pool.query(`
+        SELECT id, temp_password_created_at, created_at
+        FROM users
+        WHERE must_change_password = true
+      `),
+      // --- Comptes actifs mais dormants (>60j sans connexion, jamais désactivés) ---
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM users
+        WHERE is_active = true
+          AND last_login_at IS NOT NULL
+          AND last_login_at < now() - interval '60 days'
+      `),
+    ]);
 
     const roleCounts = { admin: 0, clinicien: 0, chercheur: 0 };
     byRole.rows.forEach((r) => { roleCounts[r.role] = r.count; });
 
     const emailLog = lastEmailLog.rows[0] || null;
+
+    // Buckets d'âge des mots de passe temporaires : 0-12h / 12-24h / 24-48h / expiré
+    const nowTs = Date.now();
+    const tempBuckets = { h0_12: 0, h12_24: 0, h24_48: 0, expired: 0 };
+    tempPasswordAges.rows.forEach((u) => {
+      const createdAt = new Date(u.temp_password_created_at || u.created_at).getTime();
+      const hoursElapsed = (nowTs - createdAt) / (1000 * 60 * 60);
+      if (hoursElapsed > 48) tempBuckets.expired += 1;
+      else if (hoursElapsed > 24) tempBuckets.h24_48 += 1;
+      else if (hoursElapsed > 12) tempBuckets.h12_24 += 1;
+      else tempBuckets.h0_12 += 1;
+    });
+
+    // Reformatage de l'historique d'actions en séries par type, alignées sur les mêmes jours
+    const days7 = [...new Set(actionHistory7d.rows.map((r) => r.day.toISOString().slice(0, 10)))];
+    const actionTypes = ['CREATE_USER', 'RESEND_TEMP_PASSWORD', 'RESET_2FA', 'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
+    const actionSeries = actionTypes.map((type) => ({
+      type,
+      values: days7.map((day) => {
+        const row = actionHistory7d.rows.find(
+          (r) => r.day.toISOString().slice(0, 10) === day && r.action_type === type
+        );
+        return row ? row.count : 0;
+      }),
+    })).filter((s) => s.values.some((v) => v > 0)); // n'affiche que les types réellement observés
 
     return res.json({
       totalUsers: statusCounts.rows[0].total_users,
@@ -346,6 +435,26 @@ async function getOverview(req, res) {
         ? { success: emailLog.success, action: emailLog.action, at: emailLog.created_at }
         : null,
       pendingFirstLoginOver24h: pendingFirstLogin.rows,
+
+      // --- nouveau : enrichissement graphique de la vue d'ensemble ---
+      mfaAdoption: { enabled: mfaAdoption.rows[0].enabled, total: mfaAdoption.rows[0].total },
+      activeAccountsTrend: activeTrend.rows.map((r) => ({
+        day: r.day.toISOString().slice(0, 10),
+        count: r.count,
+      })),
+      actionHistory7d: { days: days7, series: actionSeries },
+      emailHealth: {
+        rate24h: emailHealth24h.rows[0].total > 0
+          ? Math.round((emailHealth24h.rows[0].ok / emailHealth24h.rows[0].total) * 100)
+          : null,
+        total24h: emailHealth24h.rows[0].total,
+        dailyTrend: emailHealthDaily.rows.map((r) => ({
+          day: r.day.toISOString().slice(0, 10),
+          rate: r.total > 0 ? Math.round((r.ok / r.total) * 100) : null,
+        })),
+      },
+      tempPasswordAgeBuckets: tempBuckets,
+      dormantAccounts: dormantAccounts.rows[0].count,
     });
   } catch (err) {
     console.error(err);

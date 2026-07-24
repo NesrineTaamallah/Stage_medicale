@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client';
-import { IconPlus, IconX } from '../components/Icons';
+import { IconPlus, IconX, IconDots, IconHistory, IconMail, IconUnlock, IconLock } from '../components/Icons';
 
 function StatusBadges({ u }) {
   return (
@@ -15,6 +15,69 @@ function StatusBadges({ u }) {
         <span className="badge badge-error">Verrouillé</span>
       )}
       {!u.is_active && <span className="badge badge-muted">Désactivé</span>}
+    </div>
+  );
+}
+
+// Toggle inline pour l'état actif/inactif : action fréquente et réversible,
+// elle reste visible directement dans la ligne plutôt que noyée dans un menu.
+function StatusToggle({ user, busy, onToggle }) {
+  return (
+    <button
+      type="button"
+      className={`status-toggle${user.is_active ? ' is-active' : ''}`}
+      disabled={busy}
+      onClick={onToggle}
+      aria-pressed={user.is_active}
+      aria-label={user.is_active ? 'Désactiver le compte' : 'Réactiver le compte'}
+    >
+      <span className="track"><span className="thumb" /></span>
+      <span className="toggle-label">{user.is_active ? 'actif' : 'inactif'}</span>
+    </button>
+  );
+}
+
+// Menu groupé pour les actions secondaires : les actions à risque (2FA, désactivation)
+// sont visuellement séparées et colorées pour éviter tout mis-clic.
+function ActionsMenu({ user, busy, open, onToggleOpen, onHistory, onResendPassword, onUnlock, onReset2FA }) {
+  const isLocked = user.locked_until && new Date(user.locked_until) > new Date();
+
+  return (
+    <div className="actions-cell" style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="kebab-btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Plus d'actions"
+        onClick={onToggleOpen}
+      >
+        <IconDots size={17} />
+      </button>
+      {open && (
+        <div className="actions-menu" role="menu">
+          <div className="actions-menu-group">
+            <button type="button" className="actions-menu-item" role="menuitem" onClick={onHistory}>
+              <IconHistory size={15} /> Historique
+            </button>
+            <button type="button" className="actions-menu-item" role="menuitem" disabled={busy} onClick={onResendPassword}>
+              <IconMail size={15} /> {user.tempPasswordStatus ? 'Renvoyer mdp' : 'Réinitialiser mdp'}
+            </button>
+            {isLocked && (
+              <button type="button" className="actions-menu-item" role="menuitem" disabled={busy} onClick={onUnlock}>
+                <IconUnlock size={15} /> Déverrouiller
+              </button>
+            )}
+          </div>
+          {user.is_2fa_enabled && (
+            <div className="actions-menu-group">
+              <button type="button" className="actions-menu-item risk-medium" role="menuitem" disabled={busy} onClick={onReset2FA}>
+                <IconLock size={15} /> Réinitialiser 2FA
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -42,6 +105,25 @@ export default function UsersTab({ onNavigateToUserLogs }) {
   const [createMsg, setCreateMsg] = useState('');
   const [createErr, setCreateErr] = useState('');
   const [busyId, setBusyId] = useState(null);
+
+  // Menu d'actions groupé (⋮) : un seul ouvert à la fois, fermé au clic extérieur / Échap
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const tableRef = useRef(null);
+
+  useEffect(() => {
+    function handleOutside(e) {
+      if (tableRef.current && !tableRef.current.contains(e.target)) setOpenMenuId(null);
+    }
+    function handleEscape(e) {
+      if (e.key === 'Escape') setOpenMenuId(null);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
   function openCreateModal() {
     setEmail(''); setRole('clinicien'); setConfirmAdmin(false);
@@ -109,6 +191,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
 
   async function runAction(id, path, confirmText) {
     if (confirmText && !window.confirm(confirmText)) return;
+    setOpenMenuId(null);
     setBusyId(id);
     setActionMessage('');
     try {
@@ -262,7 +345,7 @@ export default function UsersTab({ onNavigateToUserLogs }) {
         {loading ? (
           <p className="subtitle">Chargement...</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+          <table ref={tableRef} style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--line)' }}>
                 <th style={{ padding: '8px 6px' }}>Email</th>
@@ -286,63 +369,40 @@ export default function UsersTab({ onNavigateToUserLogs }) {
                   <td>{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
                   <td className={!u.last_login_at ? 'hint' : undefined}>{fmtLastLogin(u.last_login_at)}</td>
                   <td>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button
-                        className="secondary"
-                        onClick={() => onNavigateToUserLogs?.(u.id)}
-                      >
-                        Historique
-                      </button>
-                      <button
-                        className="secondary"
-                        disabled={busyId === u.id}
-                        onClick={() => runAction(
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', justifyContent: 'flex-end' }}>
+                      <StatusToggle
+                        user={u}
+                        busy={busyId === u.id}
+                        onToggle={() => runAction(
+                          u.id,
+                          'toggle-active',
+                          `${u.is_active ? 'Désactiver' : 'Réactiver'} le compte de ${u.email} ?\n\nAvant : ${u.is_active ? 'Actif' : 'Désactivé'}\nAprès : ${u.is_active ? 'Désactivé — l\'utilisateur ne pourra plus se connecter' : 'Actif — l\'utilisateur pourra de nouveau se connecter'}`
+                        )}
+                      />
+                      <ActionsMenu
+                        user={u}
+                        busy={busyId === u.id}
+                        open={openMenuId === u.id}
+                        onToggleOpen={() => setOpenMenuId((cur) => (cur === u.id ? null : u.id))}
+                        onHistory={() => { setOpenMenuId(null); onNavigateToUserLogs?.(u.id); }}
+                        onResendPassword={() => runAction(
                           u.id,
                           'resend-temp-password',
                           u.tempPasswordStatus
                             ? `Renvoyer un nouveau mot de passe temporaire à ${u.email} ?\n\nAvant : ${u.tempPasswordStatus === 'expired' ? 'Mot de passe probablement expiré' : 'En attente de 1ère connexion'}\nAprès : Nouveau mot de passe généré, délai de 48h relancé, ancien mot de passe invalidé`
                             : `Réinitialiser le mot de passe de ${u.email} ?\n\nÀ utiliser si l'utilisateur a oublié son mot de passe après l'avoir déjà changé.\nAprès : Un nouveau mot de passe temporaire (48h) est généré et envoyé par email, l'ancien mot de passe est immédiatement invalidé`
                         )}
-                      >
-                        {u.tempPasswordStatus ? 'Renvoyer mdp' : 'Réinitialiser mdp'}
-                      </button>
-                      {u.locked_until && new Date(u.locked_until) > new Date() && (
-                        <button
-                          className="secondary"
-                          disabled={busyId === u.id}
-                          onClick={() => runAction(
-                            u.id,
-                            'unlock',
-                            `Déverrouiller ${u.email} ?\n\nAvant : Verrouillé jusqu'au ${new Date(u.locked_until).toLocaleString('fr-FR')}\nAprès : Compte actif, compteur d'échecs remis à zéro`
-                          )}
-                        >
-                          Déverrouiller
-                        </button>
-                      )}
-                      {u.is_2fa_enabled && (
-                        <button
-                          className="secondary"
-                          disabled={busyId === u.id}
-                          onClick={() => runAction(
-                            u.id,
-                            'reset-2fa',
-                            `Réinitialiser le 2FA de ${u.email} ?\n\nAvant : 2FA actif\nAprès : 2FA désactivé — l'utilisateur devra re-scanner un nouveau QR code à sa prochaine connexion`
-                          )}
-                        >
-                          Reset 2FA
-                        </button>
-                      )}
-                      <button
-                        className="secondary"
-                        disabled={busyId === u.id}
-                        onClick={() => runAction(
+                        onUnlock={() => runAction(
                           u.id,
-                          'toggle-active',
-                          `${u.is_active ? 'Désactiver' : 'Réactiver'} le compte de ${u.email} ?\n\nAvant : ${u.is_active ? 'Actif' : 'Désactivé'}\nAprès : ${u.is_active ? 'Désactivé — l\'utilisateur ne pourra plus se connecter' : 'Actif — l\'utilisateur pourra de nouveau se connecter'}`
+                          'unlock',
+                          `Déverrouiller ${u.email} ?\n\nAvant : Verrouillé jusqu'au ${new Date(u.locked_until).toLocaleString('fr-FR')}\nAprès : Compte actif, compteur d'échecs remis à zéro`
                         )}
-                      >
-                        {u.is_active ? 'Désactiver' : 'Réactiver'}
-                      </button>
+                        onReset2FA={() => runAction(
+                          u.id,
+                          'reset-2fa',
+                          `Réinitialiser le 2FA de ${u.email} ?\n\nAvant : 2FA actif\nAprès : 2FA désactivé — l'utilisateur devra re-scanner un nouveau QR code à sa prochaine connexion`
+                        )}
+                      />
                     </div>
                   </td>
                 </tr>
