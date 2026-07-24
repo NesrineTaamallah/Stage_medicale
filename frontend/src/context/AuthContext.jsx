@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [tempToken, setTempToken] = useState(null);   // scope: change_password_only (en mémoire uniquement)
   const [totpToken, setTotpToken] = useState(null);    // scope: totp_pending (en mémoire uniquement)
+  const [pendingRole, setPendingRole] = useState(null); // rôle du compte en attente de validation 2FA — pour adapter le message d'aide
   const [user, setUser] = useState(null);              // { sub, email, role }
   const [needsTotpSetup, setNeedsTotpSetup] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,12 +43,14 @@ export function AuthProvider({ children }) {
     setUser(null);
     setTempToken(null);
     setTotpToken(null);
+    setPendingRole(null);
   }
 
   return (
     <AuthContext.Provider value={{
       tempToken, setTempToken,
       totpToken, setTotpToken,
+      pendingRole, setPendingRole,
       user, completeAuth,
       needsTotpSetup, setNeedsTotpSetup,
       isLoading,

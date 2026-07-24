@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client';
 import { IconPlus, IconX, IconDots, IconHistory, IconMail, IconUnlock, IconLock } from '../components/Icons';
+import { useAuth } from '../context/AuthContext';
 
 function StatusBadges({ u }) {
   return (
@@ -39,7 +40,7 @@ function StatusToggle({ user, busy, onToggle }) {
 
 // Menu groupé pour les actions secondaires : les actions à risque (2FA, désactivation)
 // sont visuellement séparées et colorées pour éviter tout mis-clic.
-function ActionsMenu({ user, busy, open, onToggleOpen, onHistory, onResendPassword, onUnlock, onReset2FA }) {
+function ActionsMenu({ user, busy, open, isSelf, onToggleOpen, onHistory, onResendPassword, onUnlock, onReset2FA }) {
   const isLocked = user.locked_until && new Date(user.locked_until) > new Date();
 
   return (
@@ -71,7 +72,14 @@ function ActionsMenu({ user, busy, open, onToggleOpen, onHistory, onResendPasswo
           </div>
           {user.is_2fa_enabled && (
             <div className="actions-menu-group">
-              <button type="button" className="actions-menu-item risk-medium" role="menuitem" disabled={busy} onClick={onReset2FA}>
+              <button
+                type="button"
+                className="actions-menu-item risk-medium"
+                role="menuitem"
+                disabled={busy || isSelf}
+                title={isSelf ? "Vous ne pouvez pas réinitialiser votre propre 2FA — demandez à un autre admin." : undefined}
+                onClick={onReset2FA}
+              >
                 <IconLock size={15} /> Réinitialiser 2FA
               </button>
             </div>
@@ -102,6 +110,7 @@ const QUICK_FILTERS = {
 };
 
 export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQuickFilterHandled }) {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -127,6 +136,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('clinicien');
+  const [organizationName, setOrganizationName] = useState('');
   const [confirmAdmin, setConfirmAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [showPreview, setShowPreview] = useState(false); // correction #1
@@ -154,7 +164,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
   }, []);
 
   function openCreateModal() {
-    setEmail(''); setRole('clinicien'); setConfirmAdmin(false); setAdminPassword('');
+    setEmail(''); setRole('clinicien'); setOrganizationName(''); setConfirmAdmin(false); setAdminPassword('');
     setShowPreview(false); setCreateMsg(''); setCreateErr('');
     setShowCreateModal(true);
   }
@@ -209,14 +219,20 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
       setCreateErr('Ressaisissez votre mot de passe pour confirmer la création d\'un compte admin.');
       return;
     }
+    if (role !== 'admin' && !organizationName.trim()) {
+      setCreateErr(role === 'clinicien'
+        ? 'Le nom de la clinique/hôpital est requis.'
+        : 'Le nom du laboratoire/institut est requis.');
+      return;
+    }
 
     try {
       const { data } = await client.post('/admin/users', {
         email, role,
-        ...(role === 'admin' ? { adminPassword } : {}),
+        ...(role === 'admin' ? { adminPassword } : { organizationName: organizationName.trim() }),
       });
       setCreateMsg(`Compte créé pour ${data.user.email} (${data.user.role}).`);
-      setEmail(''); setConfirmAdmin(false); setAdminPassword(''); setShowPreview(false);
+      setEmail(''); setOrganizationName(''); setConfirmAdmin(false); setAdminPassword(''); setShowPreview(false);
       fetchUsers();
       setTimeout(() => setShowCreateModal(false), 900);
     } catch (err) {
@@ -284,6 +300,21 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
                 <option value="chercheur">Chercheur</option>
                 <option value="admin">Admin</option>
               </select>
+              {(role === 'clinicien' || role === 'chercheur') && (
+                <>
+                  <label style={{ marginTop: 12 }}>
+                    {role === 'clinicien' ? 'Nom de la clinique / hôpital' : 'Nom du laboratoire / institut'}
+                  </label>
+                  <input
+                    type="text"
+                    value={organizationName}
+                    onChange={e => setOrganizationName(e.target.value)}
+                    placeholder={role === 'clinicien' ? 'ex : Institut National de Neurologie' : 'ex : LR-InstitutXYZ'}
+                    required
+                    autoComplete="off"
+                  />
+                </>
+              )}
               {role === 'admin' && (
                 <label style={{ textTransform: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                   <input
@@ -425,6 +456,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
               <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--line)' }}>
                 <th style={{ padding: '8px 6px' }}>Email</th>
                 <th>Rôle</th>
+                <th>Organisation</th>
                 <th>Statut</th>
                 <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('created_at')}>
                   Créé le{sortIndicator('created_at')}
@@ -440,6 +472,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
                 <tr key={u.id} style={{ borderBottom: '1px solid var(--line)' }}>
                   <td style={{ padding: '8px 6px' }}>{u.email}</td>
                   <td>{u.role}</td>
+                  <td className={!u.organization_name ? 'hint' : undefined}>{u.organization_name || '—'}</td>
                   <td><StatusBadges u={u} /></td>
                   <td>{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
                   <td className={!u.last_login_at ? 'hint' : undefined}>{fmtLastLogin(u.last_login_at)}</td>
@@ -458,6 +491,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
                         user={u}
                         busy={busyId === u.id}
                         open={openMenuId === u.id}
+                        isSelf={currentUser?.sub === u.id}
                         onToggleOpen={() => setOpenMenuId((cur) => (cur === u.id ? null : u.id))}
                         onHistory={() => { setOpenMenuId(null); onNavigateToUserLogs?.(u.id); }}
                         onResendPassword={() => runAction(
@@ -483,7 +517,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: 16, textAlign: 'center' }}>Aucun utilisateur trouvé.</td></tr>
+                <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center' }}>Aucun utilisateur trouvé.</td></tr>
               )}
             </tbody>
           </table>

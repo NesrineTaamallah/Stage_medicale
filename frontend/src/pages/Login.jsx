@@ -14,7 +14,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { setTempToken, setTotpToken, completeAuth, setNeedsTotpSetup } = useAuth();
+  const { setTempToken, setTotpToken, setPendingRole, completeAuth, setNeedsTotpSetup } = useAuth();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -31,6 +31,7 @@ export default function Login() {
 
       if (data.requiresTotp) {
         setTotpToken(data.totpToken);
+        setPendingRole(data.role);
         navigate('/verify-totp');
         return;
       }

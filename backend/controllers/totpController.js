@@ -116,4 +116,67 @@ async function validateTotp(req, res) {
   }
 }
 
-module.exports = { setupTotp, confirmTotp, validateTotp };
+/**
+ * POST /2fa/self-reset-admin
+ * Recours d'urgence : un admin qui a perdu son app d'authentification (donc
+ * incapable de fournir un code TOTP) peut réinitialiser SA PROPRE 2FA depuis
+ * cette route, en repartant directement de son totpToken (qui prouve déjà
+ * qu'il a fourni le bon mot de passe lors du /login, il y a moins de 10 min).
+ *
+ * Réservé au rôle admin : si un admin ne peut plus se connecter, c'est
+ * potentiellement toute la plateforme qui devient inaccessible (plus personne
+ * pour gérer les comptes). Les autres rôles (clinicien, chercheur) continuent
+ * de devoir passer par un admin actif — un compte non-admin bloqué n'a pas
+ * cet effet de blocage global.
+ *
+ * Ceci reste un contournement volontaire de la 2FA, donc :
+ *   - le token doit être valide et non expiré (scope totp_pending, 10 min),
+ *   - l'action est journalisée explicitement (SELF_RESET_2FA_ADMIN) pour audit,
+ *   - l'admin devra reconfigurer un nouveau QR code dès sa prochaine connexion
+ *     (is_2fa_enabled repasse à false), il ne récupère PAS de session ici.
+ */
+async function selfResetAdminTotp(req, res) {
+  const { totpToken } = req.body;
+
+  let payload;
+  try {
+    payload = verifyToken(totpToken);
+  } catch {
+    return res.status(401).json({ error: 'Token invalide ou expiré. Reconnectez-vous avec votre email et mot de passe.' });
+  }
+
+  if (payload.scope !== 'totp_pending') {
+    return res.status(403).json({ error: 'Ce token ne permet pas cette action.' });
+  }
+
+  if (payload.role !== 'admin') {
+    return res.status(403).json({
+      error: "Cette réinitialisation directe est réservée aux comptes admin. Contactez un administrateur pour réinitialiser votre 2FA.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE users SET is_2fa_enabled = false, totp_secret = NULL WHERE id = $1 RETURNING id, email`,
+      [payload.sub]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    await pool.query(
+      `INSERT INTO access_logs (user_id, action, success, ip_address) VALUES ($1, $2, true, $3)`,
+      [payload.sub, 'SELF_RESET_2FA_ADMIN', req.ip]
+    );
+
+    return res.json({
+      message: '2FA réinitialisée. Reconnectez-vous avec votre email et mot de passe pour configurer un nouveau QR code.',
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur.' });
+  }
+}
+
+module.exports = { setupTotp, confirmTotp, validateTotp, selfResetAdminTotp };

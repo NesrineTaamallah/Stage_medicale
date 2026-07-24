@@ -6,6 +6,15 @@ async function createUser(req, res) {
   const { email, role, adminPassword } = req.body; // déjà validé (email + rôle) par le middleware validate
   const adminId = req.user.sub;
 
+  // Rattachement organisationnel : obligatoire pour clinicien/chercheur, absent pour admin.
+  let organizationName = req.body.organizationName ? String(req.body.organizationName).trim() : null;
+  if (role === 'admin') {
+    organizationName = null;
+  } else if (!organizationName) {
+    const label = role === 'clinicien' ? 'de la clinique/hôpital' : 'du laboratoire/institut';
+    return res.status(400).json({ error: `Le nom ${label} est requis pour ce rôle.` });
+  }
+
   try {
     // Step-up auth : la création d'un compte admin est une action sensible.
     // On exige que l'admin re-saisisse son propre mot de passe pour la confirmer,
@@ -37,10 +46,10 @@ async function createUser(req, res) {
     const passwordHash = await hashPassword(tempPassword);
 
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, role, must_change_password, created_by)
-       VALUES ($1, $2, $3, true, $4)
-       RETURNING id, email, role, created_at`,
-      [email, passwordHash, role, adminId]
+      `INSERT INTO users (email, password_hash, role, must_change_password, created_by, organization_name)
+       VALUES ($1, $2, $3, true, $4, $5)
+       RETURNING id, email, role, created_at, organization_name`,
+      [email, passwordHash, role, adminId, organizationName]
     );
     const newUser = result.rows[0];
 
@@ -108,6 +117,17 @@ async function resetTotp(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
 
+  // Un admin ne peut pas réinitialiser sa propre 2FA : ça reviendrait à contourner
+  // sa propre sécurité en un clic si sa session/mot de passe était compromis.
+  // Cette action doit toujours passer par un AUTRE admin.
+  // (Cas "tous les admins perdus" : voir le script d'urgence backend/scripts/emergency-reset-2fa.js,
+  // volontairement non exposé via l'API pour ne pas créer de porte dérobée web.)
+  if (id === adminId) {
+    return res.status(403).json({
+      error: "Vous ne pouvez pas réinitialiser votre propre 2FA. Demandez à un autre admin de le faire pour vous.",
+    });
+  }
+
   try {
     const result = await pool.query(
       `UPDATE users
@@ -146,7 +166,7 @@ const TEMP_PASSWORD_VALIDITY_HOURS = 48;
 async function listUsersDetailed(req, res) {
   try {
     const result = await pool.query(
-      `SELECT id, email, role, must_change_password, is_2fa_enabled,
+      `SELECT id, email, role, organization_name, must_change_password, is_2fa_enabled,
               is_active, failed_login_attempts, locked_until,
               temp_password_created_at, last_login_at, created_at
        FROM users ORDER BY created_at DESC`

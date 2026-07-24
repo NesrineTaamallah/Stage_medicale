@@ -103,7 +103,7 @@ async function login(req, res) {
         [user.id, 'LOGIN_PASSWORD_OK_AWAITING_TOTP', req.ip]
       );
 
-      return res.json({ requiresTotp: true, totpToken });
+      return res.json({ requiresTotp: true, totpToken, role: user.role });
     }
 
     const now = Math.floor(Date.now() / 1000);

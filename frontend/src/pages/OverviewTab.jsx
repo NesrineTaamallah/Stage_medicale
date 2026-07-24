@@ -392,13 +392,6 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Liste inline des comptes dormants (>60j) : affichée directement dans la carte,
-  // sans changer d'onglet — chargée à la demande (pas au montage de la page).
-  const [dormantList, setDormantList] = useState(null);
-  const [dormantListLoading, setDormantListLoading] = useState(false);
-  const [dormantListError, setDormantListError] = useState('');
-  const [showDormantList, setShowDormantList] = useState(false);
-
   const fetchOverview = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -417,32 +410,6 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
     const interval = setInterval(fetchOverview, 60000); // rafraîchissement auto — vue "état de santé"
     return () => clearInterval(interval);
   }, [fetchOverview]);
-
-  async function toggleDormantList() {
-    if (showDormantList) {
-      setShowDormantList(false);
-      return;
-    }
-    setShowDormantList(true);
-    setDormantListError('');
-    setDormantListLoading(true);
-    try {
-      const { data: users } = await client.get('/admin/users/detailed');
-      const now = Date.now();
-      const list = users
-        .filter((u) => {
-          if (!u.is_active || !u.last_login_at) return false;
-          const days = (now - new Date(u.last_login_at).getTime()) / (1000 * 60 * 60 * 24);
-          return days > 60;
-        })
-        .sort((a, b) => new Date(a.last_login_at) - new Date(b.last_login_at)); // les plus dormants d'abord
-      setDormantList(list);
-    } catch (err) {
-      setDormantListError(err.response?.data?.error || 'Erreur de chargement des comptes dormants.');
-    } finally {
-      setDormantListLoading(false);
-    }
-  }
 
   if (loading && !data) {
     return <div className="card"><p className="subtitle">Chargement de la vue d'ensemble...</p></div>;
@@ -545,47 +512,11 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
                 type="button"
                 className="secondary"
                 style={{ width: 'auto', padding: '7px 14px', fontSize: 12.5 }}
-                onClick={toggleDormantList}
-              >
-                {showDormantList ? 'Masquer la liste' : 'Voir la liste des emails'}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                style={{ width: 'auto', padding: '7px 14px', fontSize: 12.5 }}
                 onClick={() => onNavigateToUsersFilter?.('dormant')}
               >
                 Revue groupée (onglet Utilisateurs) →
               </button>
             </div>
-          {showDormantList && (
-            <div style={{ marginTop: 12, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-              {dormantListLoading && <p className="hint" style={{ margin: 0 }}>Chargement...</p>}
-              {dormantListError && <p className="error" style={{ margin: 0 }}>{dormantListError}</p>}
-              {!dormantListLoading && !dormantListError && dormantList && (
-                dormantList.length === 0 ? (
-                  <p className="hint" style={{ margin: 0 }}>Aucun compte dormant trouvé.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
-                    {dormantList.map((u) => (
-                      <div
-                        key={u.id}
-                        style={{
-                          display: 'flex', justifyContent: 'space-between', gap: 10,
-                          fontSize: 12.5, padding: '4px 0',
-                        }}
-                      >
-                        <span style={{ color: 'var(--ink)' }}>{u.email}</span>
-                        <span className="hint" style={{ whiteSpace: 'nowrap' }}>
-                          dernière connexion : {new Date(u.last_login_at).toLocaleDateString('fr-FR')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              )}
-            </div>
-          )}
         </div>
 
         <div className="card" style={{ flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 20 }}>

@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret           VARCHAR(255),
     is_2fa_enabled        BOOLEAN NOT NULL DEFAULT false,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by            UUID REFERENCES users(id)
+    created_by            UUID REFERENCES users(id),
+    -- Nom de la clinique/hôpital (clinicien) ou du labo/institut (chercheur). NULL pour les admins.
+    organization_name     VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS access_logs (

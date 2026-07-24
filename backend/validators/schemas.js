@@ -21,6 +21,9 @@ const createUserSchema = z.object({
   role: z.enum(['clinicien', 'chercheur', 'admin'], {
     errorMap: () => ({ message: 'Rôle invalide.' }),
   }),
+  // Requis pour clinicien (nom clinique/hôpital) et chercheur (nom labo/institut),
+  // absent pour admin — vérifié côté contrôleur (dépend du rôle, difficile à exprimer proprement ici).
+  organizationName: z.string().trim().min(1).max(255).optional(),
   // Step-up auth : requis uniquement quand role === 'admin' (re-vérifié côté contrôleur,
   // car zod seul ne peut pas exprimer facilement une dépendance conditionnelle propre ici).
   adminPassword: z.string().optional(),
