@@ -4,7 +4,9 @@ import BrandMark from '../components/BrandMark';
 import UsersTab from './UsersTab';
 import OverviewTab from './OverviewTab';
 import LogsTab from './LogsTab';
-import { IconChart, IconUsers, IconSearch, IconLogout } from '../components/Icons';
+import { IconChart, IconUsers, IconSearch, IconLogout, IconShield } from '../components/Icons';
+
+const SIDEBAR_WIDTH = 248;
 
 const NAV_ITEMS = [
   { key: 'overview', Icon: IconChart, label: "Vue d'Ensemble" },
@@ -57,19 +59,24 @@ export default function AdminDashboard() {
   const displayName = displayNameFromEmail(user?.email);
 
   return (
-    <div style={{ minHeight: '100svh', background: 'var(--paper)', display: 'flex' }}>
-      {/* ---------- Barre latérale gauche ---------- */}
+    <div style={{ minHeight: '100svh', background: 'var(--paper)' }}>
+      {/* ---------- Barre latérale gauche ----------
+          En position fixed (et non sticky) : plus fiable ici, la sidebar
+          reste plaquée au viewport quel que soit le contexte de défilement
+          du contenu à droite, qui lui défile normalement sous elle. */}
       <aside
         style={{
-          width: 248,
+          width: SIDEBAR_WIDTH,
           flexShrink: 0,
           background: 'var(--card)',
           borderRight: '1px solid var(--line)',
           display: 'flex',
           flexDirection: 'column',
-          minHeight: '100svh',
-          position: 'sticky',
+          height: '100svh',
+          position: 'fixed',
           top: 0,
+          left: 0,
+          zIndex: 10,
         }}
       >
         <div style={{ padding: '22px 20px', borderBottom: '1px solid var(--line)' }}>
@@ -84,9 +91,23 @@ export default function AdminDashboard() {
               </p>
             </div>
           </div>
+
+          {/* Rappel visuel explicite : cet espace est réservé aux comptes admin. */}
+          <div
+            style={{
+              marginTop: 14,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '5px 10px', borderRadius: 999,
+              background: 'var(--primary-tint)', color: 'var(--primary)',
+              fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',
+            }}
+          >
+            <IconShield size={13} />
+            Espace Administrateur
+          </div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '14px 12px', flex: 1 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '14px 12px', flex: 1, overflowY: 'auto' }}>
           {NAV_ITEMS.map((item) => {
             const active = tab === item.key;
             return (
@@ -133,8 +154,9 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
-      {/* ---------- Contenu ---------- */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* ---------- Contenu ----------
+          marginLeft = largeur de la sidebar fixed, pour ne pas passer dessous. */}
+      <div style={{ marginLeft: SIDEBAR_WIDTH, minWidth: 0 }}>
         <div className="dashboard" style={{ maxWidth: 1120 }}>
           {tab === 'overview' && (
             <OverviewTab
