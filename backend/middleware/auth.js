@@ -67,8 +67,16 @@ async function requireAuth(req, res, next) {
         [payload.jti, payload.sub, payload.exp]
       );
     } catch (err) {
-      console.error('Erreur révocation ancien token lors du renouvellement :', err);
-      // non bloquant : le nouveau cookie est déjà posé, on continue
+      // ALERTE SÉCURITÉ : l'ancien token n'a pas pu être révoqué. Il reste donc
+      // valide jusqu'à sa propre expiration naturelle (jusqu'à 2h), au lieu
+      // d'être coupé immédiatement au moment du renouvellement. Choix
+      // pragmatique assumé (on ne bloque pas l'utilisateur pour une panne DB
+      // transitoire), mais ce cas doit être surveillé/alerté en prod — ce
+      // n'est pas une simple erreur applicative.
+      console.error(
+        '[SECURITY] Échec de révocation du token lors du renouvellement — ancien jti reste valide jusqu\'à expiration :',
+        { jti: payload.jti, userId: payload.sub, err }
+      );
     }
   }
 

@@ -42,6 +42,10 @@ const userIdParamSchema = z.object({
   id: z.string().uuid('Identifiant utilisateur invalide.'),
 });
 
+const selfResetAdminSchema = z.object({
+  totpToken: z.string().min(1, 'Token TOTP requis.'),
+});
+
 module.exports = {
   loginSchema,
   changePasswordSchema,
@@ -49,4 +53,5 @@ module.exports = {
   totpCodeSchema,
   totpValidateSchema,
   userIdParamSchema,
+  selfResetAdminSchema,
 };
