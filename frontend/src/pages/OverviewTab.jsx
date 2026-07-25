@@ -275,7 +275,19 @@ function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
             const h = (v / niceMax) * plotH;
             const y = yCursor - h;
             yCursor -= h;
-            return <rect key={ser.type} x={x} y={y} width={barWidth} height={Math.max(h, 0)} fill={ACTION_COLORS[ser.type] || 'var(--primary)'} />;
+            return (
+              <rect
+                key={ser.type}
+                x={x}
+                y={y}
+                width={barWidth}
+                height={Math.max(h, 0)}
+                fill={ACTION_COLORS[ser.type] || 'var(--primary)'}
+                style={{ cursor: 'pointer' }}
+              >
+                <title>{`${actionLabel(ser.type)} — ${dayLabel(d)} : ${v}`}</title>
+              </rect>
+            );
           });
           return (
             <g key={d}>
