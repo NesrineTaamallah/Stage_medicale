@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client';
 import { IconPlus, IconX, IconDots, IconHistory, IconMail, IconUnlock, IconLock } from '../components/Icons';
 import { useAuth } from '../context/AuthContext';
+import Toast from '../components/Toast';
 
 function StatusBadges({ u }) {
   return (
@@ -114,7 +115,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionMessage, setActionMessage] = useState('');
+  const [toast, setToast] = useState(null);
 
   // Filtres
   const [search, setSearch] = useState('');
@@ -244,13 +245,12 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
     if (confirmText && !window.confirm(confirmText)) return;
     setOpenMenuId(null);
     setBusyId(id);
-    setActionMessage('');
     try {
       const { data } = await client.post(`/admin/users/${id}/${path}`);
-      setActionMessage(data.message);
+      setToast({ message: data.message, type: 'success' });
       fetchUsers();
     } catch (err) {
-      setActionMessage(err.response?.data?.error || 'Erreur lors de l\'action.');
+      setToast({ message: err.response?.data?.error || 'Erreur lors de l\'action.', type: 'error' });
     } finally {
       setBusyId(null);
     }
@@ -278,6 +278,8 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
 
   return (
     <div>
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
       {showCreateModal && (
         <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeCreateModal(); }}>
           <div className="modal-panel">
@@ -446,7 +448,6 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
           </select>
         </div>
 
-        {actionMessage && <p className="hint">{actionMessage}</p>}
         {error && <p className="error">{error}</p>}
         {loading ? (
           <p className="subtitle">Chargement...</p>

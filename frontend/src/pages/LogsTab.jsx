@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
+import {
+  IconActivity, IconAlert, IconUsers, IconGlobe, IconCheckCircle,
+  IconTarget, IconSearch, IconUnlock, IconRefresh, IconLock,
+  IconShield, IconUpload, IconMoon, IconX,
+} from '../components/Icons';
 
 /**
  * Découpe une action stockée en base (ex. "DEACTIVATE_ACCOUNT:5c2617e0-...")
@@ -151,6 +156,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   const [anomaliesLoading, setAnomaliesLoading] = useState(true);
   const [showAnomalies, setShowAnomalies] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState(null);
+  const [showRiskModal, setShowRiskModal] = useState(false);
 
   const [timeline, setTimeline] = useState(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -241,7 +247,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   const ANOMALY_CATEGORIES = anomalies ? [
     {
       key: 'bruteForceSuccesses',
-      icon: '🔓',
+      icon: IconUnlock,
       title: 'Brute-force abouti',
       severity: 'high',
       description: "Connexion réussie précédée d'au moins 3 échecs pour le même compte en moins de 30 min — plus grave qu'un simple verrouillage : le mot de passe a fini par être trouvé.",
@@ -252,7 +258,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'reactivationImmediateUse',
-      icon: '🔁',
+      icon: IconRefresh,
       title: 'Réactivation puis usage immédiat',
       severity: 'high',
       description: "Compte désactivé puis réactivé par un admin différent, suivi d'une connexion dans l'heure — signal possible de collusion ou de compte détourné.",
@@ -263,7 +269,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'bruteForceLockouts',
-      icon: '🔒',
+      icon: IconLock,
       title: 'Brute-force ciblé',
       severity: 'high',
       description: 'Comptes ayant subi un verrouillage après plusieurs échecs de connexion (24h).',
@@ -274,7 +280,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'credentialStuffingIps',
-      icon: '🕸️',
+      icon: IconGlobe,
       title: 'Énumération / credential stuffing',
       severity: 'medium',
       description: 'IP tentant de se connecter sur plusieurs comptes différents (24h).',
@@ -285,7 +291,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'totpBypassAttempts',
-      icon: '🛡️',
+      icon: IconShield,
       title: 'Contournement 2FA suspecté',
       severity: 'medium',
       description: 'Échecs de code TOTP répétés pour un même compte (24h).',
@@ -296,7 +302,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'frequent2faResets',
-      icon: '♻️',
+      icon: IconRefresh,
       title: 'Réinitialisations 2FA fréquentes',
       severity: 'medium',
       description: 'Signal possible de social engineering (7 jours).',
@@ -307,7 +313,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'massExports',
-      icon: '📤',
+      icon: IconUpload,
       title: 'Exports CSV répétés',
       severity: 'medium',
       description: "Au moins 5 exports des logs en moins de 10 minutes — signal possible d'exfiltration de données.",
@@ -318,7 +324,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     },
     {
       key: 'unusualHourLogins',
-      icon: '🌙',
+      icon: IconMoon,
       title: 'Connexions à horaires inhabituels',
       severity: 'low',
       description: 'Connexions réussies entre 00h et 05h (7 jours).',
@@ -410,7 +416,7 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
         </div>
       )}
 
-      {/* Anomalies détectées */}
+      {/* Anomalies détectées — en-tête + bascule d'affichage */}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -423,199 +429,241 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
             {showAnomalies ? 'Masquer' : 'Afficher'}
           </button>
         </div>
-        {showAnomalies && (
-          <div style={{ marginTop: 16 }}>
-            {anomaliesLoading ? (
-              <p className="subtitle">Chargement des anomalies...</p>
-            ) : !anomalies || !hasAnyAnomaly ? (
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px',
-                  borderRadius: 8, background: '#F0FBF6', border: '1px solid #BEE8D3',
-                }}
-              >
-                <span style={{ fontSize: 20 }}>✅</span>
-                <span style={{ fontSize: 13.5 }}>Aucune anomalie détectée actuellement. Tout est nominal.</span>
+      </div>
+
+      {showAnomalies && (
+        anomaliesLoading ? (
+          <div className="card"><p className="subtitle" style={{ margin: 0 }}>Chargement des anomalies...</p></div>
+        ) : !anomalies || !hasAnyAnomaly ? (
+          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className="icon" style={{ color: 'var(--success)' }}><IconCheckCircle size={20} /></span>
+            <span style={{ fontSize: 13.5 }}>Aucune anomalie détectée actuellement. Tout est nominal.</span>
+          </div>
+        ) : (() => {
+          const highCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'high').reduce((s, c) => s + c.items.length, 0);
+          const mediumCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'medium').reduce((s, c) => s + c.items.length, 0);
+          const lowCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'low').reduce((s, c) => s + c.items.length, 0);
+          const totalSignals = highCount + mediumCount + lowCount;
+          const riskScores = anomalies.riskScores || [];
+          const accountsInvolved = new Set(riskScores.filter((r) => r.type === 'user').map((r) => r.subject)).size;
+          const ipsInvolved = new Set(riskScores.filter((r) => r.type === 'ip').map((r) => r.subject)).size;
+          const topScore = riskScores.length > 0 ? Math.max(...riskScores.map((r) => r.score)) : 0;
+
+          return (
+            <>
+              {/* ── 1. Bandeau KPI : chaque indicateur est sa propre carte ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+                {[
+                  { label: 'Signaux au total', value: totalSignals, Icon: IconActivity, accent: 'var(--primary)' },
+                  { label: 'Risque le plus élevé', value: topScore, Icon: IconAlert, accent: topScore >= 20 ? SEVERITY_HEX.medium : SEVERITY_HEX.low },
+                  { label: 'Comptes concernés', value: accountsInvolved, Icon: IconUsers, accent: 'var(--teal)' },
+                  { label: 'IP suspectes', value: ipsInvolved, Icon: IconGlobe, accent: SEVERITY_HEX.medium },
+                ].map((kpi) => (
+                  <div key={kpi.label} className="card" style={{ padding: '16px 18px' }}>
+                    <span className="icon" style={{ color: kpi.accent }}><kpi.Icon size={19} /></span>
+                    <p style={{ margin: '10px 0 2px', fontSize: 26, fontWeight: 700, color: 'var(--ink)' }}>{kpi.value}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{kpi.label}</p>
+                  </div>
+                ))}
               </div>
-            ) : (() => {
-              const highCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'high').reduce((s, c) => s + c.items.length, 0);
-              const mediumCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'medium').reduce((s, c) => s + c.items.length, 0);
-              const lowCount = ANOMALY_CATEGORIES.filter((c) => c.severity === 'low').reduce((s, c) => s + c.items.length, 0);
-              const totalSignals = highCount + mediumCount + lowCount;
-              const riskScores = anomalies.riskScores || [];
-              const accountsInvolved = new Set(riskScores.filter((r) => r.type === 'user').map((r) => r.subject)).size;
-              const ipsInvolved = new Set(riskScores.filter((r) => r.type === 'ip').map((r) => r.subject)).size;
-              const topScore = riskScores.length > 0 ? Math.max(...riskScores.map((r) => r.score)) : 0;
 
-              return (
-                <>
-                  {/* ── 1. Bandeau KPI : lecture en 2 secondes, même pour un non-technicien ── */}
-                  <div
-                    style={{
-                      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12,
-                      marginBottom: 22,
-                    }}
-                  >
-                    {[
-                      { label: 'Signaux au total', value: totalSignals, icon: '📡', accent: 'var(--primary)' },
-                      { label: 'Risque le plus élevé', value: topScore, icon: '🔥', accent: topScore >= 20 ? SEVERITY_HEX.medium : SEVERITY_HEX.low },
-                      { label: 'Comptes concernés', value: accountsInvolved, icon: '👤', accent: 'var(--teal)' },
-                      { label: 'IP suspectes', value: ipsInvolved, icon: '🌐', accent: SEVERITY_HEX.medium },
-                    ].map((kpi) => (
-                      <div
-                        key={kpi.label}
-                        style={{
-                          background: 'var(--paper)', borderRadius: 10, padding: '14px 16px',
-                          borderLeft: `3px solid ${kpi.accent}`,
-                        }}
-                      >
-                        <p style={{ margin: 0, fontSize: 18 }}>{kpi.icon}</p>
-                        <p style={{ margin: '8px 0 2px', fontSize: 24, fontWeight: 700, color: 'var(--ink)' }}>{kpi.value}</p>
-                        <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{kpi.label}</p>
-                      </div>
-                    ))}
-                  </div>
+              {/* ── 2. Répartition par sévérité — bloc dédié ── */}
+              <div className="card">
+                <p style={{ margin: '0 0 14px', fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
+                  Répartition par sévérité
+                </p>
+                <SeverityDonut counts={{ high: highCount, medium: mediumCount, low: lowCount }} />
+              </div>
 
-                  {/* ── 2. Répartition par sévérité ── */}
-                  <div style={{ background: 'var(--paper)', borderRadius: 10, padding: '18px 20px', marginBottom: 22 }}>
-                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
-                      Répartition par sévérité
-                    </p>
-                    <SeverityDonut counts={{ high: highCount, medium: mediumCount, low: lowCount }} />
-                  </div>
-
-                  {/* ── 3. Top risques : classement en cartes, pas juste des barres ── */}
-                  {riskScores.length > 0 && (
-                    <div style={{ marginBottom: 22 }}>
-                      <p style={{ margin: '0 0 2px', fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
-                        🏆 Top risques — priorité de traitement
-                      </p>
-                      <p className="hint" style={{ marginBottom: 12 }}>
-                        Sujets (utilisateur ou IP) classés par score agrégé, tous patterns combinés.
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {riskScores.slice(0, 6).map((r, i) => {
-                          const sev = r.score >= 50 ? 'high' : r.score >= 20 ? 'medium' : 'low';
-                          const pct = Math.min(100, Math.max((r.score / Math.max(topScore, 1)) * 100, 6));
-                          return (
-                            <div
-                              key={i}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 14,
-                                padding: '10px 14px', borderRadius: 10,
-                                background: 'var(--paper)',
-                                borderLeft: `3px solid ${SEVERITY_HEX[sev]}`,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
-                                  background: 'var(--card)', border: '1px solid var(--line)',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  fontSize: 11.5, fontWeight: 700, color: 'var(--slate)',
-                                }}
-                              >
-                                {i + 1}
-                              </span>
-                              <div style={{ flex: '0 0 220px', minWidth: 0 }}>
-                                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.subject}>
-                                  {r.type === 'ip' ? '🌐 ' : '👤 '}{r.subject}
-                                </p>
-                                <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reasons.join(', ')}>
-                                  {r.reasons.join(' · ')}
-                                </p>
-                              </div>
-                              <div style={{ flex: 1, background: '#EEF1F4', borderRadius: 999, height: 10, overflow: 'hidden' }}>
-                                <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: SEVERITY_HEX[sev] }} />
-                              </div>
-                              <span
-                                className={`badge ${sev === 'high' ? 'badge-error' : sev === 'medium' ? 'badge-warning' : 'badge-muted'}`}
-                                style={{ flexShrink: 0, minWidth: 34, textAlign: 'center' }}
-                              >
-                                {r.score}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── 4. Détail par type de pattern : grille de tuiles cliquables ── */}
+              {/* ── 3. Top risques — bloc dédié, ouvre une fenêtre avec le détail des comptes ── */}
+              {riskScores.length > 0 && (
+                <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <div>
                     <p style={{ margin: '0 0 2px', fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
-                      🔍 Détail par type de pattern
+                      Top risques — priorité de traitement
                     </p>
-                    <p className="hint" style={{ marginBottom: 12 }}>
-                      Cliquez une carte pour afficher le détail des occurrences.
+                    <p className="hint" style={{ margin: 0 }}>
+                      {riskScores.length} sujet(s) (compte ou IP) classé(s) par score agrégé, tous patterns combinés.
                     </p>
-                    <div
-                      style={{
-                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10,
-                      }}
-                    >
-                      {ANOMALY_CATEGORIES.map((cat) => {
-                        const colors = SEVERITY_COLOR[cat.severity];
-                        const isOpen = expandedCategory === cat.key;
-                        return (
-                          <button
-                            key={cat.key}
-                            type="button"
-                            onClick={() => setExpandedCategory(isOpen ? null : cat.key)}
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ width: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                    onClick={() => setShowRiskModal(true)}
+                  >
+                    <IconTarget size={16} />
+                    Voir le classement
+                  </button>
+                </div>
+              )}
+
+              {/* ── 4. Détail par type de pattern — bloc dédié, grille de tuiles ── */}
+              <div className="card">
+                <p style={{ margin: '0 0 2px', fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
+                  Détail par type de pattern
+                </p>
+                <p className="hint" style={{ marginBottom: 14 }}>
+                  Cliquez une carte pour afficher le détail des occurrences.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+                  {ANOMALY_CATEGORIES.map((cat) => {
+                    const colors = SEVERITY_COLOR[cat.severity];
+                    const CatIcon = cat.icon;
+                    return (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        onClick={() => setExpandedCategory(cat.key)}
+                        style={{
+                          textAlign: 'left', cursor: 'pointer', width: '100%', margin: 0,
+                          padding: '14px 16px', borderRadius: 10,
+                          background: 'var(--paper)',
+                          border: '1px solid var(--line)',
+                          boxShadow: 'none',
+                          display: 'flex', flexDirection: 'column', gap: 8,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <span className="icon" style={{ color: colors.border }}><CatIcon size={18} /></span>
+                          <span className={`badge ${colors.badge}`}>{cat.items.length}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{cat.title}</p>
+                        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>{cat.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Fenêtre : détail des occurrences d'un type de pattern ── */}
+              {expandedCategory && ANOMALY_CATEGORIES.filter((c) => c.key === expandedCategory).map((cat) => {
+                const CatIcon = cat.icon;
+                const colors = SEVERITY_COLOR[cat.severity];
+                return (
+                  <div
+                    key={cat.key}
+                    className="modal-overlay"
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) setExpandedCategory(null); }}
+                  >
+                    <div className="modal-panel" style={{ maxWidth: 560 }}>
+                      <div className="modal-header">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                          <span
+                            className="icon"
                             style={{
-                              textAlign: 'left', cursor: 'pointer', width: '100%', margin: 0,
-                              padding: '14px 16px', borderRadius: 10,
-                              background: isOpen ? colors.bg : 'var(--paper)',
-                              border: `1px solid ${isOpen ? colors.border : 'var(--line)'}`,
-                              boxShadow: 'none',
-                              display: 'flex', flexDirection: 'column', gap: 8,
+                              width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+                              background: colors.bg, color: colors.border,
                             }}
                           >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <span style={{ fontSize: 20 }}>{cat.icon}</span>
-                              <span className={`badge ${colors.badge}`}>{cat.items.length}</span>
+                            <CatIcon size={18} />
+                          </span>
+                          <div>
+                            <h2 style={{ marginBottom: 2 }}>{cat.title}</h2>
+                            <p className="hint" style={{ margin: 0 }}>{cat.description}</p>
+                          </div>
+                        </div>
+                        <button type="button" className="modal-close" onClick={() => setExpandedCategory(null)} aria-label="Fermer">
+                          <IconX size={18} />
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 4px' }}>
+                        <span className={`badge ${colors.badge}`}>{cat.items.length} occurrence{cat.items.length > 1 ? 's' : ''}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, maxHeight: '52vh', overflowY: 'auto' }}>
+                        {cat.items.map((item, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              background: 'var(--paper)',
+                              borderLeft: `3px solid ${colors.border}`,
+                              borderRadius: 8, padding: '10px 12px', fontSize: 13,
+                            }}
+                          >
+                            {cat.renderItem(item)}
+                          </div>
+                        ))}
+                        {cat.items.length === 0 && (
+                          <p className="hint" style={{ margin: 0 }}>Aucune occurrence.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* ── Fenêtre : classement complet des comptes/IP à risque ── */}
+              {showRiskModal && (
+                <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowRiskModal(false); }}>
+                  <div className="modal-panel" style={{ maxWidth: 620 }}>
+                    <div className="modal-header">
+                      <div>
+                        <h2 style={{ marginBottom: 2 }}>Top risques — priorité de traitement</h2>
+                        <p className="hint" style={{ margin: 0 }}>
+                          Sujets (compte ou IP) classés par score agrégé, tous patterns combinés.
+                        </p>
+                      </div>
+                      <button type="button" className="modal-close" onClick={() => setShowRiskModal(false)} aria-label="Fermer">
+                        <IconX size={18} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                      {riskScores.map((r, i) => {
+                        const sev = r.score >= 50 ? 'high' : r.score >= 20 ? 'medium' : 'low';
+                        const pct = Math.min(100, Math.max((r.score / Math.max(topScore, 1)) * 100, 6));
+                        const SubjectIcon = r.type === 'ip' ? IconGlobe : IconUsers;
+                        return (
+                          <div
+                            key={i}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 14,
+                              padding: '10px 14px', borderRadius: 10,
+                              background: 'var(--paper)',
+                              borderLeft: `3px solid ${SEVERITY_HEX[sev]}`,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                                background: 'var(--card)', border: '1px solid var(--line)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 11.5, fontWeight: 700, color: 'var(--slate)',
+                              }}
+                            >
+                              {i + 1}
+                            </span>
+                            <div style={{ flex: '0 0 230px', minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.subject}>
+                                <SubjectIcon size={13} color="var(--slate)" />
+                                {r.subject}
+                              </p>
+                              <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reasons.join(', ')}>
+                                {r.reasons.join(' · ')}
+                              </p>
                             </div>
-                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{cat.title}</p>
-                            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>{cat.description}</p>
-                          </button>
+                            <div style={{ flex: 1, background: '#EEF1F4', borderRadius: 999, height: 10, overflow: 'hidden' }}>
+                              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: SEVERITY_HEX[sev] }} />
+                            </div>
+                            <span
+                              className={`badge ${sev === 'high' ? 'badge-error' : sev === 'medium' ? 'badge-warning' : 'badge-muted'}`}
+                              style={{ flexShrink: 0, minWidth: 34, textAlign: 'center' }}
+                            >
+                              {r.score}
+                            </span>
+                          </div>
                         );
                       })}
                     </div>
-
-                    {expandedCategory && ANOMALY_CATEGORIES.filter((c) => c.key === expandedCategory).map((cat) => (
-                      <div
-                        key={cat.key}
-                        style={{
-                          marginTop: 12, padding: '14px 16px', borderRadius: 10,
-                          background: 'var(--paper)', border: `1px solid ${SEVERITY_COLOR[cat.severity].border}`,
-                        }}
-                      >
-                        <p style={{ margin: '0 0 10px', fontWeight: 700, fontSize: 13, color: 'var(--ink)' }}>
-                          {cat.icon} {cat.title} — occurrences détaillées
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {cat.items.map((item, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                background: 'var(--card)',
-                                borderLeft: `3px solid ${SEVERITY_COLOR[cat.severity].border}`,
-                                borderRadius: 6, padding: '8px 10px', fontSize: 13,
-                              }}
-                            >
-                              {cat.renderItem(item)}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
                   </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </div>
+                </div>
+              )}
+            </>
+          );
+        })()
+      )}
 
       {/* Flux de logs filtrable */}
       <div className="card">

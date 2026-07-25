@@ -346,6 +346,73 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   background: var(--paper);
 }
 
+/* ---------- Notifications flottantes (Toast) ---------- */
+.toast-viewport {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 300px;
+  max-width: 380px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--success);
+  border-radius: 12px;
+  padding: 13px 12px 13px 15px;
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.14), 0 2px 8px rgba(17, 24, 39, 0.06);
+  animation: toastSlideIn 0.22s ease-out;
+}
+
+.toast-error {
+  border-left-color: var(--error);
+}
+
+.toast-message {
+  flex: 1;
+  margin: 1px 0 0;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.toast-close {
+  width: auto;
+  margin: 0;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--slate-soft);
+  flex-shrink: 0;
+  border-radius: 6px;
+}
+
+.toast-close:hover {
+  color: var(--slate);
+  background: var(--paper);
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 480px) {
+  .toast-viewport { left: 16px; right: 16px; top: 16px; }
+  .toast { min-width: 0; max-width: none; }
+}
+
 /* Badge de rôle */
 .role-badge {
   display: inline-flex;

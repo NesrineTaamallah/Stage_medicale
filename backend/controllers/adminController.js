@@ -350,7 +350,7 @@ async function getOverview(req, res) {
       `),
       // --- Tendance comptes actifs (connexions distinctes / jour, 30 derniers jours) ---
       pool.query(`
-        SELECT d::date AS day,
+        SELECT to_char(d, 'YYYY-MM-DD') AS day,
                COALESCE(COUNT(DISTINCT al.user_id) FILTER (WHERE al.action = 'LOGIN_PASSWORD_OK' AND al.success = true), 0)::int AS count
         FROM generate_series(
           (now() AT TIME ZONE 'Africa/Tunis')::date - interval '29 days',
@@ -366,7 +366,7 @@ async function getOverview(req, res) {
       // qui tourne en UTC côté session Postgres et faisait "retarder" le graphe
       // d'un jour entre minuit et 1h du matin heure de Tunis).
       pool.query(`
-        SELECT d::date AS day,
+        SELECT to_char(d, 'YYYY-MM-DD') AS day,
                regexp_replace(al.action, ':.*$', '') AS action_type,
                COUNT(*)::int AS count
         FROM generate_series(
@@ -391,7 +391,7 @@ async function getOverview(req, res) {
       `),
       // --- Taux de succès email par jour, 7 derniers jours (mini-tendance) ---
       pool.query(`
-        SELECT d::date AS day,
+        SELECT to_char(d, 'YYYY-MM-DD') AS day,
                COUNT(*) FILTER (WHERE al.success)::int AS ok,
                COUNT(al.id)::int AS total
         FROM generate_series(
@@ -439,13 +439,13 @@ async function getOverview(req, res) {
     });
 
     // Reformatage de l'historique d'actions en séries par type, alignées sur les mêmes jours
-    const days7 = [...new Set(actionHistory7d.rows.map((r) => r.day.toISOString().slice(0, 10)))];
+    const days7 = [...new Set(actionHistory7d.rows.map((r) => r.day))];
     const actionTypes = ['CREATE_USER', 'RESEND_TEMP_PASSWORD', 'RESET_2FA', 'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
     const actionSeries = actionTypes.map((type) => ({
       type,
       values: days7.map((day) => {
         const row = actionHistory7d.rows.find(
-          (r) => r.day.toISOString().slice(0, 10) === day && r.action_type === type
+          (r) => r.day === day && r.action_type === type
         );
         return row ? row.count : 0;
       }),
@@ -469,7 +469,7 @@ async function getOverview(req, res) {
       // --- nouveau : enrichissement graphique de la vue d'ensemble ---
       mfaAdoption: { enabled: mfaAdoption.rows[0].enabled, total: mfaAdoption.rows[0].total },
       activeAccountsTrend: activeTrend.rows.map((r) => ({
-        day: r.day.toISOString().slice(0, 10),
+        day: r.day,
         count: r.count,
       })),
       actionHistory7d: { days: days7, series: actionSeries },
@@ -479,7 +479,7 @@ async function getOverview(req, res) {
           : null,
         total24h: emailHealth24h.rows[0].total,
         dailyTrend: emailHealthDaily.rows.map((r) => ({
-          day: r.day.toISOString().slice(0, 10),
+          day: r.day,
           rate: r.total > 0 ? Math.round((r.ok / r.total) * 100) : null,
         })),
       },

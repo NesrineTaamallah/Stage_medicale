@@ -186,3 +186,61 @@ export function IconUnlock({ size = 18, color = 'currentColor' }) {
     </>
   ));
 }
+
+export function IconActivity({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <path d="M2.5 12h4l2.2-7 4.2 14 2.2-9 1.8 4.5h4.6" />
+  ));
+}
+
+export function IconGlobe({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.6 2.5 4 5.7 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.7-4-9s1.4-6.5 4-9z" />
+    </>
+  ));
+}
+
+export function IconRefresh({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <path d="M20 11a8 8 0 0 0-14.6-4.5M4 13a8 8 0 0 0 14.6 4.5" />
+      <path d="M20 4v5h-5M4 20v-5h5" />
+    </>
+  ));
+}
+
+export function IconUpload({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <path d="M12 15.5V4.5M8 8.3l4-3.8 4 3.8" />
+      <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+    </>
+  ));
+}
+
+export function IconMoon({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
+  ));
+}
+
+export function IconKey({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11.2 11.8L20 3M16.5 6.5l2.7 2.7M19 4l2 2" />
+    </>
+  ));
+}
+
+export function IconTarget({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="12" cy="12" r="0.6" fill={color} stroke="none" />
+    </>
+  ));
+}

@@ -419,7 +419,8 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   }
   if (!data) return null;
 
-  const hasActiveAlert = data.alerts.lockoutsLastHour > 0;
+  const lockedCount = data.lockedNow ?? 0;
+  const hasActiveAlert = lockedCount > 0;
   const activeAccounts = data.totalUsers - data.inactiveAccounts;
   const mfaRate = data.mfaAdoption && data.mfaAdoption.total > 0
     ? Math.round((data.mfaAdoption.enabled / data.mfaAdoption.total) * 100)
@@ -451,7 +452,7 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
         <HeroStatCard label="Utilisateurs Totaux" value={data.totalUsers} Icon={IconUsers} tone="primary" />
         <HeroStatCard label="Comptes Actifs" value={activeAccounts} Icon={IconCheckCircle} tone="success" />
         <HeroStatCard label="Comptes Désactivés" value={data.inactiveAccounts} Icon={IconLock} tone={data.inactiveAccounts > 0 ? 'amber' : 'primary'} />
-        <HeroStatCard label="Alertes (1h)" value={data.alerts.lockoutsLastHour} Icon={IconSearch} tone={data.alerts.lockoutsLastHour > 0 ? 'error' : 'primary'} />
+        <HeroStatCard label="Comptes Verrouillés" value={lockedCount} Icon={IconLock} tone={lockedCount > 0 ? 'error' : 'primary'} />
       </div>
 
       {/* Alerte proéminente si activité de verrouillage récente */}
@@ -459,13 +460,13 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
         <div
           className="card"
           style={{ borderLeft: '3px solid var(--error)', cursor: 'pointer' }}
-          onClick={() => onNavigateToLogs?.({ action: 'LOGIN_ATTEMPT_LOCKED' })}
+          onClick={() => onNavigateToUsersFilter?.('locked')}
         >
           <p style={{ margin: 0, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
             <IconAlert size={15} color="var(--error)" />
-            {data.alerts.lockoutsLastHour} compte(s) verrouillé(s) dans la dernière heure
+            {lockedCount} compte(s) actuellement verrouillé(s)
           </p>
-          <p className="hint" style={{ marginTop: 4 }}>Cliquez pour investiguer dans les logs.</p>
+          <p className="hint" style={{ marginTop: 4 }}>Cliquez pour voir ces comptes dans l'onglet Utilisateurs.</p>
         </div>
       )}
 
