@@ -4,13 +4,15 @@ import BrandMark from '../components/BrandMark';
 import UsersTab from './UsersTab';
 import OverviewTab from './OverviewTab';
 import LogsTab from './LogsTab';
-import { IconChart, IconUsers, IconSearch, IconLogout, IconShield } from '../components/Icons';
+import CommunicationsTab from './CommunicationsTab';
+import { IconChart, IconUsers, IconSearch, IconLogout, IconShield, IconMail } from '../components/Icons';
 
 const SIDEBAR_WIDTH = 248;
 
 const NAV_ITEMS = [
   { key: 'overview', Icon: IconChart, label: "Vue d'Ensemble" },
   { key: 'users', Icon: IconUsers, label: 'Utilisateurs' },
+  { key: 'communications', Icon: IconMail, label: 'Communications' },
   { key: 'logs', Icon: IconSearch, label: 'Journaux' },
 ];
 
@@ -172,6 +174,7 @@ export default function AdminDashboard() {
               onQuickFilterHandled={() => setUsersQuickFilter(null)}
             />
           )}
+          {tab === 'communications' && <CommunicationsTab />}
           {tab === 'logs' && (
             <LogsTab
               initialFilters={logsFilters}

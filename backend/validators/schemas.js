@@ -18,10 +18,10 @@ const changePasswordSchema = z.object({
 
 const createUserSchema = z.object({
   email: emailSchema,
-  role: z.enum(['clinicien', 'chercheur', 'admin'], {
+  role: z.enum(['clinicien', 'chercheur', 'statisticien', 'admin'], {
     errorMap: () => ({ message: 'Rôle invalide.' }),
   }),
-  // Requis pour clinicien (nom clinique/hôpital) et chercheur (nom labo/institut),
+  // Requis pour clinicien (nom clinique/hôpital), chercheur et statisticien (nom labo/institut),
   // absent pour admin — vérifié côté contrôleur (dépend du rôle, difficile à exprimer proprement ici).
   organizationName: z.string().trim().min(1).max(255).optional(),
   // Step-up auth : requis uniquement quand role === 'admin' (re-vérifié côté contrôleur,

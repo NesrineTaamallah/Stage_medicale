@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 const { generateTempPassword, hashPassword, verifyPassword } = require('../utils/passwordUtils');
-const { sendTempPasswordEmail } = require('../utils/mailer');
+const { sendTempPasswordEmail, sendDormantReminderEmail, sendCustomEmail } = require('../utils/mailer');
 const { logAccess } = require('../utils/accessLog');
 
 async function createUser(req, res) {
@@ -296,6 +296,197 @@ async function toggleActive(req, res) {
 }
 
 /**
+ * POST /admin/users/notify-dormant
+ * Envoie un email de rappel à tous les comptes actifs mais sans connexion
+ * depuis plus de 60 jours (même définition que la carte "dormants" de la
+ * Vue d'ensemble et le filtre rapide "dormant" de l'onglet Utilisateurs).
+ */
+async function notifyDormantUsers(req, res) {
+  const adminId = req.user.sub;
+
+  try {
+    const dormant = await pool.query(`
+      SELECT id, email, role
+      FROM users
+      WHERE is_active = true
+        AND last_login_at IS NOT NULL
+        AND last_login_at < now() - interval '60 days'
+    `);
+
+    if (dormant.rows.length === 0) {
+      return res.json({ sent: 0, failed: 0, failedEmails: [] });
+    }
+
+    let sent = 0;
+    const failedEmails = [];
+
+    for (const user of dormant.rows) {
+      try {
+        await sendDormantReminderEmail(user.email, user.role);
+        sent += 1;
+      } catch (emailErr) {
+        console.error('Échec email rappel dormant pour', user.email, '-', emailErr.message);
+        failedEmails.push(user.email);
+      }
+    }
+
+    await logAccess({
+      userId: adminId,
+      action: `NOTIFY_DORMANT_USERS:${sent}/${dormant.rows.length}`,
+      success: failedEmails.length === 0,
+      req,
+    });
+
+    return res.json({ sent, failed: failedEmails.length, failedEmails });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Erreur serveur lors de l'envoi des rappels." });
+  }
+}
+
+/**
+ * POST /admin/users/retry-failed-emails
+ * Renvoie directement le mot de passe temporaire à tous les comptes dont
+ * le dernier envoi (création ou renvoi) a échoué et qui attendent toujours
+ * leur 1ère connexion — évite à l'admin de repasser par l'onglet Utilisateurs.
+ * NB : un échec sur CREATE_USER annule déjà la création du compte (pas de
+ * compte fantôme), donc seuls les échecs de RESEND_TEMP_PASSWORD sont concernés ici.
+ */
+async function retryFailedEmails(req, res) {
+  const adminId = req.user.sub;
+
+  try {
+    const candidates = await pool.query(`
+      SELECT u.id, u.email, u.role, u.password_hash
+      FROM users u
+      WHERE u.must_change_password = true
+        AND EXISTS (
+          SELECT 1 FROM access_logs al
+          WHERE al.action = 'RESEND_TEMP_PASSWORD_EMAIL_FAILED:' || u.email
+            AND al.created_at = (
+              SELECT MAX(al2.created_at) FROM access_logs al2
+              WHERE al2.action ~ ('^(CREATE_USER:' || u.id || '|RESEND_TEMP_PASSWORD:' || u.id || '|RESEND_TEMP_PASSWORD_EMAIL_FAILED:' || u.email || ')$')
+            )
+        )
+    `);
+
+    if (candidates.rows.length === 0) {
+      return res.json({ sent: 0, failed: 0, failedEmails: [] });
+    }
+
+    let sent = 0;
+    const failedEmails = [];
+
+    for (const user of candidates.rows) {
+      const previousHash = user.password_hash;
+      const tempPassword = generateTempPassword();
+      const newHash = await hashPassword(tempPassword);
+
+      await pool.query(
+        `UPDATE users
+         SET password_hash = $1, must_change_password = true, temp_password_created_at = now()
+         WHERE id = $2`,
+        [newHash, user.id]
+      );
+
+      try {
+        await sendTempPasswordEmail(user.email, tempPassword, user.role);
+        await logAccess({ userId: adminId, action: `RESEND_TEMP_PASSWORD:${user.id}`, success: true, req });
+        sent += 1;
+      } catch (emailErr) {
+        console.error('Échec renvoi email pour', user.email, '-', emailErr.message);
+        await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [previousHash, user.id]);
+        await logAccess({ userId: adminId, action: `RESEND_TEMP_PASSWORD_EMAIL_FAILED:${user.email}`, success: false, req });
+        failedEmails.push(user.email);
+      }
+    }
+
+    return res.json({ sent, failed: failedEmails.length, failedEmails });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Erreur serveur lors du renvoi des emails échoués." });
+  }
+}
+
+const VALID_ROLES = ['admin', 'clinicien', 'chercheur', 'statisticien'];
+
+/**
+ * POST /admin/communications/send
+ * Envoie un email personnalisé (sujet + message libre) depuis la plateforme,
+ * à un ou plusieurs destinataires choisis par l'admin — onglet "Communications".
+ * body: { recipientMode: 'all' | 'role' | 'selected', role?, userIds?, subject, message }
+ */
+async function sendCommunication(req, res) {
+  const adminId = req.user.sub;
+  const { recipientMode, role, userIds, subject, message } = req.body;
+
+  const cleanSubject = typeof subject === 'string' ? subject.trim() : '';
+  const cleanMessage = typeof message === 'string' ? message.trim() : '';
+
+  if (!cleanSubject) {
+    return res.status(400).json({ error: 'Le sujet est requis.' });
+  }
+  if (!cleanMessage) {
+    return res.status(400).json({ error: 'Le message est requis.' });
+  }
+
+  try {
+    let recipients;
+
+    if (recipientMode === 'all') {
+      recipients = await pool.query(`SELECT id, email FROM users WHERE is_active = true`);
+    } else if (recipientMode === 'role') {
+      if (!VALID_ROLES.includes(role)) {
+        return res.status(400).json({ error: 'Rôle invalide.' });
+      }
+      recipients = await pool.query(
+        `SELECT id, email FROM users WHERE is_active = true AND role = $1`,
+        [role]
+      );
+    } else if (recipientMode === 'selected') {
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        return res.status(400).json({ error: 'Sélectionnez au moins un destinataire.' });
+      }
+      recipients = await pool.query(
+        `SELECT id, email FROM users WHERE id = ANY($1::uuid[])`,
+        [userIds]
+      );
+    } else {
+      return res.status(400).json({ error: 'Mode de destinataires invalide.' });
+    }
+
+    if (recipients.rows.length === 0) {
+      return res.status(400).json({ error: 'Aucun destinataire trouvé pour cette sélection.' });
+    }
+
+    let sent = 0;
+    const failedEmails = [];
+
+    for (const r of recipients.rows) {
+      try {
+        await sendCustomEmail(r.email, cleanSubject, cleanMessage);
+        sent += 1;
+      } catch (emailErr) {
+        console.error('Échec envoi communication à', r.email, '-', emailErr.message);
+        failedEmails.push(r.email);
+      }
+    }
+
+    await logAccess({
+      userId: adminId,
+      action: `SEND_CUSTOM_EMAIL:${sent}/${recipients.rows.length}`,
+      success: failedEmails.length === 0,
+      req,
+    });
+
+    return res.json({ sent, failed: failedEmails.length, failedEmails, total: recipients.rows.length });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Erreur serveur lors de l'envoi du message." });
+  }
+}
+
+/**
  * GET /admin/overview
  * Alimente l'onglet "Vue d'ensemble" : compteurs clés, alertes, activité
  * récente, statut email, et comptes en attente de 1ère connexion > 24h.
@@ -421,7 +612,7 @@ async function getOverview(req, res) {
       `),
     ]);
 
-    const roleCounts = { admin: 0, clinicien: 0, chercheur: 0 };
+    const roleCounts = { admin: 0, clinicien: 0, chercheur: 0, statisticien: 0 };
     byRole.rows.forEach((r) => { roleCounts[r.role] = r.count; });
 
     const emailLog = lastEmailLog.rows[0] || null;
@@ -498,6 +689,7 @@ const KNOWN_ACTIONS = [
   'LOGOUT', 'TOTP_ATTEMPT', 'TOTP_OK', 'CREATE_USER', 'CREATE_USER_EMAIL_FAILED',
   'RESET_2FA', 'RESEND_TEMP_PASSWORD', 'RESEND_TEMP_PASSWORD_EMAIL_FAILED',
   'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT', 'VIEW_USER_TIMELINE',
+  'NOTIFY_DORMANT_USERS', 'SEND_CUSTOM_EMAIL',
 ];
 
 /**
@@ -895,4 +1087,7 @@ module.exports = {
   getAnomalies, // nouveau
   getUserTimeline, // nouveau
   exportLogsCsv, // nouveau
+  notifyDormantUsers, // nouveau
+  retryFailedEmails, // nouveau
+  sendCommunication, // nouveau
 };

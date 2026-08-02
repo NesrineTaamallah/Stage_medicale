@@ -25,8 +25,8 @@ const ACTION_COLORS = {
   REACTIVATE_ACCOUNT: '#059669',
 };
 
-const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Chercheurs' };
-const ROLE_COLORS = { admin: '#4338CA', clinicien: '#0D9488', chercheur: '#F59E0B' };
+const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Chercheurs', statisticien: 'Statisticiens' };
+const ROLE_COLORS = { admin: '#4338CA', clinicien: '#0D9488', chercheur: '#F59E0B', statisticien: '#DB2777' };
 
 function actionLabel(action) {
   const base = action.split(':')[0];
@@ -377,7 +377,7 @@ function MiniBarChart({ buckets, height = 90 }) {
 
 /* ---------------------------------------------------------------------- */
 
-function HeroStatCard({ label, value, Icon, tone = 'primary' }) {
+function HeroStatCard({ label, value, Icon, tone = 'primary', onClick, expanded, hint }) {
   const palette = {
     primary: { bg: 'var(--primary-tint)', color: 'var(--primary-deep)' },
     success: { bg: 'var(--success-tint)', color: 'var(--success)' },
@@ -385,12 +385,23 @@ function HeroStatCard({ label, value, Icon, tone = 'primary' }) {
     error:   { bg: 'var(--error-tint)', color: 'var(--error)' },
   }[tone];
   return (
-    <div className="card" style={{ flex: '1 1 200px', minWidth: 180, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div
+      className="card"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      style={{
+        flex: '1 1 200px', minWidth: 180, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        cursor: onClick ? 'pointer' : 'default',
+        border: expanded ? '1px solid var(--primary)' : undefined,
+      }}
+    >
       <div>
         <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
         <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
           {value}
         </p>
+        {hint && <p className="hint" style={{ marginTop: 6 }}>{hint}</p>}
       </div>
       <div className="icon" style={{ width: 40, height: 40, borderRadius: 12, background: palette.bg, color: palette.color }}>
         <Icon size={18} />
@@ -403,6 +414,11 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showActiveBreakdown, setShowActiveBreakdown] = useState(false);
+  const [notifyingDormant, setNotifyingDormant] = useState(false);
+  const [notifyResult, setNotifyResult] = useState(null);
+  const [retryingEmails, setRetryingEmails] = useState(false);
+  const [retryResult, setRetryResult] = useState(null);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -422,6 +438,43 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
     const interval = setInterval(fetchOverview, 60000); // rafraîchissement auto — vue "état de santé"
     return () => clearInterval(interval);
   }, [fetchOverview]);
+
+  const handleRetryFailedEmails = useCallback(async () => {
+    setRetryingEmails(true);
+    setRetryResult(null);
+    try {
+      const { data: result } = await client.post('/admin/users/retry-failed-emails');
+      if (result.sent === 0 && result.failed === 0) {
+        setRetryResult('Aucun email en échec à renvoyer.');
+      } else if (result.failed > 0) {
+        setRetryResult(`${result.sent} email(s) renvoyé(s), ${result.failed} échec(s) à nouveau.`);
+      } else {
+        setRetryResult(`${result.sent} email(s) renvoyé(s) avec succès.`);
+      }
+      fetchOverview();
+    } catch (err) {
+      setRetryResult(err.response?.data?.error || "Erreur lors du renvoi des emails.");
+    } finally {
+      setRetryingEmails(false);
+    }
+  }, [fetchOverview]);
+
+  const handleNotifyDormant = useCallback(async () => {
+    setNotifyingDormant(true);
+    setNotifyResult(null);
+    try {
+      const { data: result } = await client.post('/admin/users/notify-dormant');
+      setNotifyResult(
+        result.failed > 0
+          ? `${result.sent} email(s) envoyé(s), ${result.failed} échec(s).`
+          : `${result.sent} email(s) de rappel envoyé(s).`
+      );
+    } catch (err) {
+      setNotifyResult(err.response?.data?.error || "Erreur lors de l'envoi des rappels.");
+    } finally {
+      setNotifyingDormant(false);
+    }
+  }, []);
 
   if (loading && !data) {
     return <div className="card"><p className="subtitle">Chargement de la vue d'ensemble...</p></div>;
@@ -447,25 +500,50 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   const roleSegments = Object.entries(data.roleCounts)
     .map(([key, value]) => ({ label: ROLE_LABELS[key] || key, value, color: ROLE_COLORS[key] || 'var(--primary)' }));
 
-  // Statuts mutuellement exclusifs : chaque compte n'apparaît que dans une seule catégorie,
-  // le total des 4 segments est toujours égal à "Utilisateurs Totaux" (plus de contradiction
-  // possible entre cette barre et la carte "Comptes Actifs" au-dessus).
-  const statusSegments = [
-    { label: 'Déjà connectés', value: sb.active, color: 'var(--success)' },
-    { label: 'Jamais connectés', value: sb.neverLoggedIn, color: 'var(--amber)' },
-    { label: 'Désactivés', value: sb.deactivated, color: 'var(--slate-soft)' },
-    { label: 'Verrouillés', value: sb.locked, color: 'var(--error)' },
-  ];
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
       {/* ---------- Section : vue rapide ---------- */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard label="Utilisateurs Totaux" value={data.totalUsers} Icon={IconUsers} tone="primary" />
-        <HeroStatCard label="Comptes Actifs" value={activeAccounts} Icon={IconCheckCircle} tone="success" />
+        <HeroStatCard
+          label="Comptes Actifs"
+          value={activeAccounts}
+          Icon={IconCheckCircle}
+          tone="success"
+          expanded={showActiveBreakdown}
+          hint="Cliquez pour le détail →"
+          onClick={() => setShowActiveBreakdown((v) => !v)}
+        />
         <HeroStatCard label="Comptes Désactivés" value={data.inactiveAccounts} Icon={IconLock} tone={data.inactiveAccounts > 0 ? 'amber' : 'primary'} />
         <HeroStatCard label="Comptes Verrouillés" value={lockedCount} Icon={IconLock} tone={lockedCount > 0 ? 'error' : 'primary'} />
       </div>
+
+      {/* Détail des comptes actifs, affiché au clic sur la carte "Comptes Actifs" */}
+      {showActiveBreakdown && (
+        <div className="card" style={{ borderLeft: '3px solid var(--primary)' }}>
+          <CardTitle hint="Parmi les comptes actifs.">Détail des comptes actifs</CardTitle>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12 }}>
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '1 1 200px', textAlign: 'left', padding: '10px 14px' }}
+              onClick={() => onNavigateToUsersFilter?.('connected')}
+            >
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)' }}>Déjà connectés</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{sb.active}</span>
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              style={{ flex: '1 1 200px', textAlign: 'left', padding: '10px 14px' }}
+              onClick={() => onNavigateToUsersFilter?.('neverLoggedIn')}
+            >
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)' }}>Jamais connectés</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{sb.neverLoggedIn}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Alerte proéminente si activité de verrouillage récente */}
       {hasActiveAlert && (
@@ -486,12 +564,6 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
       <SectionHeading Icon={IconUsers} title="Population des comptes" subtitle="Qui a accès à la plateforme, et dans quel état" />
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <DonutCard title="Répartition des rôles" segments={roleSegments} centerLabel="utilisateurs" />
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle hint="Chaque compte n'apparaît que dans une seule catégorie.">Statut des comptes</CardTitle>
-          <div style={{ marginTop: 18 }}>
-            <StackedBar segments={statusSegments} />
-          </div>
-        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -529,7 +601,19 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
               >
                 Revue groupée (onglet Utilisateurs) →
               </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{ width: 'auto', padding: '7px 14px', fontSize: 12.5 }}
+                disabled={notifyingDormant || data.dormantAccounts === 0}
+                onClick={handleNotifyDormant}
+              >
+                {notifyingDormant ? 'Envoi en cours...' : 'Envoyer un rappel par email →'}
+              </button>
             </div>
+            {notifyResult && (
+              <p className="hint" style={{ marginTop: 8 }}>{notifyResult}</p>
+            )}
         </div>
 
         <div className="card" style={{ flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -580,6 +664,18 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
         >
           Voir les emails échoués →
         </button>
+        <button
+          type="button"
+          className="secondary"
+          style={{ marginTop: 14, marginLeft: 8, width: 'auto', padding: '7px 14px', fontSize: 12.5 }}
+          disabled={retryingEmails}
+          onClick={handleRetryFailedEmails}
+        >
+          {retryingEmails ? 'Renvoi en cours...' : 'Renvoyer les emails échoués →'}
+        </button>
+        {retryResult && (
+          <p className="hint" style={{ marginTop: 8 }}>{retryResult}</p>
+        )}
       </div>
 
       <div className="card">

@@ -16,6 +16,9 @@ const {
   getAnomalies,
   getUserTimeline,
   exportLogsCsv,
+  notifyDormantUsers,
+  retryFailedEmails,
+  sendCommunication,
 } = require('../controllers/adminController');
 
 function validateParams(schema) {
@@ -35,6 +38,11 @@ router.post('/users/:id/reset-2fa', requireAuth, requireRole('admin'), validateP
 router.post('/users/:id/resend-temp-password', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), resendTempPassword); // nouveau
 router.post('/users/:id/unlock', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), unlockUser); // nouveau
 router.post('/users/:id/toggle-active', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), toggleActive); // nouveau
+router.post('/users/notify-dormant', requireAuth, requireRole('admin'), notifyDormantUsers); // nouveau
+router.post('/users/retry-failed-emails', requireAuth, requireRole('admin'), retryFailedEmails); // nouveau
+
+// --- Onglet Communications ---
+router.post('/communications/send', requireAuth, requireRole('admin'), sendCommunication); // nouveau
 
 // --- Onglet Vue d'ensemble ---
 router.get('/overview', requireAuth, requireRole('admin'), getOverview); // nouveau

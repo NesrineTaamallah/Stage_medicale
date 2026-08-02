@@ -108,6 +108,14 @@ const QUICK_FILTERS = {
     label: 'Mots de passe temporaires en attente ou expirés',
     test: (u) => !!u.tempPasswordStatus,
   },
+  connected: {
+    label: 'Comptes actifs déjà connectés',
+    test: (u) => u.is_active && !!u.last_login_at,
+  },
+  neverLoggedIn: {
+    label: 'Comptes actifs jamais connectés',
+    test: (u) => u.is_active && !u.last_login_at,
+  },
 };
 
 export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQuickFilterHandled }) {
@@ -300,9 +308,10 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
               <select value={role} onChange={e => setRole(e.target.value)}>
                 <option value="clinicien">Clinicien</option>
                 <option value="chercheur">Chercheur</option>
+                <option value="statisticien">Statisticien</option>
                 <option value="admin">Admin</option>
               </select>
-              {(role === 'clinicien' || role === 'chercheur') && (
+              {(role === 'clinicien' || role === 'chercheur' || role === 'statisticien') && (
                 <>
                   <label style={{ marginTop: 12 }}>
                     {role === 'clinicien' ? 'Nom de la clinique / hôpital' : 'Nom du laboratoire / institut'}
@@ -445,6 +454,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
             <option value="admin">Admin</option>
             <option value="clinicien">Clinicien</option>
             <option value="chercheur">Chercheur</option>
+            <option value="statisticien">Statisticien</option>
           </select>
         </div>
 

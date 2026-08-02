@@ -126,8 +126,8 @@ async function validateTotp(req, res) {
  *
  * Réservé au rôle admin : si un admin ne peut plus se connecter, c'est
  * potentiellement toute la plateforme qui devient inaccessible (plus personne
- * pour gérer les comptes). Les autres rôles (clinicien, chercheur) continuent
- * de devoir passer par un admin actif — un compte non-admin bloqué n'a pas
+ * pour gérer les comptes). Les autres rôles (clinicien, chercheur,
+ * statisticien) continuent de devoir passer par un admin actif — un compte non-admin bloqué n'a pas
  * cet effet de blocage global.
  *
  * Ceci reste un contournement volontaire de la 2FA, donc :

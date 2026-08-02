@@ -11,7 +11,7 @@ const FEATURES = [
   {
     Icon: IconFolder,
     title: 'Registre structuré',
-    desc: "Un dossier par patient, un accès par rôle : clinicien, chercheur ou administrateur, sans chevauchement.",
+    desc: "Un dossier par patient, un accès par rôle : clinicien, chercheur, statisticien ou administrateur, sans chevauchement.",
   },
   {
     Icon: IconWave,

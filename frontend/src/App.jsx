@@ -13,7 +13,14 @@ function PrivateRoute({ children, role }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return null; // évite un flash de redirection pendant la vérification /me
   if (!user) return <Navigate to="/login" />;
-  if (role && user?.role !== role) return <Navigate to="/login" />;
+  // `role` peut être une chaîne (un seul rôle autorisé) ou un tableau
+  // (plusieurs rôles autorisés) — chaque utilisateur des 4 rôles
+  // (admin, clinicien, chercheur, statisticien) n'accède ainsi qu'aux
+  // routes explicitement listées pour son rôle.
+  if (role) {
+    const allowedRoles = Array.isArray(role) ? role : [role];
+    if (!allowedRoles.includes(user?.role)) return <Navigate to="/login" />;
+  }
   return children;
 }
 
@@ -27,7 +34,7 @@ export default function App() {
         <Route path="/verify-totp" element={<VerifyTotp />} />
         <Route path="/setup-totp" element={<SetupTotp />} />
         <Route path="/admin" element={<PrivateRoute role="admin"><AdminDashboard /></PrivateRoute>} />
-        <Route path="/dashboard" element={<PrivateRoute><UserDashboard /></PrivateRoute>} />
+        <Route path="/dashboard" element={<PrivateRoute role={['clinicien', 'chercheur', 'statisticien']}><UserDashboard /></PrivateRoute>} />
       </Routes>
     </AuthProvider>
   );

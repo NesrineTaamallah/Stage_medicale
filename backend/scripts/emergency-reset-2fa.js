@@ -47,7 +47,7 @@ async function main() {
     if (user.role !== 'admin') {
       console.error(
         `${email} n'est pas admin (rôle: ${user.role}). ` +
-        'Pour un compte clinicien/chercheur, utilisez la réinitialisation depuis l\'interface (un autre admin actif suffit).'
+        'Pour un compte clinicien/chercheur/statisticien, utilisez la réinitialisation depuis l\'interface (un autre admin actif suffit).'
       );
       process.exit(1);
     }

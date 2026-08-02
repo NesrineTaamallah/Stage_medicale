@@ -47,4 +47,47 @@ async function sendTempPasswordEmail(toEmail, tempPassword, role) {
   });
 }
 
-module.exports = { sendTempPasswordEmail };
+async function sendDormantReminderEmail(toEmail, role) {
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+
+  await transporter.sendMail({
+    from: `"Registre CDR NeuroExo-Predict" <${process.env.SMTP_USER}>`,
+    to: toEmail,
+    subject: 'Votre compte est inactif depuis plus de 60 jours',
+    html: `
+      <p>Bonjour,</p>
+      <p>Nous avons remarqué que vous ne vous êtes pas connecté(e) au registre clinique
+      NeuroExo-Predict (rôle : <strong>${role}</strong>) depuis plus de 60 jours.</p>
+      <p>Si vous utilisez toujours cette plateforme, merci de vous reconnecter prochainement
+      afin de garder votre accès actif. À défaut, votre compte pourra être désactivé.</p>
+      <p><a href="${appUrl}/login">Se connecter</a></p>
+      <p>Si vous n'utilisez plus la plateforme, aucune action n'est requise de votre part.</p>
+    `,
+  });
+}
+
+async function sendCustomEmail(toEmail, subject, message) {
+  // Le message est saisi en texte libre par l'admin (pas de HTML) : on
+  // échappe les caractères spéciaux puis on ne convertit que les sauts de
+  // ligne, pour éviter toute injection HTML via le formulaire.
+  const escapeHtml = (str) => String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const htmlBody = escapeHtml(message).replace(/\n/g, '<br>');
+
+  await transporter.sendMail({
+    from: `"Registre CDR NeuroExo-Predict" <${process.env.SMTP_USER}>`,
+    to: toEmail,
+    subject,
+    html: `
+      <p>Bonjour,</p>
+      <p>${htmlBody}</p>
+      <p style="margin-top:24px;color:#64748b;font-size:12px;">
+        Ce message vous a été envoyé depuis le registre clinique NeuroExo-Predict par un administrateur.
+      </p>
+    `,
+  });
+}
+
+module.exports = { sendTempPasswordEmail, sendDormantReminderEmail, sendCustomEmail };

@@ -31,6 +31,14 @@ export default function UserDashboard() {
             déclenchement du pipeline NLP.
           </p>
         )}
+
+        {user?.role === 'statisticien' && (
+          <p>
+            Ici viendra l'accès aux jeux de données statistiques agrégés
+            (lecture seule, sans données identifiantes ni pseudonymisées
+            individuelles).
+          </p>
+        )}
       </div>
     </div>
   );
