@@ -104,7 +104,7 @@ export default function AdminDashboard() {
                 NeuroExo-Predict
               </p>
               <p style={{ fontSize: 11.5, color: '#8FB6BD', margin: 0 }}>
-                Institut National de Neurologie
+                Registre clinique
               </p>
             </div>
           </div>

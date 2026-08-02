@@ -162,7 +162,7 @@ export default function CommunicationsTab() {
         <div className="card" style={{ flex: '1 1 400px', minWidth: 320 }}>
           <h2 style={{ margin: 0 }}>Message</h2>
           <p className="hint" style={{ marginTop: 4 }}>
-            Le message est inséré tel quel dans un email au format du registre (formule de politesse ajoutée automatiquement).
+            Le message est inséré tel quel dans un email au format du registre 
           </p>
 
           <label style={{ marginTop: 14 }}>Sujet</label>
