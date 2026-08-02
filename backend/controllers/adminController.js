@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 const { generateTempPassword, hashPassword, verifyPassword } = require('../utils/passwordUtils');
-const { sendTempPasswordEmail, sendDormantReminderEmail, sendCustomEmail } = require('../utils/mailer');
+const { sendTempPasswordEmail, sendDormantReminderEmail, sendCustomEmail, sendMfaGuideEmail } = require('../utils/mailer');
 const { logAccess } = require('../utils/accessLog');
 
 async function createUser(req, res) {
@@ -487,6 +487,53 @@ async function sendCommunication(req, res) {
 }
 
 /**
+ * POST /admin/users/notify-mfa-setup
+ * Envoie le guide d'activation de la 2FA à tous les comptes actifs qui ne
+ * l'ont pas encore activée — bouton direct depuis la carte "Adoption de la 2FA".
+ */
+async function notifyMfaSetup(req, res) {
+  const adminId = req.user.sub;
+
+  try {
+    const withoutMfa = await pool.query(`
+      SELECT id, email, role
+      FROM users
+      WHERE is_active = true
+        AND is_2fa_enabled = false
+    `);
+
+    if (withoutMfa.rows.length === 0) {
+      return res.json({ sent: 0, failed: 0, failedEmails: [] });
+    }
+
+    let sent = 0;
+    const failedEmails = [];
+
+    for (const user of withoutMfa.rows) {
+      try {
+        await sendMfaGuideEmail(user.email, user.role);
+        sent += 1;
+      } catch (emailErr) {
+        console.error('Échec envoi guide 2FA à', user.email, '-', emailErr.message);
+        failedEmails.push(user.email);
+      }
+    }
+
+    await logAccess({
+      userId: adminId,
+      action: `NOTIFY_MFA_SETUP:${sent}/${withoutMfa.rows.length}`,
+      success: failedEmails.length === 0,
+      req,
+    });
+
+    return res.json({ sent, failed: failedEmails.length, failedEmails });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Erreur serveur lors de l'envoi du guide 2FA." });
+  }
+}
+
+/**
  * GET /admin/overview
  * Alimente l'onglet "Vue d'ensemble" : compteurs clés, alertes, activité
  * récente, statut email, et comptes en attente de 1ère connexion > 24h.
@@ -689,7 +736,7 @@ const KNOWN_ACTIONS = [
   'LOGOUT', 'TOTP_ATTEMPT', 'TOTP_OK', 'CREATE_USER', 'CREATE_USER_EMAIL_FAILED',
   'RESET_2FA', 'RESEND_TEMP_PASSWORD', 'RESEND_TEMP_PASSWORD_EMAIL_FAILED',
   'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT', 'VIEW_USER_TIMELINE',
-  'NOTIFY_DORMANT_USERS', 'SEND_CUSTOM_EMAIL',
+  'NOTIFY_DORMANT_USERS', 'SEND_CUSTOM_EMAIL', 'NOTIFY_MFA_SETUP',
 ];
 
 /**
@@ -1090,4 +1137,5 @@ module.exports = {
   notifyDormantUsers, // nouveau
   retryFailedEmails, // nouveau
   sendCommunication, // nouveau
+  notifyMfaSetup, // nouveau
 };

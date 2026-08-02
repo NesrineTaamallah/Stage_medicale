@@ -19,6 +19,7 @@ const {
   notifyDormantUsers,
   retryFailedEmails,
   sendCommunication,
+  notifyMfaSetup,
 } = require('../controllers/adminController');
 
 function validateParams(schema) {
@@ -43,6 +44,7 @@ router.post('/users/retry-failed-emails', requireAuth, requireRole('admin'), ret
 
 // --- Onglet Communications ---
 router.post('/communications/send', requireAuth, requireRole('admin'), sendCommunication); // nouveau
+router.post('/users/notify-mfa-setup', requireAuth, requireRole('admin'), notifyMfaSetup); // nouveau
 
 // --- Onglet Vue d'ensemble ---
 router.get('/overview', requireAuth, requireRole('admin'), getOverview); // nouveau

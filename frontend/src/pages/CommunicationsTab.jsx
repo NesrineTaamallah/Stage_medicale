@@ -8,17 +8,15 @@ const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Cher
 /**
  * Onglet "Communications" : permet à un admin (souvent un médecin, pas
  * forcément à l'aise avec l'outil) d'envoyer un email libre — sujet + texte —
- * depuis la plateforme, à un utilisateur, un rôle entier, ou tous les
- * comptes actifs. Demande de l'encadrante : parfois un mail personnalisé
- * est nécessaire en dehors des emails automatiques (mot de passe, rappel).
+ * depuis la plateforme, à un ou plusieurs utilisateurs précis. Demande de
+ * l'encadrante : parfois un mail personnalisé est nécessaire en dehors des
+ * emails automatiques (mot de passe, rappel).
  */
 export default function CommunicationsTab() {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
-  const [recipientMode, setRecipientMode] = useState('selected'); // 'selected' | 'role' | 'all'
   const [selectedIds, setSelectedIds] = useState([]);
-  const [role, setRole] = useState('clinicien');
   const [search, setSearch] = useState('');
 
   const [subject, setSubject] = useState('');
@@ -47,27 +45,11 @@ export default function CommunicationsTab() {
     [users, search]
   );
 
-  const roleCounts = useMemo(() => {
-    const counts = {};
-    users.forEach((u) => { counts[u.role] = (counts[u.role] || 0) + 1; });
-    return counts;
-  }, [users]);
-
   function toggleSelected(id) {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
 
-  const recipientCount = recipientMode === 'all'
-    ? users.length
-    : recipientMode === 'role'
-      ? (roleCounts[role] || 0)
-      : selectedIds.length;
-
-  const recipientSummary = recipientMode === 'all'
-    ? `Tous les comptes actifs (${recipientCount})`
-    : recipientMode === 'role'
-      ? `${ROLE_LABELS[role] || role} (${recipientCount})`
-      : `${recipientCount} destinataire(s) sélectionné(s)`;
+  const recipientSummary = `${selectedIds.length} destinataire(s) sélectionné(s)`;
 
   function resetForm() {
     setSubject(''); setMessage(''); setSelectedIds([]);
@@ -75,15 +57,16 @@ export default function CommunicationsTab() {
 
   async function handleSend() {
     setConfirmOpen(false);
-    if (!subject.trim() || !message.trim() || recipientCount === 0) return;
+    if (!subject.trim() || !message.trim() || selectedIds.length === 0) return;
 
     setSending(true);
     try {
-      const payload = { subject: subject.trim(), message: message.trim(), recipientMode };
-      if (recipientMode === 'role') payload.role = role;
-      if (recipientMode === 'selected') payload.userIds = selectedIds;
-
-      const { data } = await client.post('/admin/communications/send', payload);
+      const { data } = await client.post('/admin/communications/send', {
+        subject: subject.trim(),
+        message: message.trim(),
+        recipientMode: 'selected',
+        userIds: selectedIds,
+      });
       setToast({
         message: data.failed > 0
           ? `${data.sent}/${data.total} email(s) envoyé(s), ${data.failed} échec(s).`
@@ -98,7 +81,7 @@ export default function CommunicationsTab() {
     }
   }
 
-  const canSend = subject.trim().length > 0 && message.trim().length > 0 && recipientCount > 0 && !sending;
+  const canSend = subject.trim().length > 0 && message.trim().length > 0 && selectedIds.length > 0 && !sending;
 
   return (
     <div>
@@ -123,93 +106,56 @@ export default function CommunicationsTab() {
         {/* ---------- Colonne gauche : destinataires ---------- */}
         <div className="card" style={{ flex: '1 1 340px', minWidth: 300 }}>
           <h2 style={{ margin: 0 }}>Destinataires</h2>
-          <p className="hint" style={{ marginTop: 4 }}>Choisissez qui recevra ce message.</p>
+          <p className="hint" style={{ marginTop: 4 }}>Sélectionnez les utilisateurs qui recevront ce message.</p>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-            {[
-              { key: 'selected', label: 'Utilisateurs précis' },
-              { key: 'role', label: 'Par rôle' },
-              { key: 'all', label: 'Tous les comptes actifs' },
-            ].map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                className={recipientMode === opt.key ? '' : 'secondary'}
-                style={{ width: 'auto', padding: '7px 12px', fontSize: 12.5 }}
-                onClick={() => setRecipientMode(opt.key)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {recipientMode === 'role' && (
-            <div style={{ marginTop: 14 }}>
-              <label>Rôle</label>
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
-                {Object.keys(ROLE_LABELS).map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]} ({roleCounts[r] || 0})</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {recipientMode === 'all' && (
-            <p className="hint" style={{ marginTop: 12 }}>
-              {users.length} compte(s) actif(s) recevront ce message.
-            </p>
-          )}
-
-          {recipientMode === 'selected' && (
-            <div style={{ marginTop: 12 }}>
-              <input
-                type="text"
-                placeholder="Rechercher par email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <div style={{
-                marginTop: 10, maxHeight: 260, overflowY: 'auto',
-                border: '1px solid var(--line)', borderRadius: 10,
-              }}>
-                {loadingUsers && <p className="hint" style={{ padding: 12 }}>Chargement...</p>}
-                {!loadingUsers && filteredUsers.length === 0 && (
-                  <p className="hint" style={{ padding: 12 }}>Aucun utilisateur trouvé.</p>
-                )}
-                {filteredUsers.map((u) => (
-                  <label
-                    key={u.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-                      borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 13,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(u.id)}
-                      onChange={() => toggleSelected(u.id)}
-                      style={{ width: 'auto', margin: 0 }}
-                    />
-                    <span style={{ flex: 1, color: 'var(--ink)' }}>{u.email}</span>
-                    <span style={{ fontSize: 11, color: 'var(--slate)' }}>{ROLE_LABELS[u.role] || u.role}</span>
-                  </label>
-                ))}
-              </div>
-              {selectedIds.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span className="hint">{selectedIds.length} sélectionné(s)</span>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ width: 'auto', padding: '4px 10px', fontSize: 11.5 }}
-                    onClick={() => setSelectedIds([])}
-                  >
-                    Tout désélectionner
-                  </button>
-                </div>
+          <div style={{ marginTop: 14 }}>
+            <input
+              type="text"
+              placeholder="Rechercher par email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <div style={{
+              marginTop: 10, maxHeight: 320, overflowY: 'auto',
+              border: '1px solid var(--line)', borderRadius: 10,
+            }}>
+              {loadingUsers && <p className="hint" style={{ padding: 12 }}>Chargement...</p>}
+              {!loadingUsers && filteredUsers.length === 0 && (
+                <p className="hint" style={{ padding: 12 }}>Aucun utilisateur trouvé.</p>
               )}
+              {filteredUsers.map((u) => (
+                <label
+                  key={u.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+                    borderBottom: '1px solid var(--line)', cursor: 'pointer', fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(u.id)}
+                    onChange={() => toggleSelected(u.id)}
+                    style={{ width: 'auto', margin: 0 }}
+                  />
+                  <span style={{ flex: 1, color: 'var(--ink)' }}>{u.email}</span>
+                  <span style={{ fontSize: 11, color: 'var(--slate)' }}>{ROLE_LABELS[u.role] || u.role}</span>
+                </label>
+              ))}
             </div>
-          )}
+            {selectedIds.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                <span className="hint">{selectedIds.length} sélectionné(s)</span>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ width: 'auto', padding: '4px 10px', fontSize: 11.5 }}
+                  onClick={() => setSelectedIds([])}
+                >
+                  Tout désélectionner
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ---------- Colonne droite : message ---------- */}

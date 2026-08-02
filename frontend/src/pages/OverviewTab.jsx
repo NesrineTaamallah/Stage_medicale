@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
 import {
-  IconAlert, IconUsers, IconShield, IconSearch, IconEyeOff, IconLock,
+  IconUsers, IconShield, IconSearch, IconEyeOff, IconLock,
   IconCheckCircle, IconChart,
 } from '../components/Icons';
 
@@ -26,7 +26,7 @@ const ACTION_COLORS = {
 };
 
 const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Chercheurs', statisticien: 'Statisticiens' };
-const ROLE_COLORS = { admin: '#4338CA', clinicien: '#0D9488', chercheur: '#F59E0B', statisticien: '#DB2777' };
+const ROLE_COLORS = { admin: '#6B5CA5', clinicien: '#175F69', chercheur: '#C98A2C', statisticien: '#C1508A' };
 
 function actionLabel(action) {
   const base = action.split(':')[0];
@@ -377,7 +377,7 @@ function MiniBarChart({ buckets, height = 90 }) {
 
 /* ---------------------------------------------------------------------- */
 
-function HeroStatCard({ label, value, Icon, tone = 'primary', onClick, expanded, hint }) {
+function HeroStatCard({ label, value, Icon, tone = 'primary', onClick, expanded, hint, urgent }) {
   const palette = {
     primary: { bg: 'var(--primary-tint)', color: 'var(--primary-deep)' },
     success: { bg: 'var(--success-tint)', color: 'var(--success)' },
@@ -393,15 +393,20 @@ function HeroStatCard({ label, value, Icon, tone = 'primary', onClick, expanded,
       style={{
         flex: '1 1 200px', minWidth: 180, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
         cursor: onClick ? 'pointer' : 'default',
-        border: expanded ? '1px solid var(--primary)' : undefined,
+        background: urgent ? 'var(--error-tint)' : undefined,
+        border: urgent ? '1.5px solid var(--error)' : expanded ? '1px solid var(--primary)' : undefined,
+        boxShadow: urgent ? '0 0 0 4px rgba(193, 80, 61, 0.10)' : undefined,
       }}
     >
       <div>
-        <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
-        <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
+        <p style={{ fontSize: 12, color: urgent ? 'var(--error)' : 'var(--slate)', margin: 0, fontWeight: urgent ? 700 : 400, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {urgent && <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--error)' }} />}
+          {label}
+        </p>
+        <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: urgent ? 'var(--error)' : 'var(--ink)' }}>
           {value}
         </p>
-        {hint && <p className="hint" style={{ marginTop: 6 }}>{hint}</p>}
+        {hint && <p className="hint" style={{ marginTop: 6, color: urgent ? 'var(--error)' : undefined }}>{hint}</p>}
       </div>
       <div className="icon" style={{ width: 40, height: 40, borderRadius: 12, background: palette.bg, color: palette.color }}>
         <Icon size={18} />
@@ -419,6 +424,8 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   const [notifyResult, setNotifyResult] = useState(null);
   const [retryingEmails, setRetryingEmails] = useState(false);
   const [retryResult, setRetryResult] = useState(null);
+  const [notifyingMfa, setNotifyingMfa] = useState(false);
+  const [mfaResult, setMfaResult] = useState(null);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -459,6 +466,25 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
     }
   }, [fetchOverview]);
 
+  const handleNotifyMfa = useCallback(async () => {
+    setNotifyingMfa(true);
+    setMfaResult(null);
+    try {
+      const { data: result } = await client.post('/admin/users/notify-mfa-setup');
+      if (result.sent === 0 && result.failed === 0) {
+        setMfaResult('Tous les comptes actifs ont déjà la 2FA activée.');
+      } else if (result.failed > 0) {
+        setMfaResult(`${result.sent} guide(s) envoyé(s), ${result.failed} échec(s).`);
+      } else {
+        setMfaResult(`Guide 2FA envoyé à ${result.sent} compte(s).`);
+      }
+    } catch (err) {
+      setMfaResult(err.response?.data?.error || "Erreur lors de l'envoi du guide.");
+    } finally {
+      setNotifyingMfa(false);
+    }
+  }, []);
+
   const handleNotifyDormant = useCallback(async () => {
     setNotifyingDormant(true);
     setNotifyResult(null);
@@ -485,7 +511,6 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
   if (!data) return null;
 
   const lockedCount = data.lockedNow ?? 0;
-  const hasActiveAlert = lockedCount > 0;
   const activeAccounts = data.totalUsers - data.inactiveAccounts;
   const mfaRate = data.mfaAdoption && data.mfaAdoption.total > 0
     ? Math.round((data.mfaAdoption.enabled / data.mfaAdoption.total) * 100)
@@ -515,7 +540,15 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
           onClick={() => setShowActiveBreakdown((v) => !v)}
         />
         <HeroStatCard label="Comptes Désactivés" value={data.inactiveAccounts} Icon={IconLock} tone={data.inactiveAccounts > 0 ? 'amber' : 'primary'} />
-        <HeroStatCard label="Comptes Verrouillés" value={lockedCount} Icon={IconLock} tone={lockedCount > 0 ? 'error' : 'primary'} />
+        <HeroStatCard
+          label="Comptes Verrouillés"
+          value={lockedCount}
+          Icon={IconLock}
+          tone={lockedCount > 0 ? 'error' : 'primary'}
+          urgent={lockedCount > 0}
+          hint={lockedCount > 0 ? 'Cliquez pour le détail →' : undefined}
+          onClick={lockedCount > 0 ? () => onNavigateToUsersFilter?.('locked') : undefined}
+        />
       </div>
 
       {/* Détail des comptes actifs, affiché au clic sur la carte "Comptes Actifs" */}
@@ -542,21 +575,6 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
               <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}>{sb.neverLoggedIn}</span>
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Alerte proéminente si activité de verrouillage récente */}
-      {hasActiveAlert && (
-        <div
-          className="card"
-          style={{ borderLeft: '3px solid var(--error)', cursor: 'pointer' }}
-          onClick={() => onNavigateToUsersFilter?.('locked')}
-        >
-          <p style={{ margin: 0, color: 'var(--error)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <IconAlert size={15} color="var(--error)" />
-            {lockedCount} compte(s) actuellement verrouillé(s)
-          </p>
-          <p className="hint" style={{ marginTop: 4 }}>Cliquez pour voir ces comptes dans l'onglet Utilisateurs.</p>
         </div>
       )}
 
@@ -616,14 +634,28 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
             )}
         </div>
 
-        <div className="card" style={{ flex: '1 1 260px', display: 'flex', alignItems: 'center', gap: 20 }}>
-          <Gauge value={mfaRate} tone={mfaRate === null ? 'primary' : mfaRate >= 80 ? 'success' : mfaRate >= 50 ? 'amber' : 'error'} />
-          <div>
-            <h2 style={{ margin: 0 }}>Adoption de la 2FA</h2>
-            <p className="hint" style={{ marginTop: 6 }}>
-              {data.mfaAdoption ? `${data.mfaAdoption.enabled} / ${data.mfaAdoption.total} comptes protégés` : '—'}
-            </p>
+        <div className="card" style={{ flex: '1 1 260px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <Gauge value={mfaRate} tone={mfaRate === null ? 'primary' : mfaRate >= 80 ? 'success' : mfaRate >= 50 ? 'amber' : 'error'} />
+            <div>
+              <h2 style={{ margin: 0 }}>Adoption de la 2FA</h2>
+              <p className="hint" style={{ marginTop: 6 }}>
+                {data.mfaAdoption ? `${data.mfaAdoption.enabled} / ${data.mfaAdoption.total} comptes protégés` : '—'}
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginTop: 14, width: 'auto', padding: '7px 14px', fontSize: 12.5 }}
+            disabled={notifyingMfa || (data.mfaAdoption && data.mfaAdoption.enabled === data.mfaAdoption.total)}
+            onClick={handleNotifyMfa}
+          >
+            {notifyingMfa ? 'Envoi en cours...' : 'Envoyer le guide 2FA par email →'}
+          </button>
+          {mfaResult && (
+            <p className="hint" style={{ marginTop: 8 }}>{mfaResult}</p>
+          )}
         </div>
       </div>
 

@@ -1,38 +1,44 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
 :root {
-  /* ---------- Palette moderne indigo ---------- */
-  --ink: #111827;
-  --primary: #4F46E5;
-  --primary-deep: #4338CA;
-  --primary-tint: #EEF2FF;
-  --primary-soft: #E0E7FF;
-  --accent: #0D9488;
-  --accent-tint: #F0FDFA;
+  /* ---------- Palette teal (inspirée de l'espace clinicien) ---------- */
+  --ink: #20343A;
+  --teal: #1E7F8C;
+  --teal-deep: #175F69;
+  --teal-tint: #DFF1F3;
+  --highlight: #63C9D6;
+  --highlight-tint: #E3F8FA;
 
-  --paper: #F7F8FB;
+  /* --primary reste la variable utilisée partout dans les composants :
+     on la fait pointer sur la palette teal pour propager la nouvelle
+     identité visuelle sans devoir toucher chaque page. */
+  --primary: var(--teal);
+  --primary-deep: var(--teal-deep);
+  --primary-tint: var(--teal-tint);
+  --primary-soft: var(--highlight-tint);
+  --accent: var(--teal-deep);
+  --accent-tint: var(--teal-tint);
+
+  --paper: #EAF7FB;
   --card: #FFFFFF;
-  --slate: #6B7280;
-  --slate-soft: #9CA3AF;
-  --line: #E5E7EB;
+  --slate: #55707A;
+  --slate-soft: #8CA6AD;
+  --line: #CFE7EC;
 
-  --amber: #B45309;
-  --amber-tint: #FEF3C7;
-  --error: #DC2626;
-  --error-tint: #FEE2E2;
-  --success: #059669;
-  --success-tint: #D1FAE5;
+  --amber: #C98A2C;
+  --amber-tint: #FBF0DD;
+  --error: #C1503D;
+  --error-tint: #FBEAE7;
+  --success: #2E8F72;
+  --success-tint: #E4F5EE;
+  --violet: #6B5CA5;
+  --violet-tint: #EDEAF7;
 
-  --font-display: 'Inter', 'Segoe UI', sans-serif;
-  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
 
-  /* Alias rétro-compatibilité (ancien thème teal) */
-  --teal: var(--primary);
-  --teal-deep: var(--primary-deep);
-  --teal-tint: var(--primary-tint);
-  --highlight: var(--primary);
-  --highlight-tint: var(--primary-tint);
+  /* Alias rétro-compatibilité */
   --gold: var(--amber);
   --gold-tint: var(--amber-tint);
 }
@@ -52,13 +58,13 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary), #6366F1);
+  background: linear-gradient(135deg, var(--highlight), var(--teal));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 4px 10px -3px rgba(79, 70, 229, 0.45);
+  box-shadow: 0 4px 10px -3px rgba(30, 127, 140, 0.45), 0 0 0 3px rgba(255, 255, 255, 0.06);
 }
 
 /* ---------- Éléments structurels ---------- */
@@ -109,7 +115,8 @@ body {
 
 /* ---------- Cartes d'authentification ---------- */
 .auth-card {
-  max-width: 420px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
   margin: 56px auto;
   background: var(--card);
   padding: 36px 32px 32px;
@@ -428,7 +435,7 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
 }
 
 @media (max-width: 480px) {
-  .auth-card { margin: 32px 16px; padding: 28px 22px 24px; }
+  .auth-card { width: 100%; max-width: calc(100vw - 32px); margin: 32px auto; padding: 28px 22px 24px; }
   .dashboard { margin: 0 auto; padding: 24px 16px 48px; }
   .dashboard header { flex-direction: column; align-items: flex-start; gap: 12px; }
 }

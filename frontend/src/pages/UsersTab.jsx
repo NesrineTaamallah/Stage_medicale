@@ -116,6 +116,10 @@ const QUICK_FILTERS = {
     label: 'Comptes actifs jamais connectés',
     test: (u) => u.is_active && !u.last_login_at,
   },
+  locked: {
+    label: 'Comptes actuellement verrouillés',
+    test: (u) => !!u.locked_until && new Date(u.locked_until) > new Date(),
+  },
 };
 
 export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQuickFilterHandled }) {
@@ -268,7 +272,7 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
     .filter((u) => {
       const matchRole = roleFilter === 'all' || u.role === roleFilter;
       const matchSearch = u.email.toLowerCase().includes(search.toLowerCase());
-      const matchQuick = !quickFilter || QUICK_FILTERS[quickFilter].test(u);
+      const matchQuick = !quickFilter || !QUICK_FILTERS[quickFilter] || QUICK_FILTERS[quickFilter].test(u);
       return matchRole && matchSearch && matchQuick;
     })
     .sort((a, b) => {

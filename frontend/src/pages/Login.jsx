@@ -1,5 +1,5 @@
 import BrandMark from '../components/BrandMark';
-import { IconEye, IconEyeOff, IconLock } from '../components/Icons';
+import { IconEye, IconEyeOff } from '../components/Icons';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
@@ -104,8 +104,8 @@ export default function Login() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, textTransform: 'none', fontWeight: 500, fontSize: 13, color: 'var(--slate)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, width: '100%', marginTop: 16 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, textTransform: 'none', fontWeight: 500, fontSize: 13, color: 'var(--slate)', flexShrink: 0 }}>
               <input
                 type="checkbox"
                 style={{ width: 'auto', margin: 0 }}
@@ -119,7 +119,7 @@ export default function Login() {
               onClick={() => setShowForgotHint((s) => !s)}
               style={{
                 width: 'auto', margin: 0, padding: 0, background: 'transparent',
-                color: 'var(--primary)', boxShadow: 'none', fontSize: 13, fontWeight: 600,
+                color: 'var(--primary)', boxShadow: 'none', fontSize: 13, fontWeight: 600, flexShrink: 0,
               }}
             >
               Mot de passe oublié ?
@@ -131,23 +131,13 @@ export default function Login() {
             </p>
           )}
 
-          {error && <p className="error">{error}</p>}
+          <div style={{ marginTop: 14, minHeight: 60 }}>
+            {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
+          </div>
           <button type="submit" disabled={loading}>
             {loading ? 'Connexion en cours…' : 'Se connecter'}
           </button>
         </form>
-
-        <div
-          style={{
-            display: 'flex', alignItems: 'flex-start', gap: 8,
-            marginTop: 20, padding: '12px 14px', background: 'var(--paper)', borderRadius: 10,
-          }}
-        >
-          <IconLock size={14} color="var(--slate)" />
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
-            Votre connexion est sécurisée avec chiffrement SSL. Vos identifiants ne sont jamais partagés.
-          </p>
-        </div>
       </div>
 
       <p style={{ fontSize: 13, color: 'var(--slate)', marginTop: 22 }}>

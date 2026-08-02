@@ -3,6 +3,7 @@ const { signToken, verifyToken, getJti } = require('../utils/jwtUtils');
 const { verifyPassword, hashPassword } = require('../utils/passwordUtils');
 const COOKIE_OPTIONS = require('../utils/cookieOptions');
 const { logAccess } = require('../utils/accessLog');
+const { sendAccountLockedAlertEmail } = require('../utils/mailer');
 require('dotenv').config();
 
 const MAX_ATTEMPTS = 5;
@@ -13,6 +14,24 @@ const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 // un attaquant de distinguer "email inconnu" de "mauvais mot de passe"
 // en mesurant le temps de réponse (timing attack / énumération d'emails).
 const DUMMY_HASH = '$2b$12$abcdefghijklmnopqrstuuOa1zQZKzHZOL8CDPGPn4RY0Nx6Cy9K';
+
+/**
+ * Alerte tous les admins actifs par email quand un compte vient d'être
+ * verrouillé (5 échecs de connexion). Volontairement fire-and-forget côté
+ * appelant : un échec d'envoi ne doit jamais faire échouer la réponse de login.
+ */
+async function notifyAdminsAccountLocked(lockedUser) {
+  const admins = await pool.query(
+    `SELECT email FROM users WHERE role = 'admin' AND is_active = true`
+  );
+  for (const admin of admins.rows) {
+    try {
+      await sendAccountLockedAlertEmail(admin.email, lockedUser.email, lockedUser.role);
+    } catch (emailErr) {
+      console.error('Échec alerte verrouillage à', admin.email, '-', emailErr.message);
+    }
+  }
+}
 
 async function login(req, res) {
   const { email, password } = req.body; // déjà normalisé (lowercase) par le middleware validate
@@ -66,6 +85,10 @@ async function login(req, res) {
       });
 
       if (shouldLock) {
+        // Fire-and-forget : n'attend pas l'envoi pour répondre à l'utilisateur verrouillé.
+        notifyAdminsAccountLocked(user).catch((e) =>
+          console.error('Échec notification admins (compte verrouillé) -', e.message)
+        );
         return res.status(423).json({ error: `Trop d'échecs. Compte verrouillé pendant 15 minutes.` });
       }
       return res.status(401).json({ error: 'Identifiants invalides.' });
