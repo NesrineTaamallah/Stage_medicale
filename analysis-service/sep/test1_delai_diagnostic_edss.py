@@ -210,6 +210,68 @@ def run(engine, config: dict) -> dict:
             "Réduisez le nombre de covariables ou élargissez la fenêtre de tolérance."
         )
 
+    # Garde-fou avant le fit : une colonne à variance nulle sur l'échantillon
+    # final (ex: après dropna(), tous les patients restants ont la même
+    # modalité d'une dummy catégorielle) rend systématiquement la matrice de
+    # design singulière -> LinAlgError("Singular matrix") non catégorisée,
+    # renvoyée telle quelle par le handler générique de main.py. On la
+    # détecte ici pour donner un message exploitable (quelle variable,
+    # pourquoi) au lieu de laisser planter numpy.
+    colonnes_constantes = [c for c in predicteurs if d[c].nunique() <= 1]
+    if colonnes_constantes:
+        raise ValueError(
+            f"Variable(s) sans variation sur l'échantillon final retenu : "
+            f"{', '.join(colonnes_constantes)} (une seule valeur pour tous les "
+            f"patients après exclusion des données manquantes). Retirez cette "
+            f"covariable ou élargissez la fenêtre de tolérance pour inclure plus de patients."
+        )
+
+    # Garde-fou complémentaire : deux prédicteurs quasi-parfaitement corrélés
+    # (fréquent entre dummies issues d'une même variable catégorielle mère,
+    # ou entre deux covariables cliniquement liées) rendent aussi la matrice
+    # singulière sans qu'aucune colonne ne soit individuellement constante.
+    # On identifie ici la/les paire(s) en cause pour éviter à l'utilisateur
+    # de deviner laquelle des covariables retirer.
+    if len(predicteurs) > 1:
+        corr = d[predicteurs].astype(float).corr().abs()
+        paires_colineaires = [
+            (corr.columns[i], corr.columns[j], corr.iloc[i, j])
+            for i in range(len(corr.columns))
+            for j in range(i + 1, len(corr.columns))
+            if corr.iloc[i, j] > 0.95
+        ]
+        if paires_colineaires:
+            detail_paires = "; ".join(f"{a} / {b} (r={r:.2f})" for a, b, r in paires_colineaires)
+            raise ValueError(
+                f"Covariables quasi-parfaitement corrélées entre elles, rendant le "
+                f"modèle instable : {detail_paires}. Retirez l'une des deux variables "
+                f"de chaque paire, puis relancez."
+            )
+
+    # Garde-fou séparation quasi-parfaite : sur les dummies binaires (0/1)
+    # générées par get_dummies, si une modalité prédit l'issue à 100% (tous
+    # les patients de ce niveau ont _outcome=0 ou tous ont _outcome=1), le
+    # MLE de la régression logistique diverge -> overflow dans exp(), log(0)
+    # -> coefficients infinis -> "ConvergenceWarning" + résultats non
+    # exploitables (OR -> Infinity, assainis en None côté API). Fréquent ici
+    # car horizon court + petite fenêtre de tolérance + beaucoup de
+    # covariables catégorielles réduisent fortement n après dropna().
+    if type_regression == "logistic":
+        predicteurs_binaires = [c for c in predicteurs if set(d[c].dropna().unique()) <= {0.0, 1.0}]
+        variables_separantes = []
+        for c in predicteurs_binaires:
+            taux = d.groupby(c)["_outcome"].mean()
+            if (taux == 0).any() or (taux == 1).any():
+                variables_separantes.append(c)
+        if variables_separantes:
+            raise ValueError(
+                f"Séparation quasi-parfaite détectée pour : {', '.join(variables_separantes)} "
+                f"(une modalité de cette variable prédit l'issue à 100% sur cet échantillon, "
+                f"ce qui fait diverger la régression logistique classique). Retirez cette/ces "
+                f"covariable(s), ou élargissez la fenêtre de tolérance / réduisez le nombre "
+                f"de covariables pour augmenter l'effectif."
+            )
+
     formule = "_outcome ~ " + " + ".join(predicteurs)
     notes(f"Formule du modèle : {formule}")
 
@@ -219,7 +281,7 @@ def run(engine, config: dict) -> dict:
         try:
             vifs = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
             if (vifs.drop("const") > 5).any():
-                notes("⚠️ VIF > 5 détecté : forte colinéarité entre certaines covariables.")
+                notes("⚠️ VIF > 5 détecté : forte colinéarité entre certaines covariables — le fit peut échouer (matrice singulière).")
         except np.linalg.LinAlgError:
             notes("⚠️ VIF non calculable (matrice singulière) : covariables trop corrélées ou effectif trop faible.")
 
@@ -229,8 +291,19 @@ def run(engine, config: dict) -> dict:
     figures = []
     tableau_or = None
 
+    def _fitter(fonction_fit):
+        try:
+            return fonction_fit()
+        except np.linalg.LinAlgError:
+            raise ValueError(
+                "Le modèle ne peut pas être ajusté : matrice de design singulière "
+                "(covariables trop corrélées entre elles pour cet échantillon). "
+                "Retirez une ou plusieurs covariables corrélées, ou repassez en "
+                "mode univarié pour identifier laquelle pose problème."
+            )
+
     if type_regression == "linear":
-        modele = smf.ols(formule, data=d).fit()
+        modele = _fitter(lambda: smf.ols(formule, data=d).fit())
         beta, pval = modele.params["_delai_mois"], modele.pvalues["_delai_mois"]
         ci = modele.conf_int().loc["_delai_mois"]
         notes(f"β(délai) = {beta:.4f}, IC95% [{ci[0]:.4f};{ci[1]:.4f}], p={pval:.4f}")
@@ -253,7 +326,7 @@ def run(engine, config: dict) -> dict:
         resume_stats = {"beta_delai": round(beta, 4), "p_value": round(pval, 4),
                          "ic95": [round(ci[0], 4), round(ci[1], 4)], "n": len(d)}
     else:
-        modele = smf.logit(formule, data=d).fit(disp=0)
+        modele = _fitter(lambda: smf.logit(formule, data=d).fit(disp=0))
         or_table = pd.DataFrame({
             "OR": np.exp(modele.params), "IC95%_bas": np.exp(modele.conf_int()[0]),
             "IC95%_haut": np.exp(modele.conf_int()[1]), "p": modele.pvalues,

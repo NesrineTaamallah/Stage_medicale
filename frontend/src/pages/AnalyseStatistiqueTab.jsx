@@ -667,15 +667,11 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   const couleurAccent = accent || 'var(--primary-deep)';
   const teinteAccent = accentTint || 'var(--primary-tint)';
 
-  // Vue "dashboard" : on ne montre que l'essentiel — chiffres clés, UN
-  // graphique principal (le premier renvoyé par le script, considéré comme
-  // la figure de synthèse), et le tableau de résultats. Tout le reste
-  // (notes détaillées, graphiques secondaires, log complet) part dans le
-  // zip téléchargeable pour ne pas noyer le clinicien sous le détail.
+  // Vue "dashboard" : chiffres clés, TOUS les graphiques renvoyés par le
+  // script (chacun avec sa légende si le script l'a imprimée), et le
+  // tableau de résultats. Seul le détail texte complet (notes brutes, log)
+  // part dans le zip téléchargeable pour ne pas noyer le clinicien.
   const figureLegendes = blocs.filter((b) => b.type === 'figure_note');
-  const figurePrincipale = (resultat.figures || [])[0];
-  const legendePrincipale = figureLegendes[0]?.texte;
-  const nbFiguresSecondaires = Math.max((resultat.figures || []).length - 1, 0);
   const nbNotesDetail = (resultat.notes || []).length;
 
   const badge = badgeSignification(resultat.resume_stats);
@@ -713,20 +709,24 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
         </div>
       )}
 
-      {/* Graphique principal — un seul, mis en avant */}
-      {figurePrincipale && (
+      {/* Tous les graphiques renvoyés par le test, chacun avec sa légende si disponible */}
+      {(resultat.figures || []).length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
-            Graphique clé
+            {resultat.figures.length > 1 ? 'Graphiques' : 'Graphique clé'}
           </div>
-          <figure style={{ margin: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)', maxWidth: 560 }}>
-            <img src={figurePrincipale} alt={legendePrincipale || 'graphique principal'} style={{ width: '100%', display: 'block' }} />
-            {legendePrincipale && (
-              <figcaption style={{ padding: '8px 12px', fontSize: 11.5, color: 'var(--slate)', borderTop: '1px solid var(--line)' }}>
-                {legendePrincipale}
-              </figcaption>
-            )}
-          </figure>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            {resultat.figures.map((src, i) => (
+              <figure key={i} style={{ margin: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)', maxWidth: 560, flex: '1 1 320px' }}>
+                <img src={src} alt={figureLegendes[i]?.texte || `graphique ${i + 1}`} style={{ width: '100%', display: 'block' }} />
+                {figureLegendes[i]?.texte && (
+                  <figcaption style={{ padding: '8px 12px', fontSize: 11.5, color: 'var(--slate)', borderTop: '1px solid var(--line)' }}>
+                    {figureLegendes[i].texte}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
         </div>
       )}
 
@@ -751,7 +751,6 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
       }}>
         <div style={{ fontSize: 12.5, color: 'var(--slate)', background: teinteAccent, borderRadius: 10, padding: '10px 14px' }}>
           {nbNotesDetail > 0 && `${nbNotesDetail} ligne(s) de détail`}
-          {nbFiguresSecondaires > 0 && ` · ${nbFiguresSecondaires} graphique(s) supplémentaire(s)`}
           {' '}disponibles dans le dossier téléchargeable ci-dessous (log complet, VIF, résidus, matrice de confusion...).
         </div>
         <BoutonTelecharger resultat={resultat} titreAnalyse={titreAnalyse} accent={couleurAccent} />

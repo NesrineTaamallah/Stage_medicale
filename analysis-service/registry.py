@@ -53,10 +53,29 @@ def run_sep3(engine, config):
     #   2) "2" pour ajuster sur covariables, sinon vide
     #   3) indices covariables séparés par virgules (si étape 2 = "2")
     #   4) "1" ou "2" pour choisir Poisson / Binomiale Négative
+    #
+    # Le script legacy demande les covariables par INDICE numérique (0,1,2...)
+    # correspondant à l'ordre de COVARIABLES_TAP_AUTORISEES dans test3_sep.py.
+    # Un clinicien ne doit jamais avoir à connaître/deviner ces indices : le
+    # frontend affiche des cases à cocher avec les noms lisibles (voir
+    # parametres_schema ci-dessous), et c'est ICI qu'on fait la traduction
+    # nom -> indice avant d'émuler les réponses au script.
+    # ATTENTION : cet ordre doit rester identique à celui du dict
+    # COVARIABLES_TAP_AUTORISEES dans test_analyse_statistique/SEP/test3_sep.py
+    # (script non modifiable directement — voir principe en tête de fichier).
+    NOMS_COVARIABLES_TAP = ["age_onset", "sexe", "edss_inclusion"]
+
+    covariables_choisies = config.get("covariables", [])
+    indices = [
+        str(NOMS_COVARIABLES_TAP.index(nom))
+        for nom in covariables_choisies
+        if nom in NOMS_COVARIABLES_TAP
+    ]
+
     reponses = [
         str(config.get("fenetre_tap_annees", "")),
-        "2" if config.get("covariables") else "",
-        ",".join(str(i) for i in config.get("covariables_indices", [])),
+        "2" if indices else "",
+        ",".join(indices),
         "1" if config.get("modele_tap", "poisson") == "poisson" else "2",
     ]
     return run_original_script(_sep("test3_sep.py"), reponses_stdin=reponses, env_overrides=PG_ENV)
@@ -146,7 +165,9 @@ ANALYSES = {
               "description": "TAP précoce, modèle Poisson/Binomiale Négative.",
               "parametres_schema": {
                   "fenetre_tap_annees": {"type": "number", "label": "Fenêtre TAP (années)"},
-                  "covariables_indices": {"type": "text", "label": "Indices covariables (ex: 0,1)"},
+                  "covariables": {"type": "multiselect",
+                                  "options": ["age_onset", "sexe", "edss_inclusion"],
+                                  "label": "Covariables (ajustement du modèle TAP)"},
                   "modele_tap": {"type": "select", "options": ["poisson", "nb"], "label": "Modèle"},
               }, "run": run_sep3},
     "sep_4": {"registre": "SEP", "titre": "Charge lésionnelle T2 et sévérité future",

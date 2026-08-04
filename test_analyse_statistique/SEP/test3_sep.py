@@ -10,6 +10,13 @@ from sqlalchemy import create_engine
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# Dossier de sortie des figures : quand ce script est lancé via l'API
+# (script_runner.py), OUTPUT_DIR pointe vers un dossier temporaire propre
+# à cette exécution, récupéré ensuite pour l'affichage dans le frontend.
+# En dehors de l'API (script lancé seul en console), on retombe sur
+# l'ancien chemin fixe.
+DOSSIER_SORTIE = os.environ.get("OUTPUT_DIR", "/mnt/user-data/outputs")
+
 def obtenir_moteur_postgres():
     url = (
         f"postgresql+psycopg2://{os.environ.get('PGUSER', 'postgres')}:"
@@ -458,7 +465,7 @@ def graphique_comparaison_tap(df_tap: pd.DataFrame, comparaison: dict):
     ax.set_title("Ajustement observe vs predit (Poisson)")
 
     plt.tight_layout()
-    plt.savefig("/mnt/user-data/outputs/test3_comparaison_poisson_nb.png", dpi=150)
+    plt.savefig(os.path.join(DOSSIER_SORTIE, "test3_comparaison_poisson_nb.png"), dpi=150)
     plt.close()
     print("\nGraphique sauvegarde : test3_comparaison_poisson_nb.png")
 
@@ -757,7 +764,7 @@ def tracer_trajectoires_par_tap(df: pd.DataFrame, resultat, transformation_temps
     ax.legend()
 
     plt.tight_layout()
-    plt.savefig("/mnt/user-data/outputs/test3_trajectoires_tap.png", dpi=150)
+    plt.savefig(os.path.join(DOSSIER_SORTIE, "test3_trajectoires_tap.png"), dpi=150)
     plt.close()
     print("\nGraphique sauvegarde : test3_trajectoires_tap.png")
 
