@@ -127,7 +127,13 @@ def preparer_dataset_modele(df, config, notes: Notes):
     if cat_cols:
         d = pd.get_dummies(d, columns=cat_cols, drop_first=True)
     for c in d.columns:
-        d[c] = pd.to_numeric(d[c], errors="coerce")
+        # .astype(float) est essentiel ici : pd.to_numeric() seul ne convertit PAS
+        # les colonnes bool (True/False) en numérique. Or statsmodels/patsy traite
+        # les colonnes bool comme catégorielles avec les niveaux [False, True].
+        # Sans ce cast, tout calcul produisant une moyenne fractionnaire sur une
+        # colonne bool (ex: d[col].mean() pour la prédiction) fait planter Patsy
+        # avec "observation with value 0.333... does not match expected levels".
+        d[c] = pd.to_numeric(d[c], errors="coerce").astype(float)
 
     n_avant = len(d)
     d = d.dropna()
@@ -172,19 +178,35 @@ def run(engine, config: dict) -> dict:
         "covariables": covariables,
     }
     d = preparer_dataset_modele(df, model_config, notes)
-    if len(d) < 0.5:
-        raise ValueError(f"Effectif insuffisant après nettoyage (n={len(d)}) pour ajuster un modèle fiable.")
 
     predicteurs = ["_delai_mois"] + [c for c in d.columns if c not in ["_delai_mois", col_edss, "_outcome"]]
+
+    # Garde-fou sur la taille d'échantillon : l'ancien test `len(d) < 0.5` ne
+    # bloquait jamais rien (n est toujours un entier >= 0 ou >= 1). On applique
+    # ici une règle EPV (events/variable) minimale : au moins ~5-10 observations
+    # par prédicteur, sinon le modèle est instable/singulier (cf. "Singular
+    # matrix" observé en mode multivariée avec n=3 pour 8 prédicteurs).
+    n_min_requis = max(5, (len(predicteurs) + 1) * 5)
+    if len(d) < n_min_requis:
+        raise ValueError(
+            f"Effectif insuffisant après nettoyage (n={len(d)}) pour ajuster un modèle "
+            f"à {len(predicteurs)} prédicteur(s) de façon fiable "
+            f"(recommandé : n≥{n_min_requis}, règle ~5-10 observations par variable). "
+            "Réduisez le nombre de covariables ou élargissez la fenêtre de tolérance."
+        )
+
     formule = "_outcome ~ " + " + ".join(predicteurs)
     notes(f"Formule du modèle : {formule}")
 
     # VIF si multivarié
     if len(predicteurs) > 1:
         X = sm.add_constant(d[predicteurs].astype(float))
-        vifs = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
-        if (vifs.drop("const") > 5).any():
-            notes("⚠️ VIF > 5 détecté : forte colinéarité entre certaines covariables.")
+        try:
+            vifs = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+            if (vifs.drop("const") > 5).any():
+                notes("⚠️ VIF > 5 détecté : forte colinéarité entre certaines covariables.")
+        except np.linalg.LinAlgError:
+            notes("⚠️ VIF non calculable (matrice singulière) : covariables trop corrélées ou effectif trop faible.")
 
     rho, p_spearman = spearmanr(d["_delai_mois"], d[col_edss])
     notes(f"Corrélation de Spearman (brute) : ρ={rho:.3f}, p={p_spearman:.4f}")
@@ -232,7 +254,11 @@ def run(engine, config: dict) -> dict:
         axes[0].plot(fpr, tpr, color="darkorange", lw=2, label=f"AUC={auc:.3f}")
         axes[0].plot([0, 1], [0, 1], "--", color="grey")
         axes[0].set_title("Courbe ROC"); axes[0].legend()
-        cm = confusion_matrix(y_true, (y_score >= 0.5).astype(int))
+        # labels=[0, 1] force une matrice 2x2 même si une des deux classes est
+        # absente de y_true ou des prédictions (cas fréquent sur petits échantillons) ;
+        # sans ça, sklearn renvoie une matrice 1x1 et cm[i, j] lève un IndexError
+        # dès que la boucle tente d'accéder à l'indice 1.
+        cm = confusion_matrix(y_true, (y_score >= 0.5).astype(int), labels=[0, 1])
         axes[1].imshow(cm, cmap="Blues")
         for i in range(2):
             for j in range(2):

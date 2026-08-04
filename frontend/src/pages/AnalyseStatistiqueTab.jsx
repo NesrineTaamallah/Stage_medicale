@@ -192,13 +192,272 @@ function ChampFormulaire({ schema, valeur, onChange }) {
   );
 }
 
-function ResultatAnalyse({ resultat }) {
+/* ---------------------------------------------------------------------- */
+/* Interprétation "brute" des notes (stdout capturé)                       */
+/* ---------------------------------------------------------------------- */
+/* Les 12 scripts non encore refactorés (voir script_runner.py) renvoient   */
+/* tout dans `notes` : un dump du print() console d'origine, avec des       */
+/* bannières "====", des sous-titres "--- ... ---", des tableaux           */
+/* pandas.to_string() alignés par espaces, des lignes [ATTENTION ...] et    */
+/* des phrases d'interprétation "-> ...". Ce parseur reconstruit une        */
+/* structure (titres / sous-titres / tableaux / alertes / citations /      */
+/* texte) SANS toucher aux scripts originaux : il lit juste le texte.       */
+
+const LIGNE_BANNIERE = /^[=]{8,}\s*$/;
+const LIGNE_TIRETS = /^-{3,}\s*(.+?)\s*-{3,}$/;
+const TOKEN_VALIDE = /^[A-Za-zÀ-ÿ0-9_.\-+%éèêàùç]+$/;
+
+function estLigneDeTableau(ligne) {
+  const t = ligne.trim();
+  if (!t) return false;
+  if (/[:,()]/.test(t)) return false; // ponctuation typique des phrases
+  const tokens = t.split(/\s{1,}/).filter(Boolean);
+  if (tokens.length < 2) return false;
+  return tokens.every((tok) => TOKEN_VALIDE.test(tok));
+}
+
+function decouperLigneTableau(ligne) {
+  return ligne.trim().split(/\s{1,}/).filter(Boolean);
+}
+
+/** Regroupe des lignes consécutives "tableau-compatibles" en un bloc
+ * { entetes: [...], lignes: [[...]] }. Gère le cas fréquent où pandas
+ * imprime une colonne d'index sans en-tête (une valeur de plus par ligne
+ * de données que dans l'en-tête). */
+function construireTableau(lignesBrutes) {
+  const entetes = decouperLigneTableau(lignesBrutes[0]);
+  const corps = lignesBrutes.slice(1).map(decouperLigneTableau);
+  const decalage = corps.length && corps[0].length === entetes.length + 1 ? 1 : 0;
+  return {
+    entetes: decalage ? ['#', ...entetes] : entetes,
+    lignes: corps.map((r) => (decalage ? r : r.slice(0, entetes.length))),
+  };
+}
+
+function classifierLigne(ligne) {
+  const t = ligne.trim();
+  if (!t) return { type: 'vide' };
+  if (/^\[?ATTENTION/i.test(t) || /^⚠/.test(t)) return { type: 'alerte', texte: t.replace(/^\[|\]$/g, '') };
+  if (/^->/.test(t)) return { type: 'citation', texte: t.replace(/^->\s*/, '') };
+  if (/^✅/.test(t)) return { type: 'ok', texte: t.replace(/^✅\s*/, '') };
+  if (/^📝/.test(t) || /^ℹ/.test(t)) return { type: 'info', texte: t.replace(/^📝\s*|^ℹ\s*/, '') };
+  return { type: 'texte', texte: t };
+}
+
+/** Cœur du parseur : transforme le tableau de lignes `notes` en une liste
+ * de blocs typés, prêts à être rendus. */
+function parseNotes(notes) {
+  const lignes = (notes || []).flatMap((l) => String(l).split('\n'));
+  const blocs = [];
+  let i = 0;
+  let dernierGraphiqueNomme = null;
+
+  while (i < lignes.length) {
+    const ligne = lignes[i];
+
+    // Bannière "====...====\nTITRE\n====...====" (1 ou 2 lignes de titre)
+    if (LIGNE_BANNIERE.test(ligne)) {
+      let j = i + 1;
+      const titreLignes = [];
+      while (j < lignes.length && !LIGNE_BANNIERE.test(lignes[j]) && titreLignes.length < 3) {
+        if (lignes[j].trim()) titreLignes.push(lignes[j].trim());
+        j++;
+      }
+      if (j < lignes.length && LIGNE_BANNIERE.test(lignes[j]) && titreLignes.length > 0) {
+        const titre = titreLignes.join(' — ');
+        blocs.push({
+          type: 'titre',
+          niveau: /^ETAPE\b/i.test(titre) ? 2 : 1,
+          texte: titre,
+        });
+        i = j + 1;
+        continue;
+      }
+    }
+
+    // Sous-titre encadré par des tirets : "--- texte ---"
+    const matchTirets = ligne.trim().match(LIGNE_TIRETS);
+    if (matchTirets) {
+      blocs.push({ type: 'titre', niveau: 3, texte: matchTirets[1] });
+      i++;
+      continue;
+    }
+
+    // Bloc de tableau : lignes consécutives compatibles (>= 2, dont un en-tête)
+    if (estLigneDeTableau(ligne)) {
+      const groupe = [ligne];
+      let j = i + 1;
+      while (j < lignes.length && estLigneDeTableau(lignes[j])) {
+        groupe.push(lignes[j]);
+        j++;
+      }
+      if (groupe.length >= 2) {
+        blocs.push({ type: 'tableau', ...construireTableau(groupe) });
+        i = j;
+        continue;
+      }
+    }
+
+    // Nom de figure sauvegardée -> servira de légende
+    const matchFig = ligne.match(/Graphique sauvegard[ée]\s*:\s*(.+\.png)/i);
+    if (matchFig) {
+      dernierGraphiqueNomme = matchFig[1].trim();
+      blocs.push({ type: 'figure_note', texte: dernierGraphiqueNomme });
+      i++;
+      continue;
+    }
+
+    const classee = classifierLigne(ligne);
+    if (classee.type !== 'vide') blocs.push(classee);
+    i++;
+  }
+
+  return blocs;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Rendu                                                                    */
+/* ---------------------------------------------------------------------- */
+
+function TableauGenerique({ entetes, lignes, accent }) {
   return (
-    <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 16, animation: 'fadeInResult 0.25s ease' }}>
+    <div style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ background: 'var(--paper)' }}>
+            {entetes.map((col, i) => (
+              <th key={i} style={{
+                textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '9px 12px',
+                fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: 'var(--slate-soft)',
+                whiteSpace: 'nowrap',
+              }}>{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {lignes.map((ligne, i) => (
+            <tr key={i}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--paper)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={{ transition: 'background 0.1s ease' }}>
+              {entetes.map((_, j) => {
+                const v = ligne[j] ?? '';
+                const estBool = v === 'True' || v === 'False';
+                const estSignif = v === 'True' && /signif|p_val/i.test(entetes[j] || '');
+                return (
+                  <td key={j} style={{
+                    padding: '8px 12px', borderBottom: '1px solid var(--line)', color: 'var(--ink)',
+                    whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+                    fontWeight: estBool ? 600 : 400,
+                    color: estSignif ? (accent || 'var(--primary-deep)') : 'var(--ink)',
+                  }}>{v}</td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BlocTitre({ niveau, texte, accent, accentTint }) {
+  if (niveau === 1) {
+    return (
+      <div style={{
+        fontFamily: 'var(--font-display)', fontSize: 15.5, fontWeight: 700, color: 'var(--ink)',
+        paddingBottom: 8, borderBottom: `2px solid ${accentTint}`,
+      }}>{texte}</div>
+    );
+  }
+  if (niveau === 2) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          width: 5, height: 5, borderRadius: '50%', background: accent, flexShrink: 0,
+        }} />
+        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: accent }}>{texte}</span>
+      </div>
+    );
+  }
+  return <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--slate)' }}>{texte}</div>;
+}
+
+function BlocTexte({ type, texte }) {
+  const styles = {
+    alerte: { bg: 'var(--error-tint, #fdf1ee)', border: 'rgba(193,80,61,0.28)', color: 'var(--error, #b3462f)', icon: <IconAlert size={14} /> },
+    citation: { bg: 'var(--primary-tint)', border: 'transparent', color: 'var(--primary-deep)', icon: null, italic: true },
+    ok: { bg: 'transparent', border: 'transparent', color: 'var(--ink)', icon: <IconCheckCircle size={13} /> },
+    info: { bg: 'transparent', border: 'transparent', color: 'var(--slate)', icon: null },
+    texte: { bg: 'transparent', border: 'transparent', color: 'var(--slate)', icon: null },
+  }[type];
+
+  if (type === 'citation') {
+    return (
+      <div style={{
+        background: styles.bg, borderLeft: '3px solid var(--primary)', borderRadius: '0 10px 10px 0',
+        padding: '10px 14px', fontSize: 13, lineHeight: 1.6, color: styles.color, fontStyle: 'italic',
+      }}>
+        « {texte} »
+      </div>
+    );
+  }
+  if (type === 'alerte') {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: 8, background: styles.bg,
+        border: `1px solid ${styles.border}`, borderRadius: 10, padding: '9px 12px',
+        fontSize: 12.5, lineHeight: 1.55, color: styles.color,
+      }}>
+        {styles.icon}<span>{texte}</span>
+      </div>
+    );
+  }
+  if (type === 'ok') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
+        <span style={{ color: 'var(--success, #2f9e63)', marginTop: 1, flexShrink: 0 }}>{styles.icon}</span>
+        <span>{texte}</span>
+      </div>
+    );
+  }
+  return <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: styles.color }}>{texte}</p>;
+}
+
+function ResultatAnalyse({ resultat, accent, accentTint }) {
+  const blocs = useMemo(() => parseNotes(resultat.notes), [resultat.notes]);
+  const couleurAccent = accent || 'var(--primary-deep)';
+  const teinteAccent = accentTint || 'var(--primary-tint)';
+
+  // Regroupe les blocs "linéaires" (titres/texte/tableaux/alertes) en
+  // sections délimitées par les titres de niveau 1 ou 2, pour aérer le rendu.
+  const sections = useMemo(() => {
+    const groupes = [];
+    let courant = { titre: null, blocs: [] };
+    blocs.forEach((b) => {
+      if (b.type === 'titre' && b.niveau <= 2) {
+        if (courant.titre || courant.blocs.length) groupes.push(courant);
+        courant = { titre: b, blocs: [] };
+      } else {
+        courant.blocs.push(b);
+      }
+    });
+    if (courant.titre || courant.blocs.length) groupes.push(courant);
+    return groupes;
+  }, [blocs]);
+
+  const figuresAvecLegende = (resultat.figures || []).map((src, i) => {
+    const legende = blocs.filter((b) => b.type === 'figure_note')[i]?.texte;
+    return { src, legende };
+  });
+
+  return (
+    <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18, animation: 'fadeInResult 0.25s ease' }}>
       <style>{`@keyframes fadeInResult { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
       <SectionHeading Icon={IconCheckCircle} title="Résultats" subtitle="Générés à partir des paramètres ci-dessus" />
 
+      {/* Chiffres clés (déjà structurés côté script — test1_sep) */}
       {resultat.resume_stats && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(resultat.resume_stats).map(([cle, val]) => (
@@ -208,58 +467,60 @@ function ResultatAnalyse({ resultat }) {
               boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)',
             }}>
               <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)' }}>{cle}</div>
-              <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--primary-deep)', fontFamily: 'var(--font-display)', marginTop: 2 }}>{String(val)}</div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: couleurAccent, fontFamily: 'var(--font-display)', marginTop: 2 }}>{String(val)}</div>
             </div>
           ))}
         </div>
       )}
 
-      {resultat.notes?.length > 0 && (
-        <div style={{
-          background: 'var(--primary-tint)', borderRadius: 12, padding: '12px 16px',
-          fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', color: 'var(--primary-deep)',
-          borderLeft: '3px solid var(--primary)',
-        }}>
-          {resultat.notes.join('\n')}
-        </div>
-      )}
-
       {resultat.tableau && (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 12 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--paper)' }}>
-                {Object.keys(resultat.tableau[0] || {}).map((col) => (
-                  <th key={col} style={{
-                    textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '9px 12px',
-                    fontSize: 11, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase', color: 'var(--slate-soft)',
-                  }}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {resultat.tableau.map((ligne, i) => (
-                <tr key={i} style={{ transition: 'background 0.1s ease' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--primary-tint)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                  {Object.values(ligne).map((v, j) => (
-                    <td key={j} style={{ padding: '9px 12px', borderBottom: '1px solid var(--line)', color: 'var(--ink)' }}>{String(v)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
+            Tableau de résultats
+          </div>
+          <TableauGenerique
+            entetes={Object.keys(resultat.tableau[0] || {})}
+            lignes={resultat.tableau.map((l) => Object.values(l))}
+            accent={couleurAccent}
+          />
         </div>
       )}
 
-      {resultat.figures?.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-          {resultat.figures.map((src, i) => (
-            <img key={i} src={src} alt={`figure-${i}`} style={{
-              width: '100%', borderRadius: 12, border: '1px solid var(--line)',
-              boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)', display: 'block',
-            }} />
+      {/* Sortie console (12 scripts non encore refactorés) reconstruite en sections lisibles */}
+      {sections.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {sections.map((sec, si) => (
+            <div key={si} style={{
+              background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14,
+              padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 11,
+            }}>
+              {sec.titre && <BlocTitre {...sec.titre} accent={couleurAccent} accentTint={teinteAccent} />}
+              {sec.blocs.map((b, bi) => {
+                if (b.type === 'titre') return <BlocTitre key={bi} {...b} accent={couleurAccent} accentTint={teinteAccent} />;
+                if (b.type === 'tableau') return <TableauGenerique key={bi} entetes={b.entetes} lignes={b.lignes} accent={couleurAccent} />;
+                if (b.type === 'figure_note') return null; // légendes déjà rattachées aux figures
+                return <BlocTexte key={bi} type={b.type} texte={b.texte} />;
+              })}
+            </div>
           ))}
+        </div>
+      )}
+
+      {figuresAvecLegende.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
+            Graphiques
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+            {figuresAvecLegende.map(({ src, legende }, i) => (
+              <figure key={i} style={{ margin: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)' }}>
+                <img src={src} alt={legende || `figure-${i}`} style={{ width: '100%', display: 'block' }} />
+                <figcaption style={{ padding: '8px 12px', fontSize: 11.5, color: 'var(--slate)', borderTop: '1px solid var(--line)' }}>
+                  {legende || `Figure ${i + 1}`}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -514,7 +775,7 @@ export default function AnalyseStatistiqueTab() {
           <span>{erreur}</span>
         </div>
       )}
-      {resultat && <ResultatAnalyse resultat={resultat} />}
+      {resultat && <ResultatAnalyse resultat={resultat} accent={registre.accentDeep} accentTint={registre.accentTint} />}
     </div>
   );
 }
