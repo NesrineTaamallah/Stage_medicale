@@ -92,7 +92,7 @@ SELECT DISTINCT ON (i.pseudonyme)
 FROM sep_irm i
 JOIN sep_identification_clinique ic ON ic.pseudonyme = i.pseudonyme
 WHERE ic.date_diagnostic IS NOT NULL
-ORDER BY i.pseudonyme, ABS(EXTRACT(EPOCH FROM (i.date_examen - ic.date_diagnostic))), i.date_examen ASC
+ORDER BY i.pseudonyme, ABS(i.date_examen - ic.date_diagnostic), i.date_examen ASC
 """
 SQL_LCR_INITIAL = """
 SELECT DISTINCT ON (l.pseudonyme)
@@ -100,7 +100,7 @@ SELECT DISTINCT ON (l.pseudonyme)
 FROM sep_biologie_lcr l
 JOIN sep_identification_clinique ic ON ic.pseudonyme = l.pseudonyme
 WHERE ic.date_diagnostic IS NOT NULL
-ORDER BY l.pseudonyme, ABS(EXTRACT(EPOCH FROM (l.date_prelevement - ic.date_diagnostic))), l.date_prelevement ASC
+ORDER BY l.pseudonyme, ABS(l.date_prelevement - ic.date_diagnostic), l.date_prelevement ASC
 """
 SQL_EDSS_VISITES = "SELECT pseudonyme, date_visite, score_edss FROM sep_edss_visites ORDER BY pseudonyme, date_visite ASC"
 SQL_POUSSEES = "SELECT pseudonyme, date_poussee FROM sep_poussees WHERE date_poussee IS NOT NULL"
@@ -226,7 +226,13 @@ def detecter_progression_confirmee(df_base, df_edss, df_suivi, edss_baseline_col
 
         baseline_rows = df_base.loc[df_base["pseudonyme"] == pseudo, edss_baseline_col]
         baseline = baseline_rows.values[0] if len(baseline_rows) else np.nan
-        visites = df_edss[df_edss["pseudonyme"] == pseudo].sort_values("date_visite")
+        # [CORRECTIF] Ne garder que les visites POSTÉRIEURES OU ÉGALES à date_diagnostic (t=0).
+        # Sans ce filtre, une visite pré-diagnostic dont le score franchit le seuil par hasard
+        # peut être retenue comme "événement", produisant un temps_progression négatif — invalide
+        # pour CoxPHFitter (durée > 0 requise) et faussant silencieusement Kaplan-Meier/Cox.
+        visites = df_edss[
+            (df_edss["pseudonyme"] == pseudo) & (df_edss["date_visite"] >= date_diagnostic)
+        ].sort_values("date_visite")
         suivi_row = df_suivi[df_suivi["pseudonyme"] == pseudo]
 
         if pd.isna(baseline) or visites.empty:

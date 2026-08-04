@@ -74,25 +74,36 @@ from sep.test3_tap_precoce import PARAMETRES_SCHEMA as SEP3_PARAMETRES_SCHEMA
 
 
 def run_sep4(engine, config):
-    # test4_sep.py : horizon (2 ou 5), type régression (1/2/3), covariables si 1 ou 3
-    reponses = [str(config.get("horizon", 2)), str(config.get("type_regression", 2))]
-    if str(config.get("type_regression")) in ("1", "3"):
-        reponses.append(",".join(config.get("covariables", [])))
-    return run_original_script(_sep("test4_sep.py"), reponses_stdin=reponses, env_overrides=PG_ENV)
+    # test4_sep.py : désormais branché comme sep_1/2/3, sur le module refactoré
+    # sep/test4_charge_t2_severite.py (run(engine, config) -> notes/figures/
+    # tableau/resume_stats en JSON structuré), au lieu du script CLI original
+    # exécuté via run_original_script() + réponses stdin simulées.
+    # [CORRECTIF] cette dernière voie n'était plus alignée avec le module déjà
+    # refactoré (schéma de config incompatible : "cox"/"lineaire_simple"/
+    # "lineaire_multiple" côté module vs indices "1"/"2"/"3" côté ancien
+    # run_sep4) et contenait en plus le bug de biais de temps immortel corrigé
+    # dans detecter_progression_confirmee (visites EDSS antérieures à
+    # date_diagnostic non exclues -> temps_progression négatif possible).
+    from sep.test4_charge_t2_severite import run as _run
+    return _run(engine, config)
+
+
+from sep.test4_charge_t2_severite import PARAMETRES_SCHEMA as SEP4_PARAMETRES_SCHEMA
 
 
 def run_sep5(engine, config):
-    # test5_sep.py : entièrement piloté par la constante CONFIG (aucun input())
-    overrides = {"CONFIG": {
-        "count_model": config.get("count_model", "auto"),
-        "horizons_years": config.get("horizons_years", [1, 2, 5]),
-        "igg_threshold": config.get("igg_threshold", 0.7),
-        "multiple_testing_correction": config.get("multiple_testing_correction", "bonferroni"),
-    }}
-    env = {**PG_ENV, "SEP_DB_HOST": PG_ENV["PGHOST"], "SEP_DB_PORT": PG_ENV["PGPORT"],
-           "SEP_DB_NAME": PG_ENV["PGDATABASE"], "SEP_DB_USER": PG_ENV["PGUSER"],
-           "SEP_DB_PASSWORD": PG_ENV["PGPASSWORD"]}
-    return run_original_script(_sep("test5_sep.py"), overrides=overrides, env_overrides=env)
+    # test5_sep.py : désormais branché comme sep_1/2/3/4, sur le module
+    # refactoré sep/test5_lcr_survie_tap.py (run(engine, config) -> notes/
+    # figures/tableau/resume_stats en JSON structuré), au lieu du script CLI
+    # original exécuté via run_original_script() + substitution de CONFIG en
+    # mémoire. Même logique statistique, aucun écart de schéma corrigé ici
+    # (contrairement à test4) : les durées sont calculées côté pandas, pas en
+    # SQL, donc pas de bug EXTRACT(EPOCH FROM date - date).
+    from sep.test5_lcr_survie_tap import run as _run
+    return _run(engine, config)
+
+
+from sep.test5_lcr_survie_tap import PARAMETRES_SCHEMA as SEP5_PARAMETRES_SCHEMA
 
 
 def run_sep6(engine, config):
@@ -161,18 +172,10 @@ ANALYSES = {
               "parametres_schema": SEP3_PARAMETRES_SCHEMA, "run": run_sep3},
     "sep_4": {"registre": "SEP", "titre": "Charge lésionnelle T2 et sévérité future",
               "description": "Cox / régression linéaire simple ou multiple, EDSS à 2 ou 5 ans.",
-              "parametres_schema": {
-                  "horizon": {"type": "select", "options": [2, 5], "label": "Horizon EDSS (ans)"},
-                  "type_regression": {"type": "select", "options": [1, 2, 3],
-                                       "label": "1=Cox, 2=Linéaire simple, 3=Linéaire multiple"},
-                  "covariables": {"type": "text", "label": "Covariables (séparées par virgules)"},
-              }, "run": run_sep4},
+              "parametres_schema": SEP4_PARAMETRES_SCHEMA, "run": run_sep4},
     "sep_5": {"registre": "SEP", "titre": "LCR (bandes oligoclonales/IgG) et évolution",
               "description": "Modèle de comptage + Cox, horizons paramétrables.",
-              "parametres_schema": {
-                  "horizons_years": {"type": "text", "label": "Horizons (ex: 1,2,5)"},
-                  "igg_threshold": {"type": "number", "default": 0.7, "label": "Seuil index IgG"},
-              }, "run": run_sep5},
+              "parametres_schema": SEP5_PARAMETRES_SCHEMA, "run": run_sep5},
     "sep_6": {"registre": "SEP", "titre": "Consanguinité, sexe et forme évolutive",
               "description": "Tests chi²/Fisher sur antécédents et présentation clinique.",
               "parametres_schema": {}, "run": run_sep6},
