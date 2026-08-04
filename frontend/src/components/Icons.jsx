@@ -220,6 +220,15 @@ export function IconUpload({ size = 18, color = 'currentColor' }) {
   ));
 }
 
+export function IconDownload({ size = 18, color = 'currentColor' }) {
+  return base(size, color, (
+    <>
+      <path d="M12 4.5v11M8 12.2l4 3.8 4-3.8" />
+      <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+    </>
+  ));
+}
+
 export function IconMoon({ size = 18, color = 'currentColor' }) {
   return base(size, color, (
     <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />

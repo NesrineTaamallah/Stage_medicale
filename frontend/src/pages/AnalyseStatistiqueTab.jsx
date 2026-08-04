@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import JSZip from 'jszip';
 import client from '../api/client';
 import {
   IconWave, IconActivity, IconChart, IconAlert, IconCheckCircle,
-  IconRefresh, IconArrowRight, IconArrowLeft,
+  IconRefresh, IconArrowRight, IconArrowLeft, IconDownload,
 } from '../components/Icons';
 // Photos des deux registres. Copier les fichiers depuis
 // C:\Users\nesri\OneDrive\Desktop\etape1-security\images\ vers
@@ -424,7 +425,84 @@ function BlocTexte({ type, texte }) {
   return <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: styles.color }}>{texte}</p>;
 }
 
-function ResultatAnalyse({ resultat, accent, accentTint }) {
+/** Construit un fichier .txt (chiffres clés + tableau + notes complètes)
+ * et un dossier zip contenant ce texte + chaque graphique en .png, pour
+ * que le clinicien garde une trace détaillée hors de l'application. */
+async function telechargerResultatsZip(resultat, titreAnalyse) {
+  const zip = new JSZip();
+  const lignes = [];
+
+  lignes.push(`Résultats — ${titreAnalyse || 'Analyse'}`);
+  lignes.push(`Généré le ${new Date().toLocaleString('fr-FR')}`);
+  lignes.push('');
+
+  if (resultat.resume_stats) {
+    lignes.push('=== Chiffres clés ===');
+    Object.entries(resultat.resume_stats).forEach(([cle, val]) => lignes.push(`${cle} : ${val}`));
+    lignes.push('');
+  }
+
+  if (resultat.tableau && resultat.tableau.length) {
+    lignes.push('=== Tableau de résultats ===');
+    const entetes = Object.keys(resultat.tableau[0]);
+    lignes.push(entetes.join('\t'));
+    resultat.tableau.forEach((ligne) => lignes.push(entetes.map((e) => ligne[e]).join('\t')));
+    lignes.push('');
+  }
+
+  if (resultat.notes && resultat.notes.length) {
+    lignes.push('=== Détail complet ===');
+    lignes.push(...resultat.notes);
+  }
+
+  zip.file('resultats.txt', lignes.join('\n'));
+
+  if (resultat.figures && resultat.figures.length) {
+    const dossierImages = zip.folder('images');
+    resultat.figures.forEach((src, i) => {
+      const base64 = String(src).split(',')[1] || '';
+      dossierImages.file(`graphique_${String(i + 1).padStart(2, '0')}.png`, base64, { base64: true });
+    });
+  }
+
+  const contenu = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(contenu);
+  const lien = document.createElement('a');
+  const nomFichier = (titreAnalyse || 'analyse').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  lien.href = url;
+  lien.download = `resultats_${nomFichier || 'analyse'}.zip`;
+  document.body.appendChild(lien);
+  lien.click();
+  document.body.removeChild(lien);
+  URL.revokeObjectURL(url);
+}
+
+function BoutonTelecharger({ resultat, titreAnalyse, accent }) {
+  const [enCours, setEnCours] = useState(false);
+  const declencher = async () => {
+    setEnCours(true);
+    try {
+      await telechargerResultatsZip(resultat, titreAnalyse);
+    } finally {
+      setEnCours(false);
+    }
+  };
+  return (
+    <button onClick={declencher} disabled={enCours} style={{
+      width: 'auto', alignSelf: 'flex-start', padding: '10px 18px', borderRadius: 10,
+      border: `1px solid ${accent || 'var(--primary-deep)'}`, background: 'var(--card)',
+      color: accent || 'var(--primary-deep)', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+    }}>
+      <IconDownload size={15} />
+      {enCours ? 'Préparation du dossier…' : 'Télécharger les résultats (.zip)'}
+    </button>
+  );
+}
+
+function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   const blocs = useMemo(() => parseNotes(resultat.notes), [resultat.notes]);
   const couleurAccent = accent || 'var(--primary-deep)';
   const teinteAccent = accentTint || 'var(--primary-tint)';
@@ -523,6 +601,14 @@ function ResultatAnalyse({ resultat, accent, accentTint }) {
           </div>
         </div>
       )}
+
+      <div style={{ marginTop: 4, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+        <BoutonTelecharger resultat={resultat} titreAnalyse={titreAnalyse} accent={couleurAccent} />
+        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate-soft)' }}>
+          Le dossier .zip contient un fichier resultats.txt (chiffres clés, tableau et détail complet)
+          ainsi que chaque graphique en image .png, pour consultation hors ligne.
+        </p>
+      </div>
     </div>
   );
 }
@@ -715,67 +801,83 @@ export default function AnalyseStatistiqueTab() {
   /* Étape 4 — formulaire de paramètres + résultats                   */
   /* -------------------------------------------------------------- */
   return (
-    <div className="card" style={{ padding: 24, maxWidth: 760 }}>
-      <BoutonRetour onClick={revenirALaListeDesTests}>Tests {registre.label}</BoutonRetour>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'flex-start' }}>
+      {/* Rectangle vertical : formulaire, avec les deux actions regroupées en haut */}
+      <div className="card" style={{ padding: 22, width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ margin: 0 }}>
+          <BoutonRetour onClick={revenirALaListeDesTests}>Tests {registre.label}</BoutonRetour>
+        </div>
 
-      <SectionHeading
-        Icon={registre.Icon}
-        title={analyseSelectionnee.titre}
-        subtitle={analyseSelectionnee.description}
-        accent={registre.accentDeep}
-        accentTint={registre.accentTint}
-      />
+        <SectionHeading
+          Icon={registre.Icon}
+          title={analyseSelectionnee.titre}
+          subtitle={analyseSelectionnee.description}
+          accent={registre.accentDeep}
+          accentTint={registre.accentTint}
+        />
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '14px 18px', maxWidth: 640,
-      }}>
-        {Object.entries(analyseSelectionnee.parametres).map(([nomChamp, schema]) => (
-          <label key={nomChamp} style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 5, margin: 0 }}>
-            {schema.label || nomChamp}
-            <ChampFormulaire
-              schema={schema}
-              valeur={config[nomChamp]}
-              onChange={(v) => setConfig((c) => ({ ...c, [nomChamp]: v }))}
-            />
-          </label>
-        ))}
+        <button onClick={lancer} disabled={enCours} style={{
+          margin: 0, width: '100%', padding: '11px 18px', borderRadius: 10, border: 'none',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          background: registre.accent, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer',
+        }}>
+          {enCours ? (
+            <>
+              <span style={{
+                width: 13, height: 13, borderRadius: '50%',
+                border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+                display: 'inline-block', animation: 'spin 0.7s linear infinite',
+              }} />
+              Analyse en cours…
+            </>
+          ) : (
+            <>
+              <IconRefresh size={15} />
+              Lancer l'analyse
+            </>
+          )}
+        </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 14,
+          paddingTop: 4, borderTop: '1px solid var(--line)',
+        }}>
+          {Object.entries(analyseSelectionnee.parametres).map(([nomChamp, schema]) => (
+            <label key={nomChamp} style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 5, margin: 0 }}>
+              {schema.label || nomChamp}
+              <ChampFormulaire
+                schema={schema}
+                valeur={config[nomChamp]}
+                onChange={(v) => setConfig((c) => ({ ...c, [nomChamp]: v }))}
+              />
+            </label>
+          ))}
+        </div>
+
+        {erreur && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+            color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 10,
+            padding: '10px 13px', fontSize: 13,
+          }}>
+            <IconAlert size={15} />
+            <span>{erreur}</span>
+          </div>
+        )}
       </div>
 
-      <button onClick={lancer} disabled={enCours} style={{
-        marginTop: 20, width: 'auto', padding: '10px 20px', borderRadius: 10, border: 'none',
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        background: registre.accent, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer',
-      }}>
-        {enCours ? (
-          <>
-            <span style={{
-              width: 13, height: 13, borderRadius: '50%',
-              border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
-              display: 'inline-block', animation: 'spin 0.7s linear infinite',
-            }} />
-            Analyse en cours…
-          </>
-        ) : (
-          <>
-            <IconRefresh size={15} />
-            Lancer l'analyse
-          </>
-        )}
-      </button>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-
-      {erreur && (
-        <div style={{
-          marginTop: 16, display: 'flex', alignItems: 'flex-start', gap: 8,
-          color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 10,
-          padding: '10px 13px', fontSize: 13,
-        }}>
-          <IconAlert size={15} />
-          <span>{erreur}</span>
+      {/* Résultats : colonne unique alignée à gauche, sous le formulaire */}
+      {resultat && (
+        <div className="card" style={{ padding: 22, width: '100%', maxWidth: 760, alignSelf: 'flex-start' }}>
+          <ResultatAnalyse
+            resultat={resultat}
+            accent={registre.accentDeep}
+            accentTint={registre.accentTint}
+            titreAnalyse={analyseSelectionnee.titre}
+          />
         </div>
       )}
-      {resultat && <ResultatAnalyse resultat={resultat} accent={registre.accentDeep} accentTint={registre.accentTint} />}
     </div>
   );
 }
