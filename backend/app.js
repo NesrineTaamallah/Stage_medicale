@@ -10,6 +10,7 @@ const totpRoutes = require('./routes/totpRoutes');
 
 const analysisRoutes = require('./routes/analysisRoutes');
 const coordonneePatientRoutes = require('./routes/coordonneePatientRoutes');
+const clinicienOverviewRoutes = require('./routes/clinicienOverviewRoutes');
 const app = express();
 
 // Ces 4 middlewares doivent être montés AVANT toute route : sans cookieParser
@@ -29,6 +30,7 @@ app.use('/admin', adminRoutes);
 app.use('/2fa', totpRoutes);
 app.use('/api/analyses', analysisRoutes);
 app.use('/api/coordonnees', coordonneePatientRoutes);
+app.use('/api/clinicien', clinicienOverviewRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Serveur démarré sur le port ${PORT}`));
