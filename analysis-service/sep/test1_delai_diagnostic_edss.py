@@ -172,7 +172,7 @@ def run(engine, config: dict) -> dict:
         "covariables": covariables,
     }
     d = preparer_dataset_modele(df, model_config, notes)
-    if len(d) < 15:
+    if len(d) < 5:
         raise ValueError(f"Effectif insuffisant après nettoyage (n={len(d)}) pour ajuster un modèle fiable.")
 
     predicteurs = ["_delai_mois"] + [c for c in d.columns if c not in ["_delai_mois", col_edss, "_outcome"]]

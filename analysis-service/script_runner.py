@@ -23,7 +23,7 @@ celui que vous et votre camarade avez écrit et validé.
 import contextlib
 import io
 import os
-import re
+import ast
 import tempfile
 import builtins
 import matplotlib
@@ -49,16 +49,31 @@ def _input_depuis_file(reponses: list[str]):
 
 
 def _substituer_constantes(source: str, overrides: dict) -> str:
-    """Remplace, dans le TEXTE en mémoire uniquement, les lignes
+    """Remplace, dans le TEXTE en mémoire uniquement, les affectations
     'NOM = <valeur littérale>' en tête de script par la valeur choisie.
-    N'écrit jamais sur le fichier d'origine."""
+    N'écrit jamais sur le fichier d'origine.
+
+    Utilise ast (et non une regex ligne par ligne) pour repérer les bornes
+    exactes de l'affectation : une simple regex '^NOM\\s*=.*$' ne capture
+    qu'UNE seule ligne, ce qui casse les constantes écrites sur plusieurs
+    lignes (ex: SELECTED_COVARIATES = [\n    ...,\n]) en laissant les
+    lignes restantes (et un ']' ou '}' orphelin) derrière — c'est la
+    cause du "SyntaxError: unmatched ']'" observé sur test1_epr.py.
+    """
     for nom, valeur in overrides.items():
-        motif = re.compile(rf"^{re.escape(nom)}\s*=.*$", re.MULTILINE)
-        remplacement = f"{nom} = {valeur!r}" if not isinstance(valeur, (dict, list)) else f"{nom} = {valeur!r}"
-        nouvelle_source, n = motif.subn(remplacement, source, count=1)
-        if n == 0:
+        arbre = ast.parse(source)
+        cible = next(
+            (n for n in arbre.body
+             if isinstance(n, ast.Assign) and len(n.targets) == 1
+             and isinstance(n.targets[0], ast.Name) and n.targets[0].id == nom),
+            None,
+        )
+        if cible is None:
             raise ValueError(f"Constante '{nom}' introuvable dans le script — vérifier registry.py")
-        source = nouvelle_source
+        lignes = source.splitlines(keepends=True)
+        debut, fin = cible.lineno, cible.end_lineno  # 1-indexé, inclusif
+        lignes[debut - 1:fin] = [f"{nom} = {valeur!r}\n"]
+        source = "".join(lignes)
     return source
 
 

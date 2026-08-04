@@ -41,6 +41,12 @@ def run_sep1(engine, config):
     return _run(engine, config)
 
 
+# Le schéma du formulaire est défini directement dans le script refactoré
+# (PARAMETRES_SCHEMA), pour ne pas le dupliquer ici. Import isolé pour ne
+# pas casser le registre si jamais ce fichier bouge.
+from sep.test1_delai_diagnostic_edss import PARAMETRES_SCHEMA as SEP1_PARAMETRES_SCHEMA
+
+
 def run_sep3(engine, config):
     # test3_sep.py : TAP précoce — 4 questions input() dans cet ordre :
     #   1) fenêtre TAP (années, ou vide = défaut)
@@ -135,7 +141,7 @@ def run_epr5(engine, config):
 ANALYSES = {
     "sep_1": {"registre": "SEP", "titre": "Délai diagnostique et pronostic (EDSS)",
               "description": "Régression linéaire/logistique délai → EDSS.",
-              "parametres_schema": {}, "run": run_sep1},
+              "parametres_schema": SEP1_PARAMETRES_SCHEMA, "run": run_sep1},
     "sep_3": {"registre": "SEP", "titre": "Taux annualisé de poussées (TAP) précoce",
               "description": "TAP précoce, modèle Poisson/Binomiale Négative.",
               "parametres_schema": {
