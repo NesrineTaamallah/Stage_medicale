@@ -36,7 +36,7 @@ COLONNES_AVEC_NA_LITTERAL = {"recuperation_complete", "forme_evolutive"}
 # Décrit le formulaire attendu côté React (voir AnalyseStatistiqueTab.jsx)
 PARAMETRES_SCHEMA = {
     "type_regression": {"type": "select", "options": ["linear", "logistic"], "label": "Type de régression"},
-    "horizon_annees": {"type": "select", "options": [2, 3, 4], "allow_custom": True, "label": "Horizon EDSS (années)"},
+    "horizon_annees": {"type": "select", "options": [1,2, 3, 4], "allow_custom": True, "label": "Horizon EDSS (années)"},
     "tolerance_mois": {"type": "select", "options": [3, 6, 9, 12, 18, 24], "label": "Fenêtre de tolérance (mois)"},
     "seuil_logistique": {"type": "number", "default": 3.0, "required_if": "type_regression=logistic", "label": "Seuil EDSS mauvais pronostic"},
     "mode_analyse": {"type": "select", "options": ["univariee", "multivariee"], "label": "Mode"},
@@ -172,7 +172,7 @@ def run(engine, config: dict) -> dict:
         "covariables": covariables,
     }
     d = preparer_dataset_modele(df, model_config, notes)
-    if len(d) < 5:
+    if len(d) < 0.5:
         raise ValueError(f"Effectif insuffisant après nettoyage (n={len(d)}) pour ajuster un modèle fiable.")
 
     predicteurs = ["_delai_mois"] + [c for c in d.columns if c not in ["_delai_mois", col_edss, "_outcome"]]
