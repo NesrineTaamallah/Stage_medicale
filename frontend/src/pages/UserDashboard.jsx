@@ -1,7 +1,13 @@
 import { useAuth } from '../context/AuthContext';
 
+import ClinicienDashboard from './ClinicienDashboard';
+
+
 export default function UserDashboard() {
+  
   const { user, logout } = useAuth();
+  if (user?.role === 'clinicien') return <ClinicienDashboard />;
+
 
   return (
     <div className="dashboard">
