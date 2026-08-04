@@ -32,6 +32,7 @@
   --success: #2E8F72;
   --success-tint: #E4F5EE;
   --violet: #6B5CA5;
+  --violet-deep: #4E3F82;
   --violet-tint: #EDEAF7;
 
   --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
@@ -111,6 +112,14 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .eeg-trace path { animation: none; stroke-dashoffset: 0; opacity: .8; }
+}
+
+/* ---------- Illustrations de registre (écran de choix SEP/EPR) ---------- */
+.pathology-art {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  display: block;
 }
 
 /* ---------- Cartes d'authentification ---------- */
