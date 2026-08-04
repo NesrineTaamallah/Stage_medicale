@@ -1,26 +1,11 @@
-"""
-Service d'analyse statistique (fenêtre 4 - clinicien).
-
-Ce service isole toute la logique Python (statsmodels/lifelines/scipy) des
-13 scripts existants derrière une API HTTP. Le backend Node ne fait que
-proxy vers ce service (voir analysisRoutes.js côté Node).
-
-Lancement local :
-    pip install fastapi uvicorn sqlalchemy psycopg2-binary pandas numpy \
-                statsmodels scipy scikit-learn lifelines matplotlib
-    uvicorn main:app --port 8000 --reload
-
-Variable d'environnement attendue :
-    DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/registre_neuroexo
-"""
 import os
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import create_engine
 
-from registry import ANALYSES  # registre de toutes les analyses SEP/EPR
-
 from dotenv import load_dotenv
 load_dotenv()
+
+from registry import ANALYSES  # registre de toutes les analyses SEP/EPR
 
 app = FastAPI(title="Service d'analyse statistique - NeuroExo-Predict")
 
@@ -28,6 +13,7 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql+psycopg2://user:password@localhost:5432/registre_neuroexo",
 )
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 
