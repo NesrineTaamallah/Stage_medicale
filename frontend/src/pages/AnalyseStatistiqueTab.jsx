@@ -206,6 +206,137 @@ function ChampFormulaire({ schema, valeur, onChange }) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Traduction des erreurs techniques en explication clinique lisible       */
+/* ---------------------------------------------------------------------- */
+/* Le backend renvoie parfois des messages statistiques bruts (matrice      */
+/* singulière, séparation parfaite...) : on les reformule ici en une        */
+/* phrase compréhensible par un clinicien non-statisticien, affichée        */
+/* directement dans la zone Résultats plutôt qu'en petit encart d'erreur.  */
+
+const EXPLICATIONS_ERREUR = [
+  {
+    motif: /singular matrix/i,
+    titre: 'Modèle impossible à ajuster (colinéarité)',
+    explication: "Certaines covariables choisies sont trop liées entre elles (ou une catégorie ne varie plus) une fois les patients incomplets exclus. Le modèle ne peut pas isoler l'effet de chaque variable. Essayez de retirer une covariable catégorielle ou d'élargir la fenêtre de tolérance pour garder plus de patients.",
+  },
+  {
+    motif: /perfect ?separation/i,
+    titre: 'Séparation parfaite des groupes',
+    explication: "Avec ce nombre de covariables et cet effectif, une combinaison de variables prédit parfaitement le pronostic sur ces patients — signe d'un échantillon trop petit pour ce modèle, pas d'un effet réel. Réduisez le nombre de covariables.",
+  },
+  {
+    motif: /effectif insuffisant/i,
+    titre: 'Trop peu de patients pour ce modèle',
+    explication: "Le nombre de patients disponibles après exclusion des données manquantes est trop faible par rapport au nombre de variables demandées. Réduisez le nombre de covariables ou élargissez la fenêtre de tolérance pour récupérer plus de patients.",
+  },
+  {
+    motif: /patsy|formule/i,
+    titre: 'Configuration de modèle invalide',
+    explication: "La combinaison de paramètres choisie n'a pas pu être traduite en modèle statistique valide. Essayez une autre combinaison de covariables.",
+  },
+];
+
+function explicationErreurClinique(message) {
+  const trouvee = EXPLICATIONS_ERREUR.find((e) => e.motif.test(message || ''));
+  if (trouvee) return trouvee;
+  return {
+    titre: "L'analyse n'a pas pu aboutir",
+    explication: message || "Une erreur inattendue est survenue pendant le calcul statistique.",
+  };
+}
+
+/** Affiché dans la colonne Résultats à la place de ResultatAnalyse quand
+ * l'analyse a échoué : explication en langage clinique, pas de dossier
+ * zip puisqu'il n'y a rien à détailler. */
+function ResultatErreur({ message, accent }) {
+  const { titre, explication } = explicationErreurClinique(message);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <SectionHeading Icon={IconAlert} title="Résultats" subtitle="L'analyse n'a pas pu être calculée" />
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 8,
+        color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 12,
+        padding: '14px 16px', border: '1px solid rgba(193,80,61,0.25)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13.5 }}>
+          <IconAlert size={16} />
+          {titre}
+        </div>
+        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--slate)' }}>{explication}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Popover d'aide : but du test + effet de chaque paramètre                */
+/* ---------------------------------------------------------------------- */
+/* Le schéma des paramètres vient dynamiquement de l'API (registry.py) et   */
+/* varie par test : on donne une explication précise pour les clés          */
+/* connues (communes aux tests SEP/EPR de type régression), avec un         */
+/* repli générique pour toute clé nouvelle, afin de ne jamais rien casser   */
+/* quand un test futur ajoute un paramètre non prévu ici. */
+
+const EXPLICATIONS_PARAMETRES = {
+  type_regression: "Modèle statistique utilisé : « linear » prédit une valeur d'EDSS continue ; « logistic » prédit la probabilité de dépasser un seuil de mauvais pronostic.",
+  horizon_annees: "Délai après le diagnostic auquel le pronostic est évalué (ex : EDSS à 1 an).",
+  tolerance_mois: "Marge acceptée autour de cet horizon pour associer une visite EDSS réelle. Plus large = plus de patients inclus, mais mesure moins précise dans le temps.",
+  seuil_logistique: "Score EDSS à partir duquel un patient est considéré en mauvais pronostic (utilisé seulement en régression logistique).",
+  mode_analyse: "« Univariée » : effet du délai seul. « Multivariée » : effet du délai ajusté sur d'autres facteurs cliniques (covariables).",
+  covariables: "Facteurs cliniques additionnels inclus en mode multivarié. Plus il y en a, plus il faut de patients pour un résultat stable (règle d'environ 5 à 10 patients par variable).",
+};
+
+function AideTest({ titre, description, parametresSchema, accent }) {
+  const [ouvert, setOuvert] = useState(false);
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        onClick={() => setOuvert((v) => !v)}
+        aria-label="Aide sur ce test"
+        title="Aide sur ce test"
+        style={{
+          width: 22, height: 22, borderRadius: '50%', margin: 0, padding: 0,
+          border: `1px solid ${accent || 'var(--primary-deep)'}`, background: 'var(--card)',
+          color: accent || 'var(--primary-deep)', fontWeight: 700, fontSize: 12,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+        }}
+      >
+        ?
+      </button>
+      {ouvert && (
+        <>
+          {/* Zone invisible pour fermer le popover au clic extérieur */}
+          <div onClick={() => setOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <div style={{
+            position: 'absolute', top: 28, left: 0, zIndex: 21, width: 340,
+            background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12,
+            boxShadow: '0 12px 28px -12px rgba(17, 24, 39, 0.28)', padding: '14px 16px',
+            display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)' }}>{titre}</div>
+              {description && <p style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--slate)' }}>{description}</p>}
+            </div>
+            {parametresSchema && Object.keys(parametresSchema).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+                {Object.entries(parametresSchema).map(([nomChamp, schema]) => (
+                  <div key={nomChamp}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate-soft)' }}>{schema.label || nomChamp}</div>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--slate)' }}>
+                      {EXPLICATIONS_PARAMETRES[nomChamp] || "Paramètre du modèle statistique — ajuste le calcul selon la valeur choisie."}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /* Interprétation "brute" des notes (stdout capturé)                       */
 /* ---------------------------------------------------------------------- */
 /* Les 12 scripts non encore refactorés (voir script_runner.py) renvoient   */
@@ -514,40 +645,59 @@ function BoutonTelecharger({ resultat, titreAnalyse, accent }) {
   );
 }
 
+/** Détermine un badge de signification statistique à partir du premier
+ * champ "p_value" (ou équivalent) trouvé dans resume_stats, pour donner
+ * une lecture immédiate en un coup d'œil (vrai réflexe dashboard clinique). */
+function badgeSignification(resumeStats) {
+  if (!resumeStats) return null;
+  const cleP = Object.keys(resumeStats).find((k) => /^p[_-]?value$|^p$/i.test(k));
+  if (!cleP) return null;
+  const p = Number(resumeStats[cleP]);
+  if (Number.isNaN(p)) return null;
+  const significatif = p < 0.05;
+  return {
+    texte: significatif ? `Significatif (p=${p})` : `Non significatif (p=${p})`,
+    couleur: significatif ? 'var(--success, #1a7a4c)' : 'var(--slate)',
+    fond: significatif ? 'var(--success-tint, #e6f4ec)' : 'var(--paper)',
+  };
+}
+
 function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   const blocs = useMemo(() => parseNotes(resultat.notes), [resultat.notes]);
   const couleurAccent = accent || 'var(--primary-deep)';
   const teinteAccent = accentTint || 'var(--primary-tint)';
 
-  // Regroupe les blocs "linéaires" (titres/texte/tableaux/alertes) en
-  // sections délimitées par les titres de niveau 1 ou 2, pour aérer le rendu.
-  const sections = useMemo(() => {
-    const groupes = [];
-    let courant = { titre: null, blocs: [] };
-    blocs.forEach((b) => {
-      if (b.type === 'titre' && b.niveau <= 2) {
-        if (courant.titre || courant.blocs.length) groupes.push(courant);
-        courant = { titre: b, blocs: [] };
-      } else {
-        courant.blocs.push(b);
-      }
-    });
-    if (courant.titre || courant.blocs.length) groupes.push(courant);
-    return groupes;
-  }, [blocs]);
+  // Vue "dashboard" : on ne montre que l'essentiel — chiffres clés, UN
+  // graphique principal (le premier renvoyé par le script, considéré comme
+  // la figure de synthèse), et le tableau de résultats. Tout le reste
+  // (notes détaillées, graphiques secondaires, log complet) part dans le
+  // zip téléchargeable pour ne pas noyer le clinicien sous le détail.
+  const figureLegendes = blocs.filter((b) => b.type === 'figure_note');
+  const figurePrincipale = (resultat.figures || [])[0];
+  const legendePrincipale = figureLegendes[0]?.texte;
+  const nbFiguresSecondaires = Math.max((resultat.figures || []).length - 1, 0);
+  const nbNotesDetail = (resultat.notes || []).length;
 
-  const figuresAvecLegende = (resultat.figures || []).map((src, i) => {
-    const legende = blocs.filter((b) => b.type === 'figure_note')[i]?.texte;
-    return { src, legende };
-  });
+  const badge = badgeSignification(resultat.resume_stats);
 
   return (
     <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18, animation: 'fadeInResult 0.25s ease' }}>
       <style>{`@keyframes fadeInResult { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
-      <SectionHeading Icon={IconCheckCircle} title="Résultats" subtitle="Générés à partir des paramètres ci-dessus" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <SectionHeading Icon={IconCheckCircle} title="Points clés" subtitle="Résultats essentiels de l'analyse" />
+        {badge && (
+          <span style={{
+            fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 999,
+            color: badge.couleur, background: badge.fond, border: `1px solid ${badge.couleur}`,
+            whiteSpace: 'nowrap',
+          }}>
+            {badge.texte}
+          </span>
+        )}
+      </div>
 
-      {/* Chiffres clés (déjà structurés côté script — test1_sep) */}
+      {/* Chiffres clés — cartes compactes, lecture immédiate */}
       {resultat.resume_stats && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(resultat.resume_stats).map(([cle, val]) => (
@@ -563,7 +713,25 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
         </div>
       )}
 
-      {resultat.tableau && (
+      {/* Graphique principal — un seul, mis en avant */}
+      {figurePrincipale && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
+            Graphique clé
+          </div>
+          <figure style={{ margin: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)', maxWidth: 560 }}>
+            <img src={figurePrincipale} alt={legendePrincipale || 'graphique principal'} style={{ width: '100%', display: 'block' }} />
+            {legendePrincipale && (
+              <figcaption style={{ padding: '8px 12px', fontSize: 11.5, color: 'var(--slate)', borderTop: '1px solid var(--line)' }}>
+                {legendePrincipale}
+              </figcaption>
+            )}
+          </figure>
+        </div>
+      )}
+
+      {/* Tableau de résultats clé */}
+      {resultat.tableau && resultat.tableau.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
             Tableau de résultats
@@ -576,49 +744,20 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
         </div>
       )}
 
-      {/* Sortie console (12 scripts non encore refactorés) reconstruite en sections lisibles */}
-      {sections.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {sections.map((sec, si) => (
-            <div key={si} style={{
-              background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14,
-              padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 11,
-            }}>
-              {sec.titre && <BlocTitre {...sec.titre} accent={couleurAccent} accentTint={teinteAccent} />}
-              {sec.blocs.map((b, bi) => {
-                if (b.type === 'titre') return <BlocTitre key={bi} {...b} accent={couleurAccent} accentTint={teinteAccent} />;
-                if (b.type === 'tableau') return <TableauGenerique key={bi} entetes={b.entetes} lignes={b.lignes} accent={couleurAccent} />;
-                if (b.type === 'figure_note') return null; // légendes déjà rattachées aux figures
-                return <BlocTexte key={bi} type={b.type} texte={b.texte} />;
-              })}
-            </div>
-          ))}
+      {/* Renvoi explicite vers le détail complet, plutôt que de l'afficher ici */}
+      <div style={{
+        marginTop: 4, paddingTop: 16, borderTop: '1px solid var(--line)',
+        display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+        <div style={{ fontSize: 12.5, color: 'var(--slate)', background: teinteAccent, borderRadius: 10, padding: '10px 14px' }}>
+          {nbNotesDetail > 0 && `${nbNotesDetail} ligne(s) de détail`}
+          {nbFiguresSecondaires > 0 && ` · ${nbFiguresSecondaires} graphique(s) supplémentaire(s)`}
+          {' '}disponibles dans le dossier téléchargeable ci-dessous (log complet, VIF, résidus, matrice de confusion...).
         </div>
-      )}
-
-      {figuresAvecLegende.length > 0 && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--slate-soft)', marginBottom: 8 }}>
-            Graphiques
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-            {figuresAvecLegende.map(({ src, legende }, i) => (
-              <figure key={i} style={{ margin: 0, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(17, 24, 39, 0.03)' }}>
-                <img src={src} alt={legende || `figure-${i}`} style={{ width: '100%', display: 'block' }} />
-                <figcaption style={{ padding: '8px 12px', fontSize: 11.5, color: 'var(--slate)', borderTop: '1px solid var(--line)' }}>
-                  {legende || `Figure ${i + 1}`}
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{ marginTop: 4, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
         <BoutonTelecharger resultat={resultat} titreAnalyse={titreAnalyse} accent={couleurAccent} />
-        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate-soft)' }}>
-          Le dossier .zip contient un fichier resultats.txt (chiffres clés, tableau et détail complet)
-          ainsi que chaque graphique en image .png, pour consultation hors ligne.
+        <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--slate-soft)' }}>
+          Le dossier .zip contient resultats.txt (chiffres clés, tableau et détail complet)
+          et un dossier images/ avec l'ensemble des graphiques en .png.
         </p>
       </div>
     </div>
@@ -819,18 +958,34 @@ export default function AnalyseStatistiqueTab() {
         <div style={{ margin: 0 }}>
           <BoutonRetour onClick={revenirALaListeDesTests}>Tests {registre.label}</BoutonRetour>
         </div>
-        <SectionHeading
-          Icon={registre.Icon}
-          title={analyseSelectionnee.titre}
-          subtitle={analyseSelectionnee.description}
-          accent={registre.accentDeep}
-          accentTint={registre.accentTint}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <SectionHeading
+            Icon={registre.Icon}
+            title={analyseSelectionnee.titre}
+            subtitle={analyseSelectionnee.description}
+            accent={registre.accentDeep}
+            accentTint={registre.accentTint}
+          />
+          <AideTest
+            titre={analyseSelectionnee.titre}
+            description={analyseSelectionnee.description}
+            parametresSchema={analyseSelectionnee.parametres}
+            accent={registre.accentDeep}
+          />
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'flex-start' }}>
-        {/* Rectangle vertical : bouton "Lancer l'analyse" en haut, puis formulaire */}
-        <div className="card" style={{ padding: 22, width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{
+        display: 'flex', flexDirection: 'row', flexWrap: 'wrap',
+        gap: 20, alignItems: 'flex-start',
+      }}>
+        {/* Colonne gauche : formulaire — scroll indépendant, reste visible pendant qu'on parcourt les résultats */}
+        <div className="card" style={{
+          padding: 22, flex: '1 1 380px', maxWidth: 480,
+          display: 'flex', flexDirection: 'column', gap: 16,
+          maxHeight: 'calc(100vh - 150px)', overflowY: 'auto',
+          position: 'sticky', top: 16,
+        }}>
           <button onClick={lancer} disabled={enCours} style={{
             margin: 0, width: '100%', padding: '11px 18px', borderRadius: 10, border: 'none',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -878,22 +1033,14 @@ export default function AnalyseStatistiqueTab() {
                 </label>
               ))}
           </div>
-
-          {erreur && (
-            <div style={{
-              display: 'flex', alignItems: 'flex-start', gap: 8,
-              color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 10,
-              padding: '10px 13px', fontSize: 13,
-            }}>
-              <IconAlert size={15} />
-              <span>{erreur}</span>
-            </div>
-          )}
         </div>
 
-        {/* Résultats : colonne unique alignée à gauche, sous le formulaire */}
+        {/* Colonne droite : résultats — scroll indépendant, ne bouge pas quand on scrolle le formulaire */}
         {resultat && (
-          <div className="card" style={{ padding: 22, width: '100%', maxWidth: 760, alignSelf: 'flex-start' }}>
+          <div className="card" style={{
+            padding: 22, flex: '2 1 480px', maxWidth: 760,
+            maxHeight: 'calc(100vh - 150px)', overflowY: 'auto',
+          }}>
             <ResultatAnalyse
               resultat={resultat}
               accent={registre.accentDeep}

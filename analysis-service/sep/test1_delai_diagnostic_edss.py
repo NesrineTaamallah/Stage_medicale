@@ -125,7 +125,22 @@ def preparer_dataset_modele(df, config, notes: Notes):
 
     cat_cols = [c for c in config["covariables"] if d[c].dtype == "object"]
     if cat_cols:
+        colonnes_avant = set(d.columns)
         d = pd.get_dummies(d, columns=cat_cols, drop_first=True)
+        # Patsy interprète les espaces/accents/apostrophes comme des séparateurs
+        # de termes dans une formule R-style ("_outcome ~ col1 + col2 ...").
+        # pd.get_dummies() génère des noms du type "forme_evolutive_secondairement
+        # progressive" à partir des valeurs catégorielles (souvent du texte médical
+        # avec espaces/accents en français) -> formule invalide -> crash non
+        # catégorisé comme ValueError -> non intercepté par main.py -> 500 brut.
+        # On assainit donc uniquement les NOUVELLES colonnes créées par
+        # get_dummies (pas _delai_mois / col_edss qui sont référencées ailleurs
+        # par leur nom exact, et sans strip() pour ne pas altérer un underscore
+        # de tête légitime comme dans "_delai_mois").
+        import re
+        nouvelles_colonnes = set(d.columns) - colonnes_avant
+        renommage = {c: re.sub(r"\W+", "_", c) for c in nouvelles_colonnes}
+        d = d.rename(columns=renommage)
     for c in d.columns:
         # .astype(float) est essentiel ici : pd.to_numeric() seul ne convertit PAS
         # les colonnes bool (True/False) en numérique. Or statsmodels/patsy traite
