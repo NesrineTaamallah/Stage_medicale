@@ -8,8 +8,10 @@ const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const totpRoutes = require('./routes/totpRoutes');
 
+const analysisRoutes = require('./routes/analysisRoutes');
 const app = express();
 
+app.use('/api/analyses', analysisRoutes);
 app.use(helmet()); // en-têtes de sécurité HTTP (X-Content-Type-Options, HSTS, etc.)
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
