@@ -1,3 +1,12 @@
+-- 1) Recrée les 3 patients dans la table pivot (elle est actuellement vide)
+INSERT INTO patients (pseudonyme, registre, date_inclusion, age, sexe)
+VALUES
+  ('SEP_AZ_005', 'SEP', '2025-04-07', 16, 'F'),
+  ('SEP_MBH_003', 'SEP', '2025-04-07', 12, 'F'),
+  ('SEP_MJ_001', 'SEP', '2026-05-30', 15, 'M')
+ON CONFLICT (pseudonyme) DO NOTHING;
+
+-- 2) Coordonnées civiles associées
 INSERT INTO coordonnee_patient (
   pseudonyme, numero_dossier, nom_prenom, date_naissance, adresse, origine,
   telephone, cin, num_cnam, nom_prenom_pere, nom_prenom_mere, frere, soeur, autre_antecedent
