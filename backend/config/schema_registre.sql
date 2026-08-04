@@ -1,17 +1,4 @@
--- ============================================================================
--- Schéma "registre clinique" (SEP + EPR) — BROUILLON généré par analyse
--- statique des 13 scripts test_analyse_statistique/SEP/*.py et EPR/*.py.
---
--- ⚠️ À VALIDER avec ta camarade (elle gère la fenêtre 3 : ajout patient,
--- extraction, pseudonymisation) et avec le "dictionnaire de données v2"
--- mentionné dans les commentaires des scripts. Les types ci-dessous sont
--- des hypothèses raisonnables (déduites de l'usage : comparaisons
--- numériques, dates, catégories) — pas une vérité absolue.
---
--- Toutes les tables cliniques référencent le patient par `pseudonyme`
--- (le hash généré par la fonction de ta camarade), jamais par une
--- donnée identifiante directe.
--- ============================================================================
+
 
 -- Table pivot commune aux deux registres (alimentée par la fenêtre 3)
 CREATE TABLE IF NOT EXISTS patients (
