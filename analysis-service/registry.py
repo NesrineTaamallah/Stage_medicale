@@ -47,38 +47,30 @@ def run_sep1(engine, config):
 from sep.test1_delai_diagnostic_edss import PARAMETRES_SCHEMA as SEP1_PARAMETRES_SCHEMA
 
 
+def run_sep2(engine, config):
+    # test2_sep.py : déjà refactoré (voir sep/test2_recuperation_edss.py), en
+    # suivant le même pattern que test1 et test3 -- requêtes Postgres directes
+    # au lieu du CSV local du script original, l'exclusion post-poussée étant
+    # recalculée depuis sep_poussees plutôt que dépendre d'une colonne
+    # date_derniere_poussee pré-jointe.
+    from sep.test2_recuperation_edss import run as _run
+    return _run(engine, config)
+
+
+from sep.test2_recuperation_edss import PARAMETRES_SCHEMA as SEP2_PARAMETRES_SCHEMA
+
+
 def run_sep3(engine, config):
-    # test3_sep.py : TAP précoce — 4 questions input() dans cet ordre :
-    #   1) fenêtre TAP (années, ou vide = défaut)
-    #   2) "2" pour ajuster sur covariables, sinon vide
-    #   3) indices covariables séparés par virgules (si étape 2 = "2")
-    #   4) "1" ou "2" pour choisir Poisson / Binomiale Négative
-    #
-    # Le script legacy demande les covariables par INDICE numérique (0,1,2...)
-    # correspondant à l'ordre de COVARIABLES_TAP_AUTORISEES dans test3_sep.py.
-    # Un clinicien ne doit jamais avoir à connaître/deviner ces indices : le
-    # frontend affiche des cases à cocher avec les noms lisibles (voir
-    # parametres_schema ci-dessous), et c'est ICI qu'on fait la traduction
-    # nom -> indice avant d'émuler les réponses au script.
-    # ATTENTION : cet ordre doit rester identique à celui du dict
-    # COVARIABLES_TAP_AUTORISEES dans test_analyse_statistique/SEP/test3_sep.py
-    # (script non modifiable directement — voir principe en tête de fichier).
-    NOMS_COVARIABLES_TAP = ["age_onset", "sexe", "edss_inclusion"]
+    # test3_sep.py : déjà refactoré en profondeur (voir sep/test3_tap_precoce.py),
+    # exactement comme test1_sep.py -> sep/test1_delai_diagnostic_edss.py.
+    # Le module refactoré retourne notes/figures/tableau/resume_stats en JSON
+    # structuré (chiffres clés pour le dashboard), au lieu du texte brut
+    # produit par l'ancien run_original_script() sur le script legacy.
+    from sep.test3_tap_precoce import run as _run
+    return _run(engine, config)
 
-    covariables_choisies = config.get("covariables", [])
-    indices = [
-        str(NOMS_COVARIABLES_TAP.index(nom))
-        for nom in covariables_choisies
-        if nom in NOMS_COVARIABLES_TAP
-    ]
 
-    reponses = [
-        str(config.get("fenetre_tap_annees", "")),
-        "2" if indices else "",
-        ",".join(indices),
-        "1" if config.get("modele_tap", "poisson") == "poisson" else "2",
-    ]
-    return run_original_script(_sep("test3_sep.py"), reponses_stdin=reponses, env_overrides=PG_ENV)
+from sep.test3_tap_precoce import PARAMETRES_SCHEMA as SEP3_PARAMETRES_SCHEMA
 
 
 def run_sep4(engine, config):
@@ -161,15 +153,12 @@ ANALYSES = {
     "sep_1": {"registre": "SEP", "titre": "Délai diagnostique et pronostic (EDSS)",
               "description": "Régression linéaire/logistique délai → EDSS.",
               "parametres_schema": SEP1_PARAMETRES_SCHEMA, "run": run_sep1},
+    "sep_2": {"registre": "SEP", "titre": "Récupération incomplète (1er épisode) et trajectoire EDSS",
+              "description": "Modèle mixte longitudinal EDSS(t), transformation du temps choisie par AIC.",
+              "parametres_schema": SEP2_PARAMETRES_SCHEMA, "run": run_sep2},
     "sep_3": {"registre": "SEP", "titre": "Taux annualisé de poussées (TAP) précoce",
               "description": "TAP précoce, modèle Poisson/Binomiale Négative.",
-              "parametres_schema": {
-                  "fenetre_tap_annees": {"type": "number", "label": "Fenêtre TAP (années)"},
-                  "covariables": {"type": "multiselect",
-                                  "options": ["age_onset", "sexe", "edss_inclusion"],
-                                  "label": "Covariables (ajustement du modèle TAP)"},
-                  "modele_tap": {"type": "select", "options": ["poisson", "nb"], "label": "Modèle"},
-              }, "run": run_sep3},
+              "parametres_schema": SEP3_PARAMETRES_SCHEMA, "run": run_sep3},
     "sep_4": {"registre": "SEP", "titre": "Charge lésionnelle T2 et sévérité future",
               "description": "Cox / régression linéaire simple ou multiple, EDSS à 2 ou 5 ans.",
               "parametres_schema": {
@@ -218,14 +207,7 @@ ANALYSES = {
 }
 
 # -----------------------------------------------------------------------
-# NOTE — 2 tests volontairement non branchés, à trancher avec l'équipe :
-#
-# sep_2 (test2_sep.py) : ne lit QUE depuis un fichier CSV local
-# (charger_donnees(chemin_csv), pas de requête Postgres dans ce script).
-# Pour le brancher il faut soit :
-#   (a) ajouter un import CSV côté fenêtre 3, soit
-#   (b) faire écrire un export CSV du dataset patient avant de lancer ce
-#       test — décision produit, pas une question technique.
+# NOTE — 1 test volontairement non branché, à trancher avec l'équipe :
 #
 # sep_7 (test7_sep.py) : n'est pas un test statistique paramétrable —
 # c'est un outil de classement interactif molécule par molécule

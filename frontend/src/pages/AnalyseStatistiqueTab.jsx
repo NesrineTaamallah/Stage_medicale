@@ -485,15 +485,17 @@ function TableauGenerique({ entetes, lignes, accent }) {
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               style={{ transition: 'background 0.1s ease' }}>
               {entetes.map((_, j) => {
-                const v = ligne[j] ?? '';
-                const estBool = v === 'True' || v === 'False';
-                const estSignif = v === 'True' && /signif|p_val/i.test(entetes[j] || '');
+                const brut = ligne[j];
+                const estBool = typeof brut === 'boolean';
+                const estVide = brut === null || brut === undefined || brut === '';
+                const v = estVide ? '—' : estBool ? (brut ? 'Oui' : 'Non') : String(brut);
+                const estSignif = estBool && brut === true && /signif/i.test(entetes[j] || '');
                 return (
                   <td key={j} style={{
-                    padding: '8px 12px', borderBottom: '1px solid var(--line)', color: 'var(--ink)',
+                    padding: '8px 12px', borderBottom: '1px solid var(--line)',
                     whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
                     fontWeight: estBool ? 600 : 400,
-                    color: estSignif ? (accent || 'var(--primary-deep)') : 'var(--ink)',
+                    color: estSignif ? (accent || 'var(--primary-deep)') : estVide ? 'var(--slate-soft)' : 'var(--ink)',
                   }}>{v}</td>
                 );
               })}

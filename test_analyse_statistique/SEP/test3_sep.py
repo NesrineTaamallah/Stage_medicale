@@ -782,6 +782,94 @@ def calculer_diagnostics(resultat, df: pd.DataFrame) -> dict:
     return {"RMSE": rmse, "PWPE_pct": pwpe, "POPE_pct": pope}
 
 
+def afficher_resume_final(contexte: dict):
+    
+
+    df_tap = contexte["df_tap"]
+    comparaison = contexte["comparaison_tap"]
+    disp = comparaison["dispersion"]
+    df_final = contexte["df_final"]
+    diagnostics = contexte["diagnostics"]
+    tableau_effets = contexte["tableau_effets"]
+    tableau_transfos = contexte["tableau_transfos"]
+
+    n_patients_tap = len(df_tap)
+    tap_moyen_empirique = df_tap["tap_empirique"].mean()
+    tap_median_empirique = df_tap["tap_empirique"].median()
+
+    n_patients_modele = df_final["patient_id"].nunique()
+    n_points_modele = len(df_final)
+    suivi_median = df_final.groupby("patient_id")["temps_annees"].max().median()
+
+    effet_final = tableau_effets.iloc[-1]
+
+    print("\n" + "#" * 80)
+    print("RESUME FINAL -- TAP precoce et evolution du handicap (registre SEP)")
+    print("#" * 80)
+
+    print("\n[1] Population et fenetre TAP")
+    print(f"  - Fenetre TAP precoce retenue        : {contexte['fenetre_tap']:.1f} an(s)")
+    print(f"  - Patients avec TAP calculable        : {n_patients_tap}")
+    print(f"  - TAP empirique moyen (poussees/an)   : {tap_moyen_empirique:.3f}")
+    print(f"  - TAP empirique median (poussees/an)  : {tap_median_empirique:.3f}")
+    print(f"  - Covariables du modele de comptage    : "
+          f"{contexte['covariables_tap'] if contexte['covariables_tap'] else 'aucune'}")
+
+    print("\n[2] Poisson vs Binomiale Negative")
+    print(f"  - Ratio de dispersion de Pearson (chi2/ddl) : "
+          f"{disp['dispersion_pearson_chi2_ddl']:.2f}")
+    print(f"  - Surdispersion significative (test auxiliaire) : "
+          f"{'oui' if disp['surdispersion_significative'] else 'non'} "
+          f"(p={disp['p_value']:.4f})")
+    print(f"  - Modele recommande par le script      : "
+          f"{'Binomiale Negative' if comparaison['recommandation'] == 'nb' else 'Poisson'}")
+    print(f"  - Modele retenu par le clinicien        : "
+          f"{'Binomiale Negative' if contexte['modele_tap_choisi'] == 'nb' else 'Poisson'}")
+
+    print("\n[3] Donnees du modele mixte EDSS(t)")
+    print(f"  - Patients inclus                       : {n_patients_modele}")
+    print(f"  - Points de mesure EDSS                 : {n_points_modele}")
+    print(f"  - Duree de suivi mediane par patient     : {suivi_median:.1f} an(s)")
+    print(f"  - Transformation du temps retenue (AIC min) : {contexte['meilleure_transfo']}")
+    print(f"    (comparaison complete des {len(tableau_transfos)} transformations testees "
+          f"ci-dessus, etape 3)")
+    print(f"  - Structure du modele mixte retenue     : {contexte['type_modele_mixte']}")
+    print(f"  - Convergence du modele                 : "
+          f"{'oui' if contexte['resultat_mixte'].converged else 'NON -- a interpreter avec prudence'}")
+
+    print("\n[4] Qualite d'ajustement (modele mixte)")
+    print(f"  - RMSE                                  : {diagnostics['RMSE']:.3f} points EDSS")
+    print(f"  - PWPE (% predictions a +/-0.5 pt)      : {diagnostics['PWPE_pct']:.1f}%")
+    print(f"  - POPE (% predictions a plus de 2 pts)  : {diagnostics['POPE_pct']:.1f}%")
+
+    print("\n[5] Effet clinique du TAP precoce sur l'EDSS (par poussee/an, IC95%)")
+    for _, ligne in tableau_effets.iterrows():
+        sig = "significatif" if ligne["significatif_5pct"] else "non significatif"
+        extra = " [EXTRAPOLATION hors suivi observe]" if ligne["extrapolation_hors_suivi"] else ""
+        print(f"  - a {int(ligne['horizon_annees'])} an(s) : "
+              f"{ligne['effet_par_poussee_an']:+.3f} "
+              f"[{ligne['IC95_inf']:.3f} ; {ligne['IC95_sup']:.3f}] "
+              f"(p={ligne['p_value']:.4f}, {sig}){extra}")
+
+    print(f"\n  => Chiffre cle a retenir (horizon {int(effet_final['horizon_annees'])} an(s)) : "
+          f"chaque poussee/an supplementaire durant la fenetre precoce est "
+          f"associee a {effet_final['effet_par_poussee_an']:+.2f} point(s) "
+          f"d'EDSS [{effet_final['IC95_inf']:.2f} ; {effet_final['IC95_sup']:.2f}], "
+          f"{'statistiquement significatif' if effet_final['significatif_5pct'] else 'non significatif avec cet effectif'}.")
+
+    print("\n[6] Fichiers generes")
+    print(f"  - {os.path.join(DOSSIER_SORTIE, 'test3_comparaison_poisson_nb.png')}")
+    print(f"  - {os.path.join(DOSSIER_SORTIE, 'test3_trajectoires_tap.png')}")
+
+    if n_patients_modele < MIN_PATIENTS_ALERTE or n_points_modele < MIN_POINTS_ALERTE:
+        print(f"\n[RESERVE METHODOLOGIQUE] Effectif limite "
+              f"({n_patients_modele} patients / {n_points_modele} points, seuils "
+              f"indicatifs {MIN_PATIENTS_ALERTE}/{MIN_POINTS_ALERTE}) -- resultats "
+              f"a presenter comme exploratoires.")
+
+    print("\n" + "#" * 80 + "\n")
+
+
 def analyse_complete(engine, horizons_annees=(2, 5, 10)):
     print("=" * 80)
     print("TAP precoce et evolution du handicap - Registre SEP pediatrique")
@@ -837,7 +925,7 @@ def analyse_complete(engine, horizons_annees=(2, 5, 10)):
     print("\n" + "=" * 80)
     print("ETAPE 5 : Diagnostics")
     print("=" * 80)
-    calculer_diagnostics(resultat, df_final)
+    diagnostics = calculer_diagnostics(resultat, df_final)
 
     print("\n" + "=" * 80)
     print("ETAPE 6 : Interpretation clinique")
@@ -853,15 +941,27 @@ def analyse_complete(engine, horizons_annees=(2, 5, 10)):
     print("=" * 80)
     tracer_trajectoires_par_tap(df_final, resultat, meilleure_transfo)
 
-    return {
+    contexte = {
+        "fenetre_tap": fenetre_tap,
+        "covariables_tap": covariables_tap,
         "comparaison_tap": comparaison,
         "modele_tap_choisi": modele_tap_choisi,
         "df_tap": df_tap,
         "resultat_mixte": resultat,
         "type_modele_mixte": type_modele,
+        "meilleure_transfo": meilleure_transfo,
+        "tableau_transfos": tableau_transfos,
         "df_final": df_final,
+        "diagnostics": diagnostics,
         "tableau_effets": tableau_effets,
     }
+
+    print("\n" + "=" * 80)
+    print("ETAPE 8 : Resume final")
+    print("=" * 80)
+    afficher_resume_final(contexte)
+
+    return contexte
 
 
 if __name__ == "__main__":
