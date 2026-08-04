@@ -115,11 +115,15 @@ export default function AnalyseStatistiqueTab() {
   const [resultat, setResultat] = useState(null);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState(null);
+  const [chargement, setChargement] = useState(true);
 
   useEffect(() => {
     client.get('/api/analyses')
       .then((res) => setAnalyses(res.data))
-      .catch(() => setErreur("Impossible de charger la liste des analyses."));
+      .catch((err) => setErreur(
+        err.response?.data?.error || "Impossible de charger la liste des analyses."
+      ))
+      .finally(() => setChargement(false));
   }, []);
 
   const choisirAnalyse = useCallback((a) => {
@@ -150,41 +154,71 @@ export default function AnalyseStatistiqueTab() {
     <div style={{ display: 'flex', gap: 20, height: '100%' }}>
       {/* Colonne gauche : liste des analyses disponibles */}
       <div style={{ width: 280, flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-          {['SEP', 'EPR'].map((r) => (
-            <button key={r} onClick={() => setRegistreActif(r)} style={{
-              flex: 1, padding: '6px 0', borderRadius: 8, border: '1px solid var(--border)',
-              background: registreActif === r ? 'var(--primary-tint)' : 'var(--surface)',
-              fontWeight: registreActif === r ? 600 : 400, cursor: 'pointer',
-            }}>
-              {r}
-            </button>
-          ))}
+        <div style={{
+          display: 'flex', gap: 4, marginBottom: 14, padding: 4,
+          background: 'var(--surface-alt)', borderRadius: 10, border: '1px solid var(--border)',
+        }}>
+          {['SEP', 'EPR'].map((r) => {
+            const actif = registreActif === r;
+            return (
+              <button
+                key={r}
+                onClick={() => { setRegistreActif(r); setAnalyseSelectionnee(null); setResultat(null); }}
+                style={{
+                  flex: 1, padding: '8px 0', borderRadius: 7, border: 'none',
+                  background: actif ? 'var(--primary)' : 'transparent',
+                  color: actif ? '#fff' : 'var(--ink)',
+                  fontWeight: actif ? 700 : 500,
+                  fontSize: 13.5,
+                  cursor: 'pointer',
+                  boxShadow: actif ? '0 1px 4px rgba(0,0,0,0.18)' : 'none',
+                }}
+              >
+                {r}
+              </button>
+            );
+          })}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {analysesDuRegistre.map((a) => (
-            <button key={a.id} onClick={() => choisirAnalyse(a)} style={{
-              textAlign: 'left', padding: '10px 12px', borderRadius: 10,
-              border: '1px solid var(--border)',
-              background: analyseSelectionnee?.id === a.id ? 'var(--primary-tint)' : 'var(--surface)',
-              cursor: 'pointer',
-            }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{a.titre}</div>
-              <div style={{ fontSize: 12, opacity: 0.65, marginTop: 2 }}>{a.description}</div>
-            </button>
-          ))}
-          {analysesDuRegistre.length === 0 && (
-            <div style={{ fontSize: 13, opacity: 0.6, padding: 10 }}>
-              Aucune analyse {registreActif} disponible pour l'instant.
-            </div>
-          )}
-        </div>
+        {chargement && (
+          <div style={{ fontSize: 13, opacity: 0.6, padding: 10 }}>Chargement des analyses…</div>
+        )}
+
+        {!chargement && erreur && analyses.length === 0 && (
+          <div style={{
+            fontSize: 13, color: '#DC2626', padding: 10, borderRadius: 8,
+            background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)',
+          }}>
+            ⚠️ {erreur}
+          </div>
+        )}
+
+        {!chargement && (!erreur || analyses.length > 0) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {analysesDuRegistre.map((a) => (
+              <button key={a.id} onClick={() => choisirAnalyse(a)} style={{
+                textAlign: 'left', padding: '10px 12px', borderRadius: 10,
+                border: analyseSelectionnee?.id === a.id ? '1px solid var(--primary)' : '1px solid var(--border)',
+                background: analyseSelectionnee?.id === a.id ? 'var(--primary-tint)' : 'var(--surface)',
+                color: 'var(--ink)',
+                cursor: 'pointer',
+              }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink)' }}>{a.titre}</div>
+                <div style={{ fontSize: 12, opacity: 0.65, marginTop: 2, color: 'var(--slate)' }}>{a.description}</div>
+              </button>
+            ))}
+            {analysesDuRegistre.length === 0 && (
+              <div style={{ fontSize: 13, opacity: 0.6, padding: 10 }}>
+                Aucune analyse {registreActif} disponible pour l'instant.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Colonne droite : formulaire + résultats */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        {!analyseSelectionnee && (
+        {!analyseSelectionnee && !chargement && (
           <div style={{ opacity: 0.6, fontSize: 14 }}>Choisissez une analyse à gauche pour configurer ses paramètres.</div>
         )}
 

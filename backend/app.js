@@ -11,7 +11,10 @@ const totpRoutes = require('./routes/totpRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const app = express();
 
-app.use('/api/analyses', analysisRoutes);
+// Ces 4 middlewares doivent être montés AVANT toute route : sans cookieParser
+// et express.json() en place, requireAuth (utilisé par /api/analyses) ne
+// trouve ni cookie de session ni corps de requête parsé, et échoue en
+// silence côté frontend (liste d'analyses vide, pas d'erreur visible).
 app.use(helmet()); // en-têtes de sécurité HTTP (X-Content-Type-Options, HSTS, etc.)
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
@@ -23,6 +26,7 @@ app.use(cookieParser());
 app.use('/', authRoutes);
 app.use('/admin', adminRoutes);
 app.use('/2fa', totpRoutes);
+app.use('/api/analyses', analysisRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Serveur démarré sur le port ${PORT}`));

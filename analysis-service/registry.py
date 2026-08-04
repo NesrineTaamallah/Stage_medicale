@@ -11,7 +11,7 @@ from script_runner import run_original_script
 # Adapter ce chemin à l'emplacement réel du dossier sur le serveur
 SCRIPTS_DIR = os.environ.get(
     "SCRIPTS_DIR",
-    os.path.join(os.path.dirname(__file__), "..", "..", "test_analyse_statistique"),
+    os.path.join(os.path.dirname(__file__), "..", "test_analyse_statistique"),
 )
 
 PG_ENV = {
