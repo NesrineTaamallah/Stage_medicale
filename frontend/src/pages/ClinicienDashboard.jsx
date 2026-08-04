@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import BrandMark from '../components/BrandMark';
 import AnalyseStatistiqueTab from './AnalyseStatistiqueTab';
+import PatientsTab from './PatientsTab';
 import { IconChart, IconUsers, IconFolder, IconLogout, IconWave } from '../components/Icons';
 
 const SIDEBAR_WIDTH = 248;
 
 const NAV_ITEMS = [
   { key: 'overview', Icon: IconChart, label: "Vue d'Ensemble", disabled: true },
-  { key: 'patients', Icon: IconUsers, label: 'Patients', disabled: true },
+  { key: 'patients', Icon: IconUsers, label: 'Patients', disabled: false },
   { key: 'entites', Icon: IconFolder, label: 'Entités Médicales', disabled: true },
   { key: 'analyses', Icon: IconWave, label: 'Analyse Statistique', disabled: false },
 ];
@@ -203,7 +204,7 @@ export default function ClinicienDashboard() {
         </header>
 
         <div className="dashboard" style={{ maxWidth: 1120 }}>
-          {tab !== 'analyses' && (
+          {tab !== 'analyses' && tab !== 'patients' && (
             <div style={{
               padding: '40px 20px', textAlign: 'center', color: 'var(--slate)',
               border: '1px dashed var(--border)', borderRadius: 14, background: 'var(--surface)',
@@ -214,6 +215,7 @@ export default function ClinicienDashboard() {
             </div>
           )}
           {tab === 'analyses' && <AnalyseStatistiqueTab />}
+          {tab === 'patients' && <PatientsTab />}
         </div>
       </div>
     </div>
