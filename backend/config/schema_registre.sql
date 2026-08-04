@@ -126,9 +126,7 @@ CREATE TABLE IF NOT EXISTS epr_etiologie (
     categorie_etiologique             VARCHAR(50)
 );
 
--- ⚠️ tables suivantes détectées côté FROM/JOIN mais colonnes non
--- déduites automatiquement (aliasées via CTE) — à compléter avec ta
--- camarade / le dictionnaire de données :
+
 CREATE TABLE IF NOT EXISTS epr_type_crise (
     id            SERIAL PRIMARY KEY,
     pseudonyme       VARCHAR(255) NOT NULL REFERENCES patients(pseudonyme),
