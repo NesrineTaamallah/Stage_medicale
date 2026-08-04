@@ -146,6 +146,18 @@ function BoutonRetour({ onClick, children }) {
   );
 }
 
+/** Un champ "covariables" n'a de sens que si le schéma du test comporte
+ * aussi un champ "mode_analyse" ET que ce dernier vaut une variante
+ * "multivariée" ("multivariee" côté SEP, "multivariate" côté EPR). Dans
+ * tous les autres cas (test sans mode_analyse, ou mode univarié choisi),
+ * le champ covariables reste masqué : évite d'afficher un choix de
+ * covariables qui ne sera pas pris en compte par le script. */
+function covariablesVisibles(nomChamp, parametresSchema, config) {
+  if (nomChamp !== 'covariables') return true;
+  if (!('mode_analyse' in parametresSchema)) return true;
+  return String(config.mode_analyse || '').toLowerCase().includes('multivari');
+}
+
 function ChampFormulaire({ schema, valeur, onChange }) {
   if (schema.type === 'select') {
     return (
@@ -801,13 +813,12 @@ export default function AnalyseStatistiqueTab() {
   /* Étape 4 — formulaire de paramètres + résultats                   */
   /* -------------------------------------------------------------- */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'flex-start' }}>
-      {/* Rectangle vertical : formulaire, avec les deux actions regroupées en haut */}
-      <div className="card" style={{ padding: 22, width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Retour + titre du test, au-dessus du cadre blanc */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ margin: 0 }}>
           <BoutonRetour onClick={revenirALaListeDesTests}>Tests {registre.label}</BoutonRetour>
         </div>
-
         <SectionHeading
           Icon={registre.Icon}
           title={analyseSelectionnee.titre}
@@ -815,69 +826,83 @@ export default function AnalyseStatistiqueTab() {
           accent={registre.accentDeep}
           accentTint={registre.accentTint}
         />
+      </div>
 
-        <button onClick={lancer} disabled={enCours} style={{
-          margin: 0, width: '100%', padding: '11px 18px', borderRadius: 10, border: 'none',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          background: registre.accent, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer',
-        }}>
-          {enCours ? (
-            <>
-              <span style={{
-                width: 13, height: 13, borderRadius: '50%',
-                border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
-                display: 'inline-block', animation: 'spin 0.7s linear infinite',
-              }} />
-              Analyse en cours…
-            </>
-          ) : (
-            <>
-              <IconRefresh size={15} />
-              Lancer l'analyse
-            </>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'flex-start' }}>
+        {/* Rectangle vertical : bouton "Lancer l'analyse" en haut, puis formulaire */}
+        <div className="card" style={{ padding: 22, width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <button onClick={lancer} disabled={enCours} style={{
+            margin: 0, width: '100%', padding: '11px 18px', borderRadius: 10, border: 'none',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: registre.accent, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer',
+          }}>
+            {enCours ? (
+              <>
+                <span style={{
+                  width: 13, height: 13, borderRadius: '50%',
+                  border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff',
+                  display: 'inline-block', animation: 'spin 0.7s linear infinite',
+                }} />
+                Analyse en cours…
+              </>
+            ) : (
+              <>
+                <IconRefresh size={15} />
+                Lancer l'analyse
+              </>
+            )}
+          </button>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 14,
+            paddingTop: 4, borderTop: '1px solid var(--line)',
+          }}>
+            {Object.entries(analyseSelectionnee.parametres)
+              .filter(([nomChamp]) => covariablesVisibles(nomChamp, analyseSelectionnee.parametres, config))
+              .map(([nomChamp, schema]) => (
+                <label key={nomChamp} style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 5, margin: 0 }}>
+                  {schema.label || nomChamp}
+                  <ChampFormulaire
+                    schema={schema}
+                    valeur={config[nomChamp]}
+                    onChange={(v) => setConfig((c) => {
+                      // Repasser en univarié vide la sélection de covariables,
+                      // pour ne pas envoyer au backend un choix devenu invisible.
+                      if (nomChamp === 'mode_analyse' && !String(v).toLowerCase().includes('multivari')) {
+                        return { ...c, [nomChamp]: v, covariables: [] };
+                      }
+                      return { ...c, [nomChamp]: v };
+                    })}
+                  />
+                </label>
+              ))}
+          </div>
+
+          {erreur && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8,
+              color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 10,
+              padding: '10px 13px', fontSize: 13,
+            }}>
+              <IconAlert size={15} />
+              <span>{erreur}</span>
+            </div>
           )}
-        </button>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 14,
-          paddingTop: 4, borderTop: '1px solid var(--line)',
-        }}>
-          {Object.entries(analyseSelectionnee.parametres).map(([nomChamp, schema]) => (
-            <label key={nomChamp} style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 5, margin: 0 }}>
-              {schema.label || nomChamp}
-              <ChampFormulaire
-                schema={schema}
-                valeur={config[nomChamp]}
-                onChange={(v) => setConfig((c) => ({ ...c, [nomChamp]: v }))}
-              />
-            </label>
-          ))}
         </div>
 
-        {erreur && (
-          <div style={{
-            display: 'flex', alignItems: 'flex-start', gap: 8,
-            color: 'var(--error)', background: 'var(--error-tint)', borderRadius: 10,
-            padding: '10px 13px', fontSize: 13,
-          }}>
-            <IconAlert size={15} />
-            <span>{erreur}</span>
+        {/* Résultats : colonne unique alignée à gauche, sous le formulaire */}
+        {resultat && (
+          <div className="card" style={{ padding: 22, width: '100%', maxWidth: 760, alignSelf: 'flex-start' }}>
+            <ResultatAnalyse
+              resultat={resultat}
+              accent={registre.accentDeep}
+              accentTint={registre.accentTint}
+              titreAnalyse={analyseSelectionnee.titre}
+            />
           </div>
         )}
       </div>
-
-      {/* Résultats : colonne unique alignée à gauche, sous le formulaire */}
-      {resultat && (
-        <div className="card" style={{ padding: 22, width: '100%', maxWidth: 760, alignSelf: 'flex-start' }}>
-          <ResultatAnalyse
-            resultat={resultat}
-            accent={registre.accentDeep}
-            accentTint={registre.accentTint}
-            titreAnalyse={analyseSelectionnee.titre}
-          />
-        </div>
-      )}
     </div>
   );
 }
