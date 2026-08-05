@@ -1,10 +1,10 @@
 
 
 -- ---- patients ----
-INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_001', 'EPILEPSIE', '2020-01-15', 1.8);
-INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_002', 'EPILEPSIE', '2020-01-15', 1.8);
-INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_005', 'EPILEPSIE', '2024-11-01', 8);
-INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_AZ_004', 'EPILEPSIE', '2022-06-20', 9);
+INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_001', 'EPR', '2020-01-15', 1.8);
+INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_002', 'EPR', '2020-01-15', 1.8);
+INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_MBH_005', 'EPR', '2024-11-01', 8);
+INSERT INTO patients (pseudonyme, registre, date_inclusion, age) VALUES ('EPR_AZ_004', 'EPR', '2022-06-20', 9);
 
 -- ---- epr_identification_clinique ----
 INSERT INTO epr_identification_clinique (pseudonyme, age_debut_crises_mois, age_diagnostic_pharmacoresistance_mois) VALUES ('EPR_MBH_001', 0.1, 22);
