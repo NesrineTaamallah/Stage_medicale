@@ -20,28 +20,28 @@ INSERT INTO sep_antecedents (pseudonyme, atcd_familiaux_auto_immuns_neuro, atcd_
 INSERT INTO sep_antecedents (pseudonyme, atcd_familiaux_auto_immuns_neuro, atcd_familiaux_precision, consanguinite_parentale, consanguinite_degre, infections_vaccinations_avant_1er_episode) VALUES ('SEP_ZM_004', TRUE, 'Tante maternelle suivie pour SEP depuis l''âge de 21 ans', FALSE, NULL, 'Syndrome grippal 1 mois avant l''installation du ptosis/diplopie ; vacciné à jour ; rhinite allergique, anémie sous Tardyféron');
 
 -- ---- sep_presentation_initiale ----
-INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_AZ_005', 'Tronc cérébral (syndrome vestibulaire central, ophtalmoplégie internucléaire gauche)', 'Partielle');
-INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MBH_003', 'Névrite optique unilatérale (œil gauche)', 'Partielle');
-INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MJ_001', 'Polysymptomatique (sensitivomoteur + cérébelleux, hémicorps droit)', 'Partielle');
-INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MJ_002', 'Polysymptomatique (céphalées + hémiparésie gauche)', 'Non');
-INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_ZM_004', 'Tronc cérébral (ptosis bilatéral, diplopie, atteinte du III gauche)', 'Partielle');
+INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_AZ_005', 'tronc_cerebral', 'Partielle');
+INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MBH_003', 'nevrite_optique', 'Partielle');
+INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MJ_001', 'polysymptomatique', 'Partielle');
+INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_MJ_002', 'polysymptomatique', 'Non');
+INSERT INTO sep_presentation_initiale (pseudonyme, type_premier_evenement, recuperation_complete) VALUES ('SEP_ZM_004', 'tronc_cerebral', 'Partielle');
 
 -- ---- sep_evolution ----
-INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_AZ_005', 'RR', 'Hautement active', NULL, TRUE);
-INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_MBH_003', 'RR', 'Hautement active', NULL, TRUE);
+INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_AZ_005', 'RR', 'hautement_active', NULL, TRUE);
+INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_MBH_003', 'RR', 'hautement_active', NULL, TRUE);
 INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_MJ_001', 'RR', NULL, NULL, TRUE);
 INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_MJ_002', 'RR', NULL, NULL, TRUE);
-INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_ZM_004', 'RR', 'Hautement active, agressive', NULL, TRUE);
+INSERT INTO sep_evolution (pseudonyme, forme_evolutive, severite, date_conversion_sp, date_conversion_sp_non_applicable) VALUES ('SEP_ZM_004', 'RR', 'hautement_active', NULL, TRUE);
 
 -- ---- sep_poussees ----
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_AZ_005', '2025-03-31', 'Tronc cérébral (vestibulaire, oculomoteur)', 'Corticoïdes (bolus méthylprednisolone 5j)', FALSE, 3);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_AZ_005', '2025-09-26', 'Tronc cérébral (vestibulaire, sensitivomoteur hémicorps droit)', 'Corticoïdes (bolus méthylprednisolone 3-5j)', TRUE, 2);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MBH_003', '2025-04-05', 'Nerf optique gauche (névrite optique)', 'Corticoïdes (bolus méthylprednisolone 5j)', TRUE, 5);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_001', '2026-05-26', 'Polysymptomatique : sensitivomoteur + cérébelleux hémicorps droit', 'Corticoïdes (bolus solumédrol 5j)', TRUE, 6);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_002', '2022-12-01', 'Céphalées + hémiparésie gauche', 'NA (traitement antituberculeux initial, pas de bolus à cet épisode)', TRUE, NULL);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_002', '2025-01-01', 'Nerf optique droit (diplopie, strabisme convergent, régressif spontané)', 'NA (régression spontanée, pas de bolus)', FALSE, NULL);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_ZM_004', '2025-03-19', 'Tronc cérébral (III gauche, ophtalmoplégie internucléaire)', 'Corticoïdes (bolus méthylprednisolone 5j)', TRUE, 3);
-INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_ZM_004', '2025-04-25', 'Tronc cérébral (2e poussée, syndrome vestibulaire central)', 'Corticoïdes (bolus méthylprednisolone 3j)', FALSE, 3);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_AZ_005', '2025-03-31', 'Tronc cérébral (vestibulaire, oculomoteur)', 'corticoides', FALSE, 3);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_AZ_005', '2025-09-26', 'Tronc cérébral (vestibulaire, sensitivomoteur hémicorps droit)', 'corticoides', TRUE, 2);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MBH_003', '2025-04-05', 'Nerf optique gauche (névrite optique)', 'corticoides', TRUE, 5);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_001', '2026-05-26', 'Polysymptomatique : sensitivomoteur + cérébelleux hémicorps droit', 'corticoides', TRUE, 6);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_002', '2022-12-01', 'Céphalées + hémiparésie gauche', 'aucun', TRUE, NULL);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_MJ_002', '2025-01-01', 'Nerf optique droit (diplopie, strabisme convergent, régressif spontané)', 'aucun', FALSE, NULL);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_ZM_004', '2025-03-19', 'Tronc cérébral (III gauche, ophtalmoplégie internucléaire)', 'corticoides', TRUE, 3);
+INSERT INTO sep_poussees (pseudonyme, date_poussee, type_localisation, traitement_poussee, sequelle_post_poussee, edss_associe) VALUES ('SEP_ZM_004', '2025-04-25', 'Tronc cérébral (2e poussée, syndrome vestibulaire central)', 'corticoides', FALSE, 3);
 
 -- ---- sep_edss_visites ----
 INSERT INTO sep_edss_visites (pseudonyme, date_visite, score_edss) VALUES ('SEP_AZ_005', '2025-04-07', 3);
@@ -68,9 +68,9 @@ INSERT INTO sep_irm (pseudonyme, date_examen, nb_lesions_t2, cr_irm_texte, local
 
 -- ---- sep_biologie_lcr ----
 INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_AZ_005', '2025-04-08', NULL, NULL, NULL, NULL, 'PL faite, cytochimie normale ; anti-AQP4/anti-MOG demandés (résultats non précisés dans le dossier)');
-INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_MJ_001', '2026-05-30', 'Négatif', NULL, NULL, 'Anti-MOG / Anti-AQP4', 'Anti-MOG sang/LCR négatifs, anti-AQP4 sang négatif. LCR : 1 élément blanc, glucorachie 3,66 mmol/L, protéinorachie 0,16 g/L, chlorurachie 117 mmol/L (tout normal).');
+INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_MJ_001', '2026-05-30', 'Negatif', NULL, NULL, 'NMO_IgG_MOG', 'Anti-MOG sang/LCR négatifs, anti-AQP4 sang négatif. LCR : 1 élément blanc, glucorachie 3,66 mmol/L, protéinorachie 0,16 g/L, chlorurachie 117 mmol/L (tout normal).');
 INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_MJ_002', '2025-09-17', NULL, NULL, 2.4, NULL, 'IEPP : index IgG à 2,4 avec synthèse intrathécale. LCR : 8 éléments blancs, glucorachie normale 2,98, protéinorachie discrètement élevée 0,57 g/L, lactorachie normale 1,42.');
-INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_ZM_004', '2025-03-19', NULL, NULL, NULL, 'Anti-MOG / Anti-AQP4', 'LCR aspect eau de roche, 8 éléments blancs, protéinorachie 0,42 g/L, glucorachie et chlorurachie normales. Anti-MOG et anti-AQP4 (sang) négatifs le 25/03/2025 ; isoélectrofocalisation LCR en cours.');
+INSERT INTO sep_biologie_lcr (pseudonyme, date_prelevement, bandes_oligoclonales, index_chaines_kappa, index_igg, anticorps_type, anticorps_autre_texte) VALUES ('SEP_ZM_004', '2025-03-19', NULL, NULL, NULL, 'NMO_IgG_MOG', 'LCR aspect eau de roche, 8 éléments blancs, protéinorachie 0,42 g/L, glucorachie et chlorurachie normales. Anti-MOG et anti-AQP4 (sang) négatifs le 25/03/2025 ; isoélectrofocalisation LCR en cours.');
 
 -- ---- sep_potentiels_evoques ----
 INSERT INTO sep_potentiels_evoques (pseudonyme, date_examen, pev, pes, pea, anomalie_texte) VALUES ('SEP_MBH_003', '2025-04-12', 'Anormal', NULL, NULL, 'PEV fait en période de baisse d''acuité visuelle sévère (1/20 œil gauche), résultat détaillé non précisé');

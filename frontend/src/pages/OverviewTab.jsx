@@ -17,16 +17,16 @@ const ACTION_LABELS = {
 };
 
 const ACTION_COLORS = {
-  CREATE_USER: '#4F46E5',
-  RESEND_TEMP_PASSWORD: '#818CF8',
-  RESET_2FA: '#0D9488',
-  UNLOCK_ACCOUNT: '#0EA5E9',
-  DEACTIVATE_ACCOUNT: '#DC2626',
-  REACTIVATE_ACCOUNT: '#059669',
+  CREATE_USER: '#0c2f5e',
+  RESEND_TEMP_PASSWORD: '#5b9fe3',
+  RESET_2FA: '#145aa3',
+  UNLOCK_ACCOUNT: '#1d72c9',
+  DEACTIVATE_ACCOUNT: '#c23b4e',
+  REACTIVATE_ACCOUNT: '#1c7a52',
 };
 
 const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Chercheurs', statisticien: 'Statisticiens' };
-const ROLE_COLORS = { admin: '#6B5CA5', clinicien: '#175F69', chercheur: '#C98A2C', statisticien: '#C1508A' };
+const ROLE_COLORS = { admin: '#0c2f5e', clinicien: '#1d72c9', chercheur: '#5b9fe3', statisticien: '#145aa3' };
 
 function actionLabel(action) {
   const base = action.split(':')[0];

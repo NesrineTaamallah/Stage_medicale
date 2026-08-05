@@ -60,7 +60,7 @@ export default function ClinicienDashboard() {
         style={{
           width: SIDEBAR_WIDTH,
           flexShrink: 0,
-          background: 'linear-gradient(180deg, #16333A, #122A30 70%)',
+          background: 'var(--sidebar-grad, linear-gradient(180deg, #0e2c52, #0a2140 70%))',
           display: 'flex',
           flexDirection: 'column',
           height: '100svh',
@@ -74,10 +74,10 @@ export default function ClinicienDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <BrandMark size={38} />
             <div>
-              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: '#F1FAFB', margin: 0, lineHeight: 1.25 }}>
+              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: '#EAF2FC', margin: 0, lineHeight: 1.25 }}>
                 NeuroExo-Predict
               </p>
-              <p style={{ fontSize: 11.5, color: '#8FB6BD', margin: 0 }}>
+              <p style={{ fontSize: 11.5, color: '#8FA8C4', margin: 0 }}>
                 Registre clinique
               </p>
             </div>
@@ -105,7 +105,7 @@ export default function ClinicienDashboard() {
                   fontWeight: 500,
                   textAlign: 'left',
                   background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  color: item.disabled ? '#5C7F86' : (active ? '#F1FAFB' : '#B9D9DE'),
+                  color: item.disabled ? '#5C7896' : (active ? '#EAF2FC' : '#B7CDE8'),
                   boxShadow: 'none',
                   border: 'none',
                   borderLeft: active ? '3px solid var(--highlight)' : '3px solid transparent',
@@ -121,7 +121,7 @@ export default function ClinicienDashboard() {
                   <span style={{
                     fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',
                     padding: '2px 6px', borderRadius: 999, background: 'rgba(255,255,255,0.06)',
-                    color: '#6E939A', flexShrink: 0,
+                    color: '#6E8CA6', flexShrink: 0,
                   }}>
                     Bientôt
                   </span>
@@ -141,10 +141,10 @@ export default function ClinicienDashboard() {
             {initialsFromName(displayName)}
           </div>
           <div style={{ lineHeight: 1.25, overflow: 'hidden', flex: 1 }}>
-            <p style={{ margin: 0, fontSize: 12.8, fontWeight: 600, color: '#F1FAFB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <p style={{ margin: 0, fontSize: 12.8, fontWeight: 600, color: '#EAF2FC', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {displayName}
             </p>
-            <p style={{ margin: 0, fontSize: 10.5, color: '#8FB6BD', wordBreak: 'break-all' }}>
+            <p style={{ margin: 0, fontSize: 10.5, color: '#8FA8C4', wordBreak: 'break-all' }}>
               {user?.email}
             </p>
           </div>
@@ -153,12 +153,12 @@ export default function ClinicienDashboard() {
             title="Déconnexion"
             style={{
               marginLeft: 'auto', background: 'transparent', border: 'none',
-              color: '#8FB6BD', width: 30, height: 30, borderRadius: 8,
+              color: '#8FA8C4', width: 30, height: 30, borderRadius: 8,
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               boxShadow: 'none', padding: 0,
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(193,80,61,0.18)'; e.currentTarget.style.color = '#F2A392'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8FB6BD'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8FA8C4'; }}
           >
             <IconLogout size={15} />
           </button>

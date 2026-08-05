@@ -1,60 +1,89 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* ---------- Palette Moderne Neuro-Pédiatrie ---------- */
-  /* Cyan/Teal primaire - couleur de confiance clinique moderne */
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --teal: #0891b2;
-  --teal-dark: #0e7490;
-  --teal-light: #06b6d4;
-  --teal-lighter: #cffafe;
+  /* ---------- Palette clinique — Dégradé de bleus ---------- */
+  /* Une seule famille de couleur, du bleu nuit au bleu ciel pâle :
+     plus sobre et plus professionnel qu'un mélange de teintes. */
+  --ink: #0e1c30;
+  --ink-soft: #45566d;
+  --blue-900: #0c2f5e;
+  --blue-700: #145aa3;
+  --blue: #1d72c9;
+  --blue-deep: #145aa3;
+  --blue-light: #5b9fe3;
+  --blue-lighter: #bfe0f9;
+  --blue-pale: #e6f2fb;
 
   /* Variables principales pour cohérence globale */
-  --primary: var(--teal);
-  --primary-deep: var(--teal-dark);
-  --primary-tint: var(--teal-lighter);
-  --primary-soft: #ecf9fd;
-  --accent: var(--teal-dark);
-  --accent-tint: var(--teal-lighter);
+  --primary: var(--blue);
+  --primary-deep: var(--blue-deep);
+  --primary-tint: var(--blue-pale);
+  --primary-soft: #f1f8fd;
+  --accent: var(--blue-light);
+  --accent-deep: var(--blue-700);
+  --accent-tint: var(--blue-lighter);
 
-  /* Palette secondaire - nuances de gris modernes */
-  --paper: #f0f9ff;
+  /* Palette secondaire - nuances neutres froides (dans la même famille) */
+  --paper: #f6faff;
   --card: #ffffff;
-  --surface: #f8fafc;
-  --slate: #64748b;
-  --slate-soft: #94a3b8;
-  --slate-lighter: #e2e8f0;
-  --line: #cbd5e1;
+  --surface: #eef5fc;
+  --slate: #5a6c82;
+  --slate-soft: #93a5ba;
+  --slate-lighter: #dae6f2;
+  --line: #d3e2f0;
 
   /* États sémantiques (WCAG AA) */
-  --amber: #f59e0b;
-  --amber-tint: #fef3c7;
-  --error: #dc2626;
-  --error-tint: #fee2e2;
-  --success: #059669;
-  --success-tint: #d1fae5;
-  --info: #3b82f6;
-  --info-tint: #dbeafe;
-  --violet: #7c3aed;
-  --violet-tint: #ede9fe;
+  --amber: #c8790f;
+  --amber-tint: #faedd7;
+  --error: #c23b4e;
+  --error-tint: #f9e1e5;
+  --success: #1c7a52;
+  --success-tint: #dcf0e6;
+  --info: var(--blue);
+  --info-tint: var(--blue-pale);
+  --violet: var(--blue);
+  --violet-tint: var(--blue-pale);
+  --sun: #d99a2b;
+  --sun-tint: #f8ecd6;
 
   /* Alias rétro-compatibilité */
   --gold: var(--amber);
   --gold-tint: var(--amber-tint);
-  --highlight: var(--teal-light);
-  --highlight-tint: var(--teal-lighter);
+  --highlight: var(--blue-light);
+  --highlight-tint: var(--blue-lighter);
+  --teal: var(--blue);
+  --teal-dark: var(--blue-deep);
+  --teal-deep: var(--blue-deep);
+  --teal-light: var(--blue-light);
+  --teal-lighter: var(--blue-lighter);
+  --teal-tint: var(--blue-pale);
+  --coral: var(--blue-light);
+  --coral-deep: var(--blue-deep);
+  --coral-tint: var(--blue-pale);
+  --indigo: var(--blue-deep);
+  --indigo-deep: var(--blue-900);
+  --indigo-light: var(--blue-light);
+  --indigo-lighter: var(--blue-pale);
 
-  /* Typographie moderne */
-  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Typographie : Fraunces (display, caractère) + Inter (lecture clinique) */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, Consolas, monospace;
 
-  /* Ombres modernes */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  /* Rayons — arrondis doux, jamais pointus (registre pédiatrique) */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  /* Ombres — teintées de bleu plutôt que gris neutre */
+  --shadow-sm: 0 1px 2px 0 rgba(14, 28, 48, 0.05);
+  --shadow-md: 0 4px 10px -2px rgba(20, 90, 163, 0.14), 0 2px 4px -1px rgba(20, 90, 163, 0.07);
+  --shadow-lg: 0 10px 22px -6px rgba(20, 90, 163, 0.18), 0 4px 8px -2px rgba(20, 90, 163, 0.07);
+  --shadow-xl: 0 20px 40px -10px rgba(14, 28, 48, 0.2), 0 10px 16px -6px rgba(20, 90, 163, 0.09);
+
+  /* Dégradé sidebar sombre — même famille bleue que le reste de l'app */
+  --sidebar-grad: linear-gradient(180deg, #0e2c52, #0a2140 70%);
 
   /* Transitions fluides */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -76,13 +105,13 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--highlight), var(--teal));
+  background: linear-gradient(135deg, var(--blue-light), var(--blue-deep));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 4px 10px -3px rgba(30, 127, 140, 0.45), 0 0 0 3px rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 10px -3px rgba(20, 90, 163, 0.45), 0 0 0 3px rgba(255, 255, 255, 0.06);
 }
 
 /* ---------- Éléments structurels ---------- */

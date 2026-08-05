@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS sep_identification_clinique (
 
 CREATE TABLE IF NOT EXISTS sep_presentation_initiale (
     pseudonyme                  VARCHAR(255) PRIMARY KEY REFERENCES patients(pseudonyme),
-    type_premier_evenement        VARCHAR(100),   -- névrite optique / myélite / tronc cérébral / polysymptomatique / ...
+    type_premier_evenement        VARCHAR(150),   -- névrite optique / myélite / tronc cérébral / polysymptomatique / ...
     recuperation_complete           VARCHAR(10)   -- Oui / Non / Partielle
 );
 
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS sep_poussees (
     pseudonyme              VARCHAR(255) NOT NULL REFERENCES patients(pseudonyme),
     date_poussee               DATE NOT NULL,          -- permet calcul du TAP
     type_localisation             VARCHAR(100),
-    traitement_poussee              VARCHAR(50),         -- corticoïdes / échanges plasmatiques
+    traitement_poussee              VARCHAR(100),         -- corticoïdes / échanges plasmatiques
     sequelle_post_poussee             BOOLEAN,
     edss_associe                        NUMERIC          -- score EDSS associé à la séquelle
 );
