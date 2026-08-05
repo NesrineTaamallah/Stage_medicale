@@ -1,34 +1,4 @@
--- ============================================================================
--- Registres SEP pédiatrique et EPRlepsie pharmacorésistante
--- Aligné sur base_postgres.md (dictionnaire de données, corrections v1-v3)
---
--- Changements vs ancienne version de ce fichier :
---   - AJOUT  : gouvernorats_reference, sep_potentiels_evoques, epr_examen,
---              epr_chirurgie, epr_bilan_prechirurgical, epr_alternatives_therapeutiques,
---              epr_bilan_orthophonique, epr_bilan_neuropsy, epr_bilan_ergotherapique
---   - AJOUT  : toutes les colonnes présentes dans le .md mais absentes du SQL
---              (ex. sep_evolution.severite, epr_antecedents.atcd_perinataux_precision, etc.)
---   - RETRAIT : patients.sexe (déplacé, n'existe que dans sep_identification_clinique
---              côté md — voir note en bas de fichier, potentiel trou côté EPR)
---   - RETRAIT : sep_traitement_fond.date_fin_effective — ce n'était pas une colonne
---              stockée mais une valeur calculée à la volée
---              (COALESCE(date_fin, date_dernier_suivi, CURRENT_DATE)),
---              cf. test_analyse_statistique/SEP/test7_sep.py
---   - CORRECTION DE TYPE : sep_biologie_lcr.bandes_oligoclonales et
---              sep_traitement_fond.ligne_therapeutique étaient en BOOLEAN / INTEGER
---              dans l'ancien SQL alors que le code d'analyse les traite comme du texte
---              catégoriel (comparaisons à 'NA', 'Positif'/'Négatif', etc.) — corrigé en VARCHAR
---   - epr_etiologie passée en table répétée (1-N) avec contrainte d'unicité sur
---              l'étiologie principale, conformément à la Correction v3 / Priorité 2
---   - Colonnes générées (STORED) : delai_diagnostic_mois, frequence_normalisee_mois
---   - Ajout de la vue v_epr_nb_ae et du schéma analytics (4 vues matérialisées),
---              tous deux réellement utilisés par test_analyse_statistique/ et analysis-service/
---   - CONSERVÉ (non documenté dans le .md, mais activement utilisé dans le code) :
---              reference_groupe_efficacite (avec classe_par / date_classement, cf.
---              test7_sep.py) et sep_traitement_fond restent tels quels ; à ajouter
---              au .md séparément si vous voulez que la convention reste la source
---              de vérité unique.
--- ============================================================================
+
 
 -- Table pivot commune aux deux registres (alimentée par la fenêtre 3)
 CREATE TABLE IF NOT EXISTS patients (
@@ -171,7 +141,8 @@ CREATE TABLE IF NOT EXISTS sep_suivi (
     score_edss_dernier                 NUMERIC,      -- 0 à 10
     impact_scolaire_cognitif             BOOLEAN,
     impact_precision                       TEXT,
-    score_cognitif                           NUMERIC   -- si disponible
+    score_cognitif                           NUMERIC,  -- si disponible
+    score_cognitif_non_applicable              BOOLEAN NOT NULL DEFAULT FALSE  -- satellite NA (Priorité 5) : TRUE si non testable selon l'âge (cf. base_postgres.md l.41)
 );
 
 -- Table de référence utilisée par les analyses d'efficacité de traitement.

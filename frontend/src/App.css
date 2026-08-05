@@ -1,47 +1,64 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* ---------- Palette teal (inspirée de l'espace clinicien) ---------- */
-  --ink: #20343A;
-  --teal: #1E7F8C;
-  --teal-deep: #175F69;
-  --teal-tint: #DFF1F3;
-  --highlight: #63C9D6;
-  --highlight-tint: #E3F8FA;
+  /* ---------- Palette Moderne Neuro-Pédiatrie ---------- */
+  /* Cyan/Teal primaire - couleur de confiance clinique moderne */
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --teal: #0891b2;
+  --teal-dark: #0e7490;
+  --teal-light: #06b6d4;
+  --teal-lighter: #cffafe;
 
-  /* --primary reste la variable utilisée partout dans les composants :
-     on la fait pointer sur la palette teal pour propager la nouvelle
-     identité visuelle sans devoir toucher chaque page. */
+  /* Variables principales pour cohérence globale */
   --primary: var(--teal);
-  --primary-deep: var(--teal-deep);
-  --primary-tint: var(--teal-tint);
-  --primary-soft: var(--highlight-tint);
-  --accent: var(--teal-deep);
-  --accent-tint: var(--teal-tint);
+  --primary-deep: var(--teal-dark);
+  --primary-tint: var(--teal-lighter);
+  --primary-soft: #ecf9fd;
+  --accent: var(--teal-dark);
+  --accent-tint: var(--teal-lighter);
 
-  --paper: #EAF7FB;
-  --card: #FFFFFF;
-  --slate: #55707A;
-  --slate-soft: #8CA6AD;
-  --line: #CFE7EC;
+  /* Palette secondaire - nuances de gris modernes */
+  --paper: #f0f9ff;
+  --card: #ffffff;
+  --surface: #f8fafc;
+  --slate: #64748b;
+  --slate-soft: #94a3b8;
+  --slate-lighter: #e2e8f0;
+  --line: #cbd5e1;
 
-  --amber: #C98A2C;
-  --amber-tint: #FBF0DD;
-  --error: #C1503D;
-  --error-tint: #FBEAE7;
-  --success: #2E8F72;
-  --success-tint: #E4F5EE;
-  --violet: #6B5CA5;
-  --violet-deep: #4E3F82;
-  --violet-tint: #EDEAF7;
-
-  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
-  --font-body: 'IBM Plex Sans', 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  /* États sémantiques (WCAG AA) */
+  --amber: #f59e0b;
+  --amber-tint: #fef3c7;
+  --error: #dc2626;
+  --error-tint: #fee2e2;
+  --success: #059669;
+  --success-tint: #d1fae5;
+  --info: #3b82f6;
+  --info-tint: #dbeafe;
+  --violet: #7c3aed;
+  --violet-tint: #ede9fe;
 
   /* Alias rétro-compatibilité */
   --gold: var(--amber);
   --gold-tint: var(--amber-tint);
+  --highlight: var(--teal-light);
+  --highlight-tint: var(--teal-lighter);
+
+  /* Typographie moderne */
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, Consolas, monospace;
+
+  /* Ombres modernes */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Transitions fluides */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -169,12 +186,18 @@ input, select {
   width: 100%;
   padding: 11px 13px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-family: var(--font-body);
   font-size: 14.5px;
   color: var(--ink);
-  background: #FBFBFD;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--surface);
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+
+input:hover, select:hover {
+  border-color: var(--slate-lighter);
+  background: var(--card);
 }
 
 input:focus-visible, select:focus-visible {
@@ -182,6 +205,12 @@ input:focus-visible, select:focus-visible {
   border-color: var(--primary);
   background: var(--card);
   box-shadow: 0 0 0 3px var(--primary-tint);
+}
+
+input:disabled, select:disabled {
+  background: var(--slate-lighter);
+  color: var(--slate-soft);
+  cursor: not-allowed;
 }
 
 /* Champs de code : lecture façon instrument */
@@ -199,23 +228,33 @@ button {
   background: var(--primary);
   color: #ffffff;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.1px;
+  letter-spacing: 0.3px;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
 }
-button:hover { background: var(--primary-deep); }
-button:active { transform: scale(0.99); }
+button:hover { 
+  background: var(--primary-deep);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+button:active { 
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
 button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--primary-tint), 0 0 0 1px var(--primary);
 }
 button:disabled {
-  background: var(--slate-soft);
+  background: var(--slate-lighter);
+  color: var(--slate-soft);
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 button.secondary {
@@ -300,9 +339,15 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
 .card {
   background: var(--card);
   padding: 22px 24px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.03);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-base);
+}
+
+.card:hover {
+  border-color: var(--slate-lighter);
+  box-shadow: var(--shadow-md);
 }
 
 .card h2 {
@@ -317,25 +362,43 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 24, 39, 0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
   z-index: 100;
+  animation: fadeIn var(--transition-base);
 }
 
 .modal-panel {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: 0 20px 50px rgba(17, 24, 39, 0.22);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   width: 100%;
   max-width: 460px;
   max-height: calc(100svh - 40px);
   overflow-y: auto;
   padding: 24px;
+  animation: slideUp var(--transition-base);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .modal-header {
@@ -378,16 +441,16 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   pointer-events: auto;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   min-width: 300px;
   max-width: 380px;
   background: var(--card);
   border: 1px solid var(--line);
   border-left: 3px solid var(--success);
-  border-radius: 12px;
-  padding: 13px 12px 13px 15px;
-  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.14), 0 2px 8px rgba(17, 24, 39, 0.06);
-  animation: toastSlideIn 0.22s ease-out;
+  border-radius: var(--radius-md);
+  padding: 13px 14px;
+  box-shadow: var(--shadow-lg);
+  animation: toastSlideIn var(--transition-base) ease-out;
 }
 
 .toast-error {

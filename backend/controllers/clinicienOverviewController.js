@@ -65,10 +65,15 @@ async function getClinicienOverview(req, res) {
       `),
 
       // --- Répartition par sexe ---
+      // NOTE (nouveau schéma) : la colonne 'sexe' n'existe plus sur `patients`,
+      // elle vit désormais uniquement dans `sep_identification_clinique`.
+      // Le registre EPR n'a pas d'équivalent -> ces patients tombent dans
+      // 'Non renseigné' via le LEFT JOIN.
       pool.query(`
-        SELECT COALESCE(sexe, 'Non renseigné') AS sexe, COUNT(*)::int AS count
-        FROM patients
-        GROUP BY sexe
+        SELECT COALESCE(ic.sexe, 'Non renseigné') AS sexe, COUNT(*)::int AS count
+        FROM patients p
+        LEFT JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
+        GROUP BY ic.sexe
       `),
 
       // --- Répartition par tranche d'âge ---
@@ -248,9 +253,14 @@ async function getClinicienOverview(req, res) {
       `),
 
       // --- EPR : répartition des étiologies ---
+      // NOTE (nouveau schéma) : epr_etiologie est désormais une table répétée
+      // (1-N par patient), avec une seule ligne etiologie_principale = TRUE
+      // par patient (contrainte uq_etiologie_principale). Sans ce filtre,
+      // un patient ayant plusieurs lignes serait compté plusieurs fois.
       pool.query(`
         SELECT COALESCE(categorie_etiologique, 'Non renseigné') AS categorie, COUNT(*)::int AS count
         FROM epr_etiologie
+        WHERE etiologie_principale = TRUE
         GROUP BY categorie_etiologique
       `),
 
