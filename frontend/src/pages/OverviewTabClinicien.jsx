@@ -19,11 +19,23 @@ const GOUVERNORAT_PALETTE = [
 ];
 
 const STATUT_LABELS = {
-  actif: 'Suivi actif',
-  perdu_de_vue: 'Perdu de vue',
-  termine: 'Terminé',
+  // SEP (sep_suivi.statut_dernier_suivi)
+  'Stable': 'Stable',
+  'Perdu de vue': 'Perdu de vue',
+  'Décédé': 'Décédé',
+  // EPR (epr_suivi.statut_dernier_suivi)
+  'Libre de crises': 'Libre de crises',
+  'Epilepsie active': 'Épilepsie active',
+  'Decede': 'Décédé',
 };
-const STATUT_COLORS = { actif: 'var(--success)', perdu_de_vue: 'var(--error)', termine: 'var(--slate)' };
+const STATUT_COLORS = {
+  'Stable': 'var(--success)',
+  'Libre de crises': 'var(--success)',
+  'Perdu de vue': 'var(--warning, orange)',
+  'Epilepsie active': 'var(--error)',
+  'Decede': 'var(--slate)',
+  'Décédé': 'var(--slate)',
+};
 
 function statutLabel(statut) {
   if (!statut) return 'Non renseigné';

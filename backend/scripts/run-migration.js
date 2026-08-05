@@ -7,12 +7,23 @@
  * quelle instruction plante au lieu d'un vague "erreur de syntaxe sur ou
  * près de CREATE" qui ne précise pas laquelle des ~30 CREATE TABLE est en cause.
  *
+ * Rechiffrement automatique de coordonnee_patient :
+ * dans le fonctionnement normal de l'app, l'ajout d'un patient passe par
+ * coordonneePatientController.js, qui appelle déjà encrypt() avant l'INSERT —
+ * les données réelles ne sont donc JAMAIS écrites en clair. Le seul cas où du
+ * texte en clair peut atterrir en base, c'est quand un fichier de seed/test
+ * (ex. insert_epr_data.sql, insert_sep_data.sql) fait un INSERT SQL direct en
+ * contournant ce contrôleur. C'est uniquement pour ce cas que ce script
+ * vérifie et rechiffre automatiquement coordonnee_patient après coup —
+ * ça ne change rien au comportement de l'application elle-même.
+ *
  * Usage :
  *   node backend/scripts/run-migration.js backend/config/schema_registre.sql
  */
 const fs = require('fs');
 const path = require('path');
 const pool = require('../config/db');
+const { encryptPlaintextCoordonnees } = require('../utils/encryptPlaintextCoordonnees');
 
 /**
  * Découpe le fichier en instructions individuelles, en respectant :
@@ -163,6 +174,20 @@ async function main() {
 
     await client.query('COMMIT');
     console.log(`\n✅ Migration appliquée avec succès (${statements.length} instructions).`);
+
+    // Rechiffrement automatique : si ce fichier a inséré/modifié des lignes
+    // dans coordonnee_patient (ex. via un INSERT SQL direct dans un seed),
+    // toute donnée encore en clair est détectée et rechiffrée ici — plus
+    // besoin de lancer scripts/fix-encrypt-coordonnees.js à la main.
+    if (/coordonnee_patient/i.test(sql)) {
+      console.log('\n🔍 coordonnee_patient concernée par ce fichier — vérification du chiffrement...');
+      const { scanned, fixed } = await encryptPlaintextCoordonnees(pool);
+      if (fixed === 0) {
+        console.log(`   Rien à faire (${scanned} fiche(s) déjà chiffrée(s)).`);
+      } else {
+        console.log(`   ✅ ${fixed}/${scanned} fiche(s) rechiffrée(s) automatiquement.`);
+      }
+    }
   } finally {
     client.release();
     await pool.end();
