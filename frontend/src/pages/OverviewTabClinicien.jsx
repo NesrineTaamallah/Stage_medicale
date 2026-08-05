@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import client from '../api/client';
 import { IconUsers, IconChart, IconWave, IconAlert } from '../components/Icons';
+import {
+  GOUVERNORAT_PALETTE, normalizeKey, pctLabel, monthLabel, dayLabel,
+  SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar,
+} from '../components/DashboardWidgets';
 
 const REGISTRE_COLORS = { sep: '#175F69', epr: '#C98A2C' };
 
@@ -9,29 +13,10 @@ const ACTIVITY_SERIES = [
   { key: 'analyses_lancees', label: 'Analyses lancées', color: '#C98A2C' },
 ];
 
-function dayLabel(dayStr) {
-  return new Date(dayStr + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
-}
-
-const GOUVERNORAT_PALETTE = [
-  '#175F69', '#C98A2C', '#6B5CA5', '#C1508A', '#0EA5E9',
-  '#059669', '#DC2626', '#818CF8', '#0D9488', '#B45309',
-];
-
 // NOTE (correction) : les clés étaient comparées telles quelles ('Epilepsie
 // active' sans accent) alors que schema_registre.sql documente la valeur
-// réellement saisie avec accent ('Épilepsie active'). Résultat : le statut
-// EPR "actif" ne matchait jamais aucune clé et retombait silencieusement
-// sur les couleurs/labels par défaut. On normalise désormais la clé de
-// recherche (accents + casse) au lieu de dupliquer chaque variante.
-function normalizeKey(str) {
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-}
-
+// réellement saisie avec accent ('Épilepsie active'). On normalise désormais
+// la clé de recherche (accents + casse) au lieu de dupliquer chaque variante.
 const STATUT_LABELS = {
   // SEP (sep_suivi.statut_dernier_suivi)
   'stable': 'Stable',
@@ -57,164 +42,7 @@ function statutColor(statut) {
   return STATUT_COLORS[normalizeKey(statut)] || 'var(--line)';
 }
 
-// NOTE (correction) : un dénominateur nul (aucun dossier renseigné) ne veut
-// pas dire "0 %" — cela veut dire "non calculable". L'ancienne version
-// renvoyait 0, ce qui affichait un taux clinique faux (ex. "0 % de bandes
-// oligoclonales positives" au lieu de "donnée non disponible"). pct() renvoie
-// désormais null dans ce cas ; pctLabel() formate l'affichage en conséquence.
-function pct(part, total) {
-  if (!total) return null;
-  return Math.round((part / total) * 100);
-}
-
-function pctLabel(part, total) {
-  const value = pct(part, total);
-  if (value === null) return 'Non calculable';
-  return `${value}% (${part}/${total})`;
-}
-
-function monthLabel(monthStr) {
-  // monthStr = 'YYYY-MM'
-  const d = new Date(`${monthStr}-01T00:00:00`);
-  const str = d.toLocaleDateString('fr-FR', { month: 'short' });
-  return str.replace('.', '');
-}
-
 /* ------------------------------------------------------------------ */
-
-function SectionHeading({ Icon, title, subtitle }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 -2px' }}>
-      <div style={{
-        width: 26, height: 26, borderRadius: 8, background: 'var(--teal-tint)',
-        color: 'var(--teal-deep)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      }}>
-        <Icon size={14} />
-      </div>
-      <div>
-        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: -0.1 }}>{title}</p>
-        {subtitle && <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>{subtitle}</p>}
-      </div>
-    </div>
-  );
-}
-
-function CardTitle({ children, hint }) {
-  return (
-    <div style={{ marginBottom: hint ? 2 : 0 }}>
-      <h2 style={{ margin: 0 }}>{children}</h2>
-      {hint && <p className="hint" style={{ marginTop: 4 }}>{hint}</p>}
-    </div>
-  );
-}
-
-function HeroStatCard({ label, value, hint }) {
-  return (
-    <div className="card" style={{ flex: '1 1 200px', minWidth: 180 }}>
-      <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
-      <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
-        {value}
-      </p>
-      {hint && <p className="hint" style={{ marginTop: 6 }}>{hint}</p>}
-    </div>
-  );
-}
-
-/** Camembert générique (réutilise le tracé en arc utilisé côté admin). */
-function Donut({ segments, size = 132, thickness = 20 }) {
-  const total = segments.reduce((s, x) => s + x.value, 0);
-  const r = (size - thickness) / 2;
-  const c = size / 2;
-  const circumference = 2 * Math.PI * r;
-  let offset = 0;
-
-  if (total === 0) {
-    return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--line)" strokeWidth={thickness} />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={c} cy={c} r={r} fill="none" stroke="var(--line)" strokeWidth={thickness} />
-      {segments.map((seg) => {
-        const frac = seg.value / total;
-        const dash = frac * circumference;
-        const el = (
-          <circle
-            key={seg.label}
-            cx={c} cy={c} r={r}
-            fill="none" stroke={seg.color} strokeWidth={thickness}
-            strokeDasharray={`${dash} ${circumference - dash}`}
-            strokeDashoffset={-offset}
-            style={{ transition: 'stroke-dasharray 0.6s ease' }}
-          />
-        );
-        offset += dash;
-        return el;
-      })}
-    </svg>
-  );
-}
-
-function DonutCard({ title, hint, segments, centerLabel, centerValue }) {
-  const total = segments.reduce((s, x) => s + x.value, 0);
-  return (
-    <div className="card" style={{ flex: '1 1 320px' }}>
-      <CardTitle hint={hint}>{title}</CardTitle>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginTop: 16 }}>
-        <div style={{ position: 'relative', width: 132, height: 132, flexShrink: 0 }}>
-          <Donut segments={segments} />
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>
-              {centerValue ?? total}
-            </span>
-            <span style={{ fontSize: 10.5, color: 'var(--slate)' }}>{centerLabel ?? 'total'}</span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: 1, maxHeight: 160, overflowY: 'auto' }}>
-          {segments.map((seg) => (
-            <div key={seg.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
-              <span style={{ color: 'var(--ink)', flex: 1 }}>{seg.label}</span>
-              <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{seg.value}</span>
-              <span style={{ color: 'var(--slate)', fontSize: 11.5, minWidth: 34, textAlign: 'right' }}>
-                {total > 0 ? Math.round((seg.value / total) * 100) : 0}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Barre horizontale empilée — statuts de suivi mutuellement exclusifs. */
-function StackedBar({ segments }) {
-  const total = segments.reduce((s, x) => s + x.value, 0);
-  return (
-    <div>
-      <div style={{ display: 'flex', width: '100%', height: 22, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: 'var(--paper)' }}>
-        {total === 0
-          ? <div style={{ flex: 1 }} />
-          : segments.filter((s) => s.value > 0).map((seg) => (
-            <div key={seg.label} title={`${seg.label}: ${seg.value}`} style={{ width: `${(seg.value / total) * 100}%`, background: seg.color, transition: 'width 0.6s ease' }} />
-          ))}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 18px', marginTop: 12 }}>
-        {segments.map((seg) => (
-          <div key={seg.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
-            <span style={{ color: 'var(--slate)' }}>{seg.label}</span>
-            <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{seg.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /** Courbe des inclusions par mois, deux séries (SEP / EPR) superposées. */
 function InclusionsLineChart({ months, width = 640, height = 220 }) {
@@ -395,6 +223,11 @@ function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * Fenêtre "Vue d'Ensemble" recentrée : uniquement Vue globale, Comparatif
+ * SEP/EPR, Alertes de suivi et Activité récente. Le détail clinique propre
+ * à chaque registre vit désormais dans RegistreSepTab / RegistreEprTab.
+ */
 export default function OverviewTabClinicien() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -416,18 +249,8 @@ export default function OverviewTabClinicien() {
 
   const t = data.totals;
 
-  const gouvernoratSegments = data.gouvernoratRepartition.map((g, i) => ({
-    label: g.gouvernorat,
-    value: g.count,
-    color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length],
-  }));
-
   const statutSepSegments = data.comparatifSuivi.sep.map((s) => ({ label: statutLabel(s.statut), value: s.count, color: statutColor(s.statut) }));
   const statutEprSegments = data.comparatifSuivi.epr.map((s) => ({ label: statutLabel(s.statut), value: s.count, color: statutColor(s.statut) }));
-
-  const irm = data.sep.activiteIrm;
-  const lcr = data.sep.bandesOligoclonales;
-  const cons = data.sep.consanguinite;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -492,153 +315,7 @@ export default function OverviewTabClinicien() {
       </div>
 
       {/* =====================================================================
-          3. REGISTRE SEP — tout le détail clinique propre à cette pathologie
-      ===================================================================== */}
-      <SectionHeading Icon={IconWave} title="Registre SEP" subtitle="Sclérose en plaques pédiatrique" />
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <HeroStatCard label="Délai diagnostic moyen" value={data.sep.delaiDiagnosticMoyen != null ? `${data.sep.delaiDiagnosticMoyen} mois` : '—'} />
-        <HeroStatCard label="Score EDSS moyen (dernière visite)" value={data.sep.edssMoyen != null ? data.sep.edssMoyen : '—'} hint={`Sur ${data.sep.edssNbPatients} patient(s)`} />
-        <HeroStatCard label="Poussées (90 derniers jours)" value={data.sep.pousseesRecentes90j} />
-        <HeroStatCard label="Sous traitement de fond actif" value={data.sep.traitementsActifs} />
-      </div>
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <HeroStatCard
-          label="Dernières IRM avec nouvelles lésions"
-          value={pctLabel(irm?.avec_nouvelles_lesions, irm?.total)}
-        />
-        <HeroStatCard
-          label="Bandes oligoclonales positives (LCR)"
-          value={pctLabel(lcr?.positifs, lcr?.total)}
-        />
-        <HeroStatCard
-          label="Consanguinité parentale"
-          value={pctLabel(cons?.positifs, cons?.total)}
-        />
-        <HeroStatCard
-          label="Délai moyen avant forme secondairement progressive"
-          value={data.sep.delaiConversionSpMois != null ? `${data.sep.delaiConversionSpMois} mois` : '—'}
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle>Répartition des formes évolutives</CardTitle>
-          <div style={{ marginTop: 16 }}>
-            <StackedBar segments={data.sep.formesEvolutives.map((f, i) => ({ label: f.forme, value: f.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
-          </div>
-        </div>
-        <DonutCard
-          title="Répartition par gouvernorat"
-          hint="Registre SEP uniquement — seul registre où ce champ est saisi actuellement."
-          segments={gouvernoratSegments}
-          centerLabel="patients SEP"
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle hint="Type du 1er événement clinique, et part avec récupération complète.">Présentation initiale</CardTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
-            {data.sep.presentationInitiale.map((p) => (
-              <div key={p.type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                <span style={{ color: 'var(--ink)' }}>{p.type}</span>
-                <span style={{ color: 'var(--slate)' }}>{p.count} patient(s) · {pctLabel(p.recuperation_complete, p.count)} récup. complète</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle>Lignes thérapeutiques en cours</CardTitle>
-          <div style={{ marginTop: 16 }}>
-            <StackedBar segments={data.sep.lignesTherapeutiques.map((l, i) => ({ label: `Ligne ${l.ligne_therapeutique}`, value: l.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
-          </div>
-          {data.sep.motifsSwitch.length > 0 && (
-            <>
-              <p className="hint" style={{ marginTop: 16, marginBottom: 6 }}>Motifs de switch les plus fréquents :</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {data.sep.motifsSwitch.map((m) => (
-                  <div key={m.motif_switch} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
-                    <span style={{ color: 'var(--ink)' }}>{m.motif_switch}</span>
-                    <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{m.count}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* =====================================================================
-          4. REGISTRE EPR — tout le détail clinique propre à cette pathologie
-      ===================================================================== */}
-      <SectionHeading Icon={IconWave} title="Registre EPR" subtitle="Épilepsie résistante pédiatrique" />
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <HeroStatCard
-          label="Pharmacorésistance confirmée"
-          value={pctLabel(data.epr.pharmacoresistance?.confirmes, data.epr.pharmacoresistance?.total)}
-        />
-        <HeroStatCard label="Fréquence de crises moyenne" value={data.epr.frequenceCrisesMoyenne != null ? `${data.epr.frequenceCrisesMoyenne} /mois` : '—'} />
-        <HeroStatCard label="Âge moyen au début des crises" value={data.epr.ageDebutCrisesMoyenMois != null ? `${data.epr.ageDebutCrisesMoyenMois} mois` : '—'} />
-        <HeroStatCard label="Âge moyen au diagnostic pharmacorésistance" value={data.epr.ageDiagnosticPharmacoresistanceMoyenMois != null ? `${data.epr.ageDiagnosticPharmacoresistanceMoyenMois} mois` : '—'} />
-        <HeroStatCard label="Durée de suivi moyenne" value={data.epr.dureeSuiviMoyenneMois != null ? `${data.epr.dureeSuiviMoyenneMois} mois` : '—'} />
-      </div>
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle>Répartition des étiologies</CardTitle>
-          <div style={{ marginTop: 16 }}>
-            <StackedBar segments={data.epr.etiologies.map((e, i) => ({ label: e.categorie, value: e.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
-          </div>
-        </div>
-        <DonutCard
-          title="Types de crise (ILAE 2017)"
-          segments={data.epr.typesCrise.map((tc, i) => ({ label: tc.type, value: tc.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
-          centerLabel="épisodes"
-        />
-      </div>
-
-      {/* ---------- Prise en charge globale EPR (nouveau) ----------
-          Jusqu'ici le registre EPR ne montrait que l'axe neurologique
-          (crises, EEG, étiologies). Ces indicateurs exploitent des tables
-          déjà saisies (régression développementale, bilan pré-chirurgical,
-          bilan neuropsy) mais jamais remontées côté clinicien, alors
-          qu'elles sont centrales dans le suivi pédiatrique global d'une
-          épilepsie pharmacorésistante. */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <HeroStatCard
-          label="Régression développementale rapportée"
-          value={pctLabel(data.epr.regressionDeveloppementale?.positifs, data.epr.regressionDeveloppementale?.total)}
-          hint="Signal d'alerte pédiatrique (encéphalopathie épileptique / étiologie génétique)."
-        />
-        <HeroStatCard
-          label="Éligibles à la chirurgie (parmi évalués)"
-          value={pctLabel(data.epr.eligibiliteChirurgicale?.eligibles, data.epr.eligibiliteChirurgicale?.total_evalues)}
-          hint="Sur les patients ayant eu un bilan pré-chirurgical."
-        />
-        <HeroStatCard
-          label="TSA / TDAH associés (parmi évalués)"
-          value={pctLabel(data.epr.comorbiditesNeuropsy?.troubles_psy_associes, data.epr.comorbiditesNeuropsy?.total_evalues)}
-        />
-        <HeroStatCard
-          label="Troubles du sommeil (parmi évalués)"
-          value={pctLabel(data.epr.comorbiditesNeuropsy?.troubles_sommeil, data.epr.comorbiditesNeuropsy?.total_evalues)}
-        />
-      </div>
-
-      {data.epr.evolutionPostChirurgie.length > 0 && (
-        <div className="card">
-          <CardTitle hint="Patients opérés uniquement — devenir rapporté à la dernière évaluation.">Devenir post-chirurgical</CardTitle>
-          <div style={{ marginTop: 16 }}>
-            <StackedBar segments={data.epr.evolutionPostChirurgie.map((e, i) => ({ label: e.evolution, value: e.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          5. ALERTES — patients à revoir en priorité
+          3. ALERTES — patients à revoir en priorité
       ===================================================================== */}
       <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Patients à revoir en priorité" />
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -667,7 +344,9 @@ export default function OverviewTabClinicien() {
         />
       </div>
 
-      {/* ---------- Activité récente du clinicien ---------- */}
+      {/* =====================================================================
+          4. ACTIVITÉ RÉCENTE DU CLINICIEN
+      ===================================================================== */}
       <SectionHeading Icon={IconWave} title="Votre activité récente" subtitle="Vos actions des 7 derniers jours, jour par jour" />
       <div className="card">
         <CardTitle>Historique de vos actions (7 derniers jours)</CardTitle>
