@@ -31,7 +31,6 @@ export default function RegistreSepTab() {
 
   const irm = data.activiteIrm;
   const lcr = data.bandesOligoclonales;
-  const cons = data.consanguinite;
 
   const gouvernoratSegments = data.gouvernoratRepartition.map((g, i) => ({
     label: g.gouvernorat,
@@ -45,7 +44,6 @@ export default function RegistreSepTab() {
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard label="Délai diagnostic moyen" value={data.delaiDiagnosticMoyen != null ? `${data.delaiDiagnosticMoyen} mois` : '—'} />
-        <HeroStatCard label="Score EDSS moyen (dernière visite)" value={data.edssMoyen != null ? data.edssMoyen : '—'} hint={`Sur ${data.edssNbPatients} patient(s)`} />
         <HeroStatCard label="Poussées (90 derniers jours)" value={data.pousseesRecentes90j} />
         <HeroStatCard label="Sous traitement de fond actif" value={data.traitementsActifs} />
       </div>
@@ -58,10 +56,6 @@ export default function RegistreSepTab() {
         <HeroStatCard
           label="Bandes oligoclonales positives (LCR)"
           value={pctLabel(lcr?.positifs, lcr?.total)}
-        />
-        <HeroStatCard
-          label="Consanguinité parentale"
-          value={pctLabel(cons?.positifs, cons?.total)}
         />
         <HeroStatCard
           label="Délai moyen avant forme secondairement progressive"
@@ -85,6 +79,15 @@ export default function RegistreSepTab() {
       </div>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <DonutCard
+          title="Sérologie différentielle (dernier prélèvement)"
+          hint="NMO-IgG/MOG, AQP4 vs négatif — distinction déterminante SEP vs NMOSD/MOGAD (prise en charge opposée selon sous-type)."
+          segments={(data.serologieDifferentielle || []).map((s, i) => ({ label: s.type, value: s.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
+          centerLabel="patients testés"
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <div className="card" style={{ flex: '1 1 400px' }}>
           <CardTitle hint="Moyenne annuelle du Taux Annualisé de Poussées sur la cohorte SEP.">Tendance du TAP (poussées/an)</CardTitle>
           <div style={{ marginTop: 14 }}>
@@ -95,7 +98,9 @@ export default function RegistreSepTab() {
           </div>
         </div>
         <div className="card" style={{ flex: '1 1 400px' }}>
-          <CardTitle hint="Score EDSS moyen de la cohorte, par trimestre (24 derniers mois).">Tendance EDSS (cohorte)</CardTitle>
+          <CardTitle hint={`Score EDSS moyen de la cohorte, par trimestre (24 derniers mois). Dernière valeur : ${data.edssMoyen != null ? `${data.edssMoyen} (sur ${data.edssNbPatients} patient(s))` : '—'}.`}>
+            Tendance EDSS (cohorte) — dernier : {data.edssMoyen != null ? data.edssMoyen : '—'}
+          </CardTitle>
           <div style={{ marginTop: 14 }}>
             <MultiLineChart
               data={(data.edssTendance || []).map((e) => ({ label: e.periode, edss: e.edss_moyen != null ? Number(e.edss_moyen) : null, n: e.nb_patients }))}

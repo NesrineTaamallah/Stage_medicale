@@ -1,5 +1,40 @@
 const pool = require('../config/db');
 const { normalizedSql } = require('../utils/clinicienSql');
+const { decrypt } = require('../utils/cryptoUtils');
+const { logAccess } = require('../utils/accessLog');
+
+/**
+ * Parse une date_naissance déchiffrée, saisie soit en 'YYYY-MM-DD' soit en
+ * 'DD/MM/YYYY' selon la source d'import (cf. insert_sep_data.sql vs
+ * coordonnee_patient_seed.sql) — renvoie null si non exploitable.
+ */
+function parseDateNaissance(raw) {
+  if (!raw) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+  const fr = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  if (fr) return new Date(Date.UTC(+fr[3], +fr[2] - 1, +fr[1]));
+  return null;
+}
+
+function ageEnAnnees(dateNaissance, reference = new Date()) {
+  let age = reference.getUTCFullYear() - dateNaissance.getUTCFullYear();
+  const moisJourDepasses =
+    reference.getUTCMonth() > dateNaissance.getUTCMonth() ||
+    (reference.getUTCMonth() === dateNaissance.getUTCMonth() &&
+      reference.getUTCDate() >= dateNaissance.getUTCDate());
+  if (!moisJourDepasses) age -= 1;
+  return age;
+}
+
+function trancheDe(age) {
+  if (age === null || age === undefined) return 'Non renseigné';
+  if (age < 2) return '0-2 ans';
+  if (age < 6) return '2-6 ans';
+  if (age < 12) return '6-12 ans';
+  if (age < 18) return '12-18 ans';
+  return '18 ans et +';
+}
 
 /**
  * GET /api/clinicien/overview
@@ -16,7 +51,6 @@ async function getClinicienOverview(req, res) {
     const [
       totals,
       sexeRepartition,
-      ageRepartition,
       fichesIdentite,
       inclusionsByMonth,
       statutSuiviSep,
@@ -57,33 +91,6 @@ async function getClinicienOverview(req, res) {
         FROM patients p
         LEFT JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
         GROUP BY 1
-      `),
-
-      // --- Répartition par tranche d'âge ---
-      // CORRECTION : 'age' est saisi une seule fois à l'inclusion et ne bouge
-      // plus jamais (bug identifié : un enfant inclus à 5 ans reste affiché
-      // en "2-6 ans" toute sa vie dans le registre). Le schéma ne contient
-      // pas de date de naissance, donc on approxime l'âge actuel en ajoutant
-      // le temps écoulé depuis l'inclusion — approximation raisonnable et
-      // strictement meilleure que l'âge figé, sans toucher au schéma.
-      pool.query(`
-        SELECT
-          CASE
-            WHEN age IS NULL THEN 'Non renseigné'
-            WHEN age_estime < 2 THEN '0-2 ans'
-            WHEN age_estime < 6 THEN '2-6 ans'
-            WHEN age_estime < 12 THEN '6-12 ans'
-            WHEN age_estime < 18 THEN '12-18 ans'
-            ELSE '18 ans et +'
-          END AS tranche,
-          COUNT(*)::int AS count
-        FROM (
-          SELECT
-            age,
-            age + EXTRACT(YEAR FROM age(now(), COALESCE(date_inclusion, now()))) AS age_estime
-          FROM patients
-        ) e
-        GROUP BY tranche
       `),
 
       // --- Fiches identité (coordonnee_patient) manquantes ---
@@ -253,11 +260,54 @@ async function getClinicienOverview(req, res) {
       ),
     ]);
 
+    // --- Répartition par tranche d'âge ---
+    // Âge exact calculé à partir de date_naissance (coordonnee_patient),
+    // déchiffrée côté Node — ce champ est chiffré en base et ne peut pas
+    // être exploité dans une clause SQL. Repli sur 'age' brut (patients,
+    // saisi à l'inclusion, non chiffré) pour les patients sans fiche
+    // coordonnee_patient ou avec une date_naissance illisible.
+    // Accès en masse à des données identifiantes -> journalisé comme un
+    // reveal, au même titre que /api/coordonnees/reveal.
+    const ageRows = await pool.query(`
+      SELECT p.pseudonyme, p.age, cp.date_naissance
+      FROM patients p
+      LEFT JOIN coordonnee_patient cp ON cp.pseudonyme = p.pseudonyme
+    `);
+
+    const tranchesCount = {};
+    let dateNaissanceUtilisees = 0;
+
+    for (const row of ageRows.rows) {
+      let age = null;
+      const dateNaissance = row.date_naissance ? parseDateNaissance(decrypt(row.date_naissance)) : null;
+
+      if (dateNaissance) {
+        age = ageEnAnnees(dateNaissance);
+        dateNaissanceUtilisees += 1;
+      } else if (row.age !== null && row.age !== undefined) {
+        age = row.age; // repli : âge saisi à l'inclusion
+      }
+
+      const tranche = trancheDe(age);
+      tranchesCount[tranche] = (tranchesCount[tranche] || 0) + 1;
+    }
+
+    const ageRepartitionRows = Object.entries(tranchesCount).map(([tranche, count]) => ({ tranche, count }));
+
+    if (dateNaissanceUtilisees > 0) {
+      await logAccess({
+        userId: req.user.sub,
+        action: 'coordonnee_patient_reveal_bulk_age',
+        success: true,
+        req,
+      });
+    }
+
     res.json({
       totals: totals.rows[0],
       sexeRepartition: sexeRepartition.rows,
-      ageRepartition: ageRepartition.rows,
-      ageEstimeApproximatif: true, // schéma sans date de naissance : âge dérivé de l'âge à l'inclusion + temps écoulé
+      ageRepartition: ageRepartitionRows,
+      ageEstimeApproximatif: false, // âge exact depuis date_naissance quand disponible, sinon repli sur age brut
       fichesIdentite: fichesIdentite.rows[0],
       inclusionsByMonth: inclusionsByMonth.rows,
       comparatifSuivi: {

@@ -274,6 +274,7 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
         />
         <DonutCard
           title="Répartition par tranche d'âge"
+          hint={data.ageEstimeApproximatif ? "Âge estimé (âge à l'inclusion + temps écoulé) — le schéma ne contient pas de date de naissance, valeur approximative." : undefined}
           segments={data.ageRepartition.map((a, i) => ({ label: a.tranche, value: a.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
           centerLabel="patients"
         />
@@ -346,6 +347,12 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
           value={data.alertes.bilanMultidisciplinaireAbsent}
           hint="Ni neuropsy, ni orthophonie, ni ergothérapie renseignés."
           onClick={() => onAlerteClick?.('bilanMultidisciplinaireAbsent')}
+        />
+        <HeroStatCard
+          label="Transition ado → adulte (16-18 ans)"
+          value={data.alertes.transitionAdulte}
+          hint={data.alertes.transitionAdulte > 0 ? "Patients en suivi actif à préparer au relais médecine adulte." : undefined}
+          onClick={() => onAlerteClick?.('transitionAdulte')}
         />
       </div>
 

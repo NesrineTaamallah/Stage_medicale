@@ -26,6 +26,7 @@ async function getClinicienRegistreEpr(req, res) {
       eprHistoriqueAe,
       eprEtiologieDevenir,
       eprGenetiqueAcmg,
+      eprTypesAnomalieEeg,
     ] = await Promise.all([
       // --- EPR : % de pharmacorésistance confirmée ---
       pool.query(`
@@ -189,6 +190,23 @@ async function getClinicienRegistreEpr(req, res) {
         GROUP BY classification_acmg
         ORDER BY count DESC
       `),
+
+      // --- EPR : types d'anomalies EEG intercritiques (dernier EEG par patient) —
+      //     epr_eeg.type_anomalie n'était exploité qu'au niveau binaire
+      //     Normal/Anormal ; le détail (pointes, pointes-ondes, ralentissement
+      //     focal...) est directement utile à la classification syndromique. ---
+      pool.query(`
+        SELECT COALESCE(NULLIF(TRIM(type_anomalie), ''), 'Non précisé') AS type, COUNT(*)::int AS count
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, type_anomalie
+          FROM epr_eeg
+          WHERE eeg_intercritique IS NOT NULL AND LOWER(TRIM(eeg_intercritique)) = 'anormal'
+          ORDER BY pseudonyme, date_eeg DESC
+        ) dernier
+        GROUP BY type
+        ORDER BY count DESC
+        LIMIT 8
+      `),
     ]);
 
     res.json({
@@ -207,6 +225,7 @@ async function getClinicienRegistreEpr(req, res) {
       historiqueAe: eprHistoriqueAe.rows,
       etiologieDevenir: eprEtiologieDevenir.rows,
       genetiqueAcmg: eprGenetiqueAcmg.rows,
+      typesAnomalieEeg: eprTypesAnomalieEeg.rows,
     });
   } catch (err) {
     console.error('Erreur getClinicienRegistreEpr :', err);

@@ -27,6 +27,7 @@ async function getClinicienRegistreSep(req, res) {
       sepEdssTendance,
       sepTapAnnuel,
       sepImpactScolaireCognitif,
+      sepSerologieDifferentielle,
     ] = await Promise.all([
       // --- Répartition par gouvernorat (registre SEP uniquement — seul registre
       //     qui capture ce champ actuellement) ---
@@ -204,6 +205,23 @@ async function getClinicienRegistreSep(req, res) {
           COUNT(*) FILTER (WHERE score_cognitif_non_applicable = TRUE)::int AS score_cognitif_non_applicable
         FROM sep_suivi
       `),
+
+      // --- SEP : sérologie différentielle (dernier prélèvement par patient) —
+      //     sep_biologie_lcr.anticorps_type n'apparaissait jusqu'ici nulle part
+      //     côté dashboard, alors que la distinction NMO-IgG/MOG / AQP4 vs
+      //     négatif est déterminante pour le diagnostic différentiel
+      //     SEP pédiatrique vs NMOSD/MOGAD (prise en charge thérapeutique
+      //     opposée selon le sous-type). ---
+      pool.query(`
+        SELECT COALESCE(NULLIF(TRIM(anticorps_type), ''), 'Non recherché / négatif') AS type, COUNT(*)::int AS count
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, anticorps_type
+          FROM sep_biologie_lcr
+          ORDER BY pseudonyme, date_prelevement DESC
+        ) dernier
+        GROUP BY type
+        ORDER BY count DESC
+      `),
     ]);
 
     res.json({
@@ -224,6 +242,7 @@ async function getClinicienRegistreSep(req, res) {
       edssTendance: sepEdssTendance.rows,
       tapAnnuel: sepTapAnnuel.rows,
       impactScolaireCognitif: sepImpactScolaireCognitif.rows[0],
+      serologieDifferentielle: sepSerologieDifferentielle.rows,
     });
   } catch (err) {
     console.error('Erreur getClinicienRegistreSep :', err);

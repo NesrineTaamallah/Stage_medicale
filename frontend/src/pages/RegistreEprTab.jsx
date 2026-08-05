@@ -86,6 +86,17 @@ export default function RegistreEprTab() {
         />
       </div>
 
+      {(data.typesAnomalieEeg || []).length > 0 && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <DonutCard
+            title="Types d'anomalies EEG intercritiques (dernier EEG)"
+            hint="Détail au-delà du simple Normal/Anormal — utile à la classification syndromique."
+            segments={data.typesAnomalieEeg.map((a, i) => ({ label: a.type, value: a.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
+            centerLabel="patients"
+          />
+        </div>
+      )}
+
       {/* ---------- Prise en charge globale EPR ----------
           Exploite des tables déjà saisies (régression développementale,
           bilan pré-chirurgical, bilan neuropsy) mais jamais remontées côté
