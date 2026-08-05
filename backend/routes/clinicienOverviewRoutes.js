@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { getClinicienOverview } = require('../controllers/clinicienOverviewController');
 const { getClinicienRegistreSep } = require('../controllers/clinicienSepController');
 const { getClinicienRegistreEpr } = require('../controllers/clinicienEprController');
+const { getListePatientsAlerte } = require('../controllers/clinicienEntitesController');
 
 router.use(requireAuth, requireRole('clinicien'));
 
@@ -13,6 +14,8 @@ router.get('/overview', getClinicienOverview);
 router.get('/registre-sep', getClinicienRegistreSep);
 // Fenêtre dédiée au registre EPR (détail clinique propre à l'épilepsie pharmacorésistante)
 router.get('/registre-epr', getClinicienRegistreEpr);
+// Fenêtre "Entités Médicales" : liste des patients derrière une carte d'alerte
+router.get('/entites/alerte/:type', getListePatientsAlerte);
 
 module.exports = router;
 

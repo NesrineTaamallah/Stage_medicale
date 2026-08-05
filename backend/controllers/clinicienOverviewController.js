@@ -26,6 +26,7 @@ async function getClinicienOverview(req, res) {
       alertesTraitementsEcheance,
       alertesEegAncien,
       alertesBilanMultidisciplinaireAbsent,
+      alertesTransitionAdulte,
       recentActivity,
     ] = await Promise.all([
       // --- KPI globaux ---
@@ -39,26 +40,49 @@ async function getClinicienOverview(req, res) {
       `),
 
       // --- Répartition par sexe ---
+      // CORRECTION : schema_registre.sql ne documente 'sexe' que côté SEP
+      // (sep_identification_clinique) ; epr_identification_clinique n'a pas
+      // cette colonne. L'ancienne requête noyait donc TOUS les patients EPR
+      // dans "Non renseigné", ce qui rendait le donut trompeur (on ne peut
+      // pas distinguer "EPR sans donnée sexe dans le schéma actuel" de "SEP
+      // avec sexe non saisi"). Sans modifier le schéma, on sépare les deux
+      // cas pour rester honnête vis-à-vis du clinicien.
       pool.query(`
-        SELECT COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné') AS sexe, COUNT(*)::int AS count
+        SELECT
+          CASE
+            WHEN p.registre = 'EPR' THEN 'Non applicable (EPR — champ absent du registre)'
+            ELSE COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné')
+          END AS sexe,
+          COUNT(*)::int AS count
         FROM patients p
         LEFT JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
-        GROUP BY COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné')
+        GROUP BY 1
       `),
 
       // --- Répartition par tranche d'âge ---
+      // CORRECTION : 'age' est saisi une seule fois à l'inclusion et ne bouge
+      // plus jamais (bug identifié : un enfant inclus à 5 ans reste affiché
+      // en "2-6 ans" toute sa vie dans le registre). Le schéma ne contient
+      // pas de date de naissance, donc on approxime l'âge actuel en ajoutant
+      // le temps écoulé depuis l'inclusion — approximation raisonnable et
+      // strictement meilleure que l'âge figé, sans toucher au schéma.
       pool.query(`
         SELECT
           CASE
             WHEN age IS NULL THEN 'Non renseigné'
-            WHEN age < 2 THEN '0-2 ans'
-            WHEN age < 6 THEN '2-6 ans'
-            WHEN age < 12 THEN '6-12 ans'
-            WHEN age < 18 THEN '12-18 ans'
+            WHEN age_estime < 2 THEN '0-2 ans'
+            WHEN age_estime < 6 THEN '2-6 ans'
+            WHEN age_estime < 12 THEN '6-12 ans'
+            WHEN age_estime < 18 THEN '12-18 ans'
             ELSE '18 ans et +'
           END AS tranche,
           COUNT(*)::int AS count
-        FROM patients
+        FROM (
+          SELECT
+            age,
+            age + EXTRACT(YEAR FROM age(now(), COALESCE(date_inclusion, now()))) AS age_estime
+          FROM patients
+        ) e
         GROUP BY tranche
       `),
 
@@ -188,6 +212,26 @@ async function getClinicienOverview(req, res) {
           AND bn.pseudonyme IS NULL AND bo.pseudonyme IS NULL AND be.pseudonyme IS NULL
       `),
 
+      // --- Alerte transversale : transition ado → adulte ---
+      // Enjeu majeur en pédiatrie, absent de l'ancienne vue d'ensemble.
+      // Âge actuel approximé (age à l'inclusion + temps écoulé, cf. supra),
+      // patients encore en suivi actif (ni perdu de vue, ni décédé/résolu).
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT
+            p.pseudonyme,
+            p.age + EXTRACT(YEAR FROM age(now(), COALESCE(p.date_inclusion, now()))) AS age_estime,
+            COALESCE(ss.statut_dernier_suivi, es.statut_dernier_suivi) AS statut
+          FROM patients p
+          LEFT JOIN sep_suivi ss ON ss.pseudonyme = p.pseudonyme
+          LEFT JOIN epr_suivi es ON es.pseudonyme = p.pseudonyme
+          WHERE p.age IS NOT NULL
+        ) e
+        WHERE e.age_estime BETWEEN 16 AND 18
+          AND ${normalizedSql('e.statut')} NOT IN ('perdu de vue', 'decede')
+      `),
+
       // --- Activité récente du clinicien connecté, agrégée par jour ---
       pool.query(
         `SELECT
@@ -213,6 +257,7 @@ async function getClinicienOverview(req, res) {
       totals: totals.rows[0],
       sexeRepartition: sexeRepartition.rows,
       ageRepartition: ageRepartition.rows,
+      ageEstimeApproximatif: true, // schéma sans date de naissance : âge dérivé de l'âge à l'inclusion + temps écoulé
       fichesIdentite: fichesIdentite.rows[0],
       inclusionsByMonth: inclusionsByMonth.rows,
       comparatifSuivi: {
@@ -225,6 +270,7 @@ async function getClinicienOverview(req, res) {
         traitementsEcheance: alertesTraitementsEcheance.rows[0]?.count ?? 0,
         eegAncien: alertesEegAncien.rows[0]?.count ?? 0,
         bilanMultidisciplinaireAbsent: alertesBilanMultidisciplinaireAbsent.rows[0]?.count ?? 0,
+        transitionAdulte: alertesTransitionAdulte.rows[0]?.count ?? 0,
       },
       recentActivity: recentActivity.rows.map((r) => ({
         day: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : r.day,

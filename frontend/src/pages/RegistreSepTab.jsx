@@ -3,7 +3,7 @@ import client from '../api/client';
 import { IconWave } from '../components/Icons';
 import {
   GOUVERNORAT_PALETTE, pctLabel,
-  SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar,
+  SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar, MultiLineChart,
 } from '../components/DashboardWidgets';
 
 /**
@@ -81,6 +81,45 @@ export default function RegistreSepTab() {
           hint="Registre SEP uniquement — seul registre où ce champ est saisi actuellement."
           segments={gouvernoratSegments}
           centerLabel="patients SEP"
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div className="card" style={{ flex: '1 1 400px' }}>
+          <CardTitle hint="Moyenne annuelle du Taux Annualisé de Poussées sur la cohorte SEP.">Tendance du TAP (poussées/an)</CardTitle>
+          <div style={{ marginTop: 14 }}>
+            <MultiLineChart
+              data={(data.tapAnnuel || []).map((t) => ({ label: String(t.annee), tap: t.tap_moyen != null ? Number(t.tap_moyen) : null, n: t.nb_patients }))}
+              series={[{ key: 'tap', label: 'TAP moyen', color: '#175F69' }]}
+            />
+          </div>
+        </div>
+        <div className="card" style={{ flex: '1 1 400px' }}>
+          <CardTitle hint="Score EDSS moyen de la cohorte, par trimestre (24 derniers mois).">Tendance EDSS (cohorte)</CardTitle>
+          <div style={{ marginTop: 14 }}>
+            <MultiLineChart
+              data={(data.edssTendance || []).map((e) => ({ label: e.periode, edss: e.edss_moyen != null ? Number(e.edss_moyen) : null, n: e.nb_patients }))}
+              series={[{ key: 'edss', label: 'EDSS moyen', color: '#C98A2C' }]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="Impact scolaire/cognitif rapporté"
+          value={pctLabel(data.impactScolaireCognitif?.impact_positif, data.impactScolaireCognitif?.total_renseignes)}
+          hint="Souvent plus parlant que l'EDSS seul pour le suivi pédiatrique au quotidien."
+        />
+        <HeroStatCard
+          label="Score cognitif moyen"
+          value={data.impactScolaireCognitif?.score_cognitif_moyen != null ? data.impactScolaireCognitif.score_cognitif_moyen : '—'}
+          hint={`Sur ${data.impactScolaireCognitif?.score_cognitif_nb_evalues ?? 0} patient(s) évalué(s)`}
+        />
+        <HeroStatCard
+          label="Non testables selon l'âge"
+          value={data.impactScolaireCognitif?.score_cognitif_non_applicable ?? 0}
+          hint="Score cognitif non applicable (trop jeune pour le test)."
         />
       </div>
 

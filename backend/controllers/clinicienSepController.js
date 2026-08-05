@@ -24,6 +24,9 @@ async function getClinicienRegistreSep(req, res) {
       sepMotifsSwitch,
       sepConsanguinite,
       sepDelaiConversionSp,
+      sepEdssTendance,
+      sepTapAnnuel,
+      sepImpactScolaireCognitif,
     ] = await Promise.all([
       // --- Répartition par gouvernorat (registre SEP uniquement — seul registre
       //     qui capture ce champ actuellement) ---
@@ -141,6 +144,66 @@ async function getClinicienRegistreSep(req, res) {
         JOIN sep_identification_clinique id USING (pseudonyme)
         WHERE date_conversion_sp IS NOT NULL AND id.date_diagnostic IS NOT NULL
       `),
+
+      // --- SEP : EDSS moyen de la cohorte, par trimestre (24 derniers mois).
+      //     generate_series force l'apparition de TOUS les trimestres de la
+      //     fenêtre, y compris ceux sans donnée (edss_moyen = NULL, nb_patients
+      //     = 0) — sans quoi un trimestre vide disparaît silencieusement du
+      //     graphe et son point est relié au trimestre suivant comme s'ils
+      //     étaient consécutifs. nb_patients est renvoyé pour signaler côté
+      //     UI qu'une moyenne reposant sur 1-2 patients n'a pas le même poids
+      //     qu'une moyenne sur toute la cohorte. ---
+      pool.query(`
+        SELECT
+          to_char(q, 'YYYY-"T"Q') AS periode,
+          ROUND(AVG(v.score_edss)::numeric, 2) AS edss_moyen,
+          COUNT(DISTINCT v.pseudonyme)::int AS nb_patients
+        FROM generate_series(
+          date_trunc('quarter', now()) - interval '21 months',
+          date_trunc('quarter', now()),
+          interval '3 months'
+        ) q
+        LEFT JOIN sep_edss_visites v
+          ON date_trunc('quarter', v.date_visite) = q
+          AND v.score_edss IS NOT NULL
+        GROUP BY q
+        ORDER BY q
+      `),
+
+      // --- SEP : Taux Annualisé de Poussées (TAP), moyenne de cohorte par
+      //     année civile — réutilise la vue analytics.v_sep_tap_annuel déjà
+      //     définie dans schema_registre.sql (jusqu'ici jamais exploitée).
+      //     generate_series force l'apparition des 3 dernières années même
+      //     sans aucune poussée enregistrée (tap_moyen = NULL, nb_patients = 0),
+      //     pour la même raison que la correction sur l'EDSS trimestriel. ---
+      pool.query(`
+        SELECT
+          y::int AS annee,
+          ROUND(AVG(v.tap)::numeric, 2) AS tap_moyen,
+          COUNT(DISTINCT v.pseudonyme)::int AS nb_patients
+        FROM generate_series(
+          EXTRACT(YEAR FROM now())::int - 2,
+          EXTRACT(YEAR FROM now())::int
+        ) y
+        LEFT JOIN analytics.v_sep_tap_annuel v ON v.annee = y
+        GROUP BY y
+        ORDER BY y
+      `),
+
+      // --- SEP : impact scolaire/cognitif rapporté — sep_suivi.impact_scolaire_cognitif
+      //     et score_cognitif n'apparaissaient jusqu'ici nulle part côté dashboard,
+      //     alors qu'en pédiatrie l'impact cognitif est souvent plus parlant pour
+      //     le suivi au quotidien que l'EDSS moteur seul. score_cognitif_non_applicable
+      //     distingue "non testable selon l'âge" de "jamais évalué". ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE impact_scolaire_cognitif = TRUE)::int AS impact_positif,
+          COUNT(*) FILTER (WHERE impact_scolaire_cognitif IS NOT NULL)::int AS total_renseignes,
+          ROUND(AVG(score_cognitif) FILTER (WHERE score_cognitif_non_applicable = FALSE)::numeric, 1) AS score_cognitif_moyen,
+          COUNT(*) FILTER (WHERE score_cognitif IS NOT NULL AND score_cognitif_non_applicable = FALSE)::int AS score_cognitif_nb_evalues,
+          COUNT(*) FILTER (WHERE score_cognitif_non_applicable = TRUE)::int AS score_cognitif_non_applicable
+        FROM sep_suivi
+      `),
     ]);
 
     res.json({
@@ -158,6 +221,9 @@ async function getClinicienRegistreSep(req, res) {
       motifsSwitch: sepMotifsSwitch.rows,
       consanguinite: sepConsanguinite.rows[0],
       delaiConversionSpMois: sepDelaiConversionSp.rows[0]?.delai_moyen_mois,
+      edssTendance: sepEdssTendance.rows,
+      tapAnnuel: sepTapAnnuel.rows,
+      impactScolaireCognitif: sepImpactScolaireCognitif.rows[0],
     });
   } catch (err) {
     console.error('Erreur getClinicienRegistreSep :', err);

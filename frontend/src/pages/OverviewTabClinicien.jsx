@@ -228,7 +228,7 @@ function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
  * SEP/EPR, Alertes de suivi et Activité récente. Le détail clinique propre
  * à chaque registre vit désormais dans RegistreSepTab / RegistreEprTab.
  */
-export default function OverviewTabClinicien() {
+export default function OverviewTabClinicien({ onAlerteClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -317,30 +317,35 @@ export default function OverviewTabClinicien() {
       {/* =====================================================================
           3. ALERTES — patients à revoir en priorité
       ===================================================================== */}
-      <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Patients à revoir en priorité" />
+      <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Cliquez une carte pour voir la liste des patients concernés (fenêtre Entités Médicales)" />
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard
           label="Suivi actif mais point de suivi > 6 mois"
           value={data.alertes.suiviEnRetard}
           hint={data.alertes.suiviEnRetard > 0 ? 'À recontacter' : undefined}
+          onClick={() => onAlerteClick?.('suiviEnRetard')}
         />
         <HeroStatCard
           label="SEP sans IRM depuis > 12 mois"
           value={data.alertes.irmAncienne}
+          onClick={() => onAlerteClick?.('irmAncienne')}
         />
         <HeroStatCard
           label="Traitements SEP à échéance (30 j)"
           value={data.alertes.traitementsEcheance}
+          onClick={() => onAlerteClick?.('traitementsEcheance')}
         />
         <HeroStatCard
           label="EPR sans EEG depuis > 12 mois"
           value={data.alertes.eegAncien}
           hint={data.alertes.eegAncien > 0 ? "Inclut les patients jamais explorés en EEG" : undefined}
+          onClick={() => onAlerteClick?.('eegAncien')}
         />
         <HeroStatCard
           label="EPR sans aucun bilan multidisciplinaire"
           value={data.alertes.bilanMultidisciplinaireAbsent}
           hint="Ni neuropsy, ni orthophonie, ni ergothérapie renseignés."
+          onClick={() => onAlerteClick?.('bilanMultidisciplinaireAbsent')}
         />
       </div>
 

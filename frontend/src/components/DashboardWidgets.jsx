@@ -67,14 +67,132 @@ export function CardTitle({ children, hint }) {
   );
 }
 
-export function HeroStatCard({ label, value, hint }) {
+/**
+ * `onClick` est optionnel : quand fourni, la carte devient un bouton
+ * (curseur, léger effet au survol, flèche indicative) — utilisé par les
+ * cartes d'alerte de la Vue d'Ensemble pour ouvrir la liste des patients
+ * concernés dans la fenêtre "Entités Médicales".
+ */
+export function HeroStatCard({ label, value, hint, onClick }) {
+  const clickable = typeof onClick === 'function';
   return (
-    <div className="card" style={{ flex: '1 1 200px', minWidth: 180 }}>
-      <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
+    <div
+      className="card"
+      onClick={onClick}
+      style={{
+        flex: '1 1 200px', minWidth: 180,
+        cursor: clickable ? 'pointer' : 'default',
+        transition: clickable ? 'box-shadow .15s, transform .15s' : undefined,
+      }}
+      onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = '0 4px 14px -4px rgba(18,42,48,.25)'; e.currentTarget.style.transform = 'translateY(-1px)'; } : undefined}
+      onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none'; } : undefined}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+        <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
+        {clickable && <span style={{ fontSize: 13, color: 'var(--teal-deep)', flexShrink: 0 }}>→</span>}
+      </div>
       <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
         {value}
       </p>
       {hint && <p className="hint" style={{ marginTop: 6 }}>{hint}</p>}
+      {clickable && <p className="hint" style={{ marginTop: 6, color: 'var(--teal-deep)', fontWeight: 600 }}>Voir la liste des patients</p>}
+    </div>
+  );
+}
+
+/**
+ * Graphe en ligne générique — une ou plusieurs séries superposées sur un axe
+ * temporel discret (mois, trimestre, année...). Réutilisable partout où une
+ * tendance de cohorte doit être visualisée (TAP annuel, EDSS moyen, fréquence
+ * de crises...), au lieu d'un simple chiffre ponctuel.
+ *
+ * data: [{ label: '2024-T1', ...séries }], series: [{ key, label, color }]
+ */
+export function MultiLineChart({ data, series, width = 640, height = 220, unitSuffix = '' }) {
+  if (!data || data.length === 0) {
+    return <p className="hint" style={{ padding: '30px 0', textAlign: 'center' }}>Pas encore assez de données pour tracer une tendance.</p>;
+  }
+
+  const marginLeft = 34;
+  const marginBottom = 26;
+  const marginTop = 16;
+  const plotW = width - marginLeft - 8;
+  const plotH = height - marginTop - marginBottom;
+
+  const allValues = data.flatMap((d) => series.map((s) => d[s.key]).filter((v) => v != null));
+  const maxVal = Math.max(...allValues, 1);
+  const niceMax = Math.max(1, Math.ceil(maxVal * 1.15 * 10) / 10);
+  const stepX = plotW / Math.max(data.length - 1, 1);
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
+    y: marginTop + plotH * (1 - f),
+    label: (niceMax * f).toFixed(niceMax < 5 ? 1 : 0),
+  }));
+
+  function pathFor(key) {
+    let started = false;
+    let d = '';
+    data.forEach((row, i) => {
+      const v = row[key];
+      const x = marginLeft + stepX * i;
+      if (v == null) { started = false; return; }
+      const y = marginTop + plotH - (v / niceMax) * plotH;
+      d += `${started ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
+      started = true;
+    });
+    return d.trim();
+  }
+
+  const hasData = allValues.length > 0;
+
+  return (
+    <div>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
+        {gridLines.map((g) => (
+          <g key={g.label}>
+            <line x1={marginLeft} x2={width - 4} y1={g.y} y2={g.y} stroke="var(--line)" strokeWidth="1" />
+            <text x={marginLeft - 8} y={g.y + 3} fontSize="10" fill="var(--slate)" textAnchor="end">{g.label}</text>
+          </g>
+        ))}
+
+        {!hasData && (
+          <text x={marginLeft + plotW / 2} y={marginTop + plotH / 2} textAnchor="middle" fontSize="12.5" fill="var(--slate)">
+            Aucune donnée sur la période
+          </text>
+        )}
+
+        {hasData && series.map((s) => (
+          <path key={s.key} d={pathFor(s.key)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        ))}
+
+        {hasData && series.map((s) => data.map((row, i) => {
+          if (row[s.key] == null) return null;
+          const x = marginLeft + stepX * i;
+          const y = marginTop + plotH - (row[s.key] / niceMax) * plotH;
+          return (
+            <circle key={`${s.key}-${row.label}`} cx={x} cy={y} r="3" fill={s.color}>
+              <title>{`${s.label} — ${row.label} : ${row[s.key]}${unitSuffix}`}</title>
+            </circle>
+          );
+        }))}
+
+        {data.map((row, i) => {
+          const x = marginLeft + stepX * i;
+          return (
+            <text key={row.label} x={x} y={height - 6} textAnchor="middle" fontSize="10.5" fill="var(--slate)">
+              {row.label}
+            </text>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, marginTop: 10 }}>
+        {series.map((s) => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
+            <span style={{ color: 'var(--slate)' }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

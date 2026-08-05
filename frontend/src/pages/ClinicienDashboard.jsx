@@ -6,6 +6,7 @@ import PatientsTab from './PatientsTab';
 import OverviewTabClinicien from './OverviewTabClinicien';
 import RegistreSepTab from './RegistreSepTab';
 import RegistreEprTab from './RegistreEprTab';
+import EntitesMedicalesTab from './EntitesMedicalesTab';
 import { IconChart, IconUsers, IconFolder, IconLogout, IconWave } from '../components/Icons';
 
 const SIDEBAR_WIDTH = 248;
@@ -15,7 +16,7 @@ const NAV_ITEMS = [
   { key: 'registre-sep', Icon: IconWave, label: 'Registre SEP', disabled: false },
   { key: 'registre-epr', Icon: IconWave, label: 'Registre EPR', disabled: false },
   { key: 'patients', Icon: IconUsers, label: 'Patients', disabled: false },
-  { key: 'entites', Icon: IconFolder, label: 'Entités Médicales', disabled: true },
+  { key: 'entites', Icon: IconFolder, label: 'Entités Médicales', disabled: false },
   { key: 'analyses', Icon: IconWave, label: 'Analyse Statistique', disabled: false },
 ];
 
@@ -54,8 +55,17 @@ function todayFr() {
 export default function ClinicienDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('overview');
+  // Type d'alerte en attente de consultation dans "Entités Médicales" —
+  // défini quand on clique une carte d'alerte depuis la Vue d'Ensemble.
+  const [alerteEntites, setAlerteEntites] = useState(null);
 
   const displayName = displayNameFromEmail(user?.email);
+
+  /** Passée à OverviewTabClinicien : ouvre Entités Médicales pré-filtrée. */
+  function goToEntitesMedicales(alertType) {
+    setAlerteEntites(alertType);
+    setTab('entites');
+  }
 
   return (
     <div style={{ minHeight: '100svh', background: 'var(--paper)' }}>
@@ -209,7 +219,7 @@ export default function ClinicienDashboard() {
         </header>
 
         <div className="dashboard" style={{ maxWidth: 1120 }}>
-          {tab !== 'analyses' && tab !== 'patients' && tab !== 'overview' && tab !== 'registre-sep' && tab !== 'registre-epr' && (
+          {tab !== 'analyses' && tab !== 'patients' && tab !== 'overview' && tab !== 'registre-sep' && tab !== 'registre-epr' && tab !== 'entites' && (
             <div style={{
               padding: '40px 20px', textAlign: 'center', color: 'var(--slate)',
               border: '1px dashed var(--border)', borderRadius: 14, background: 'var(--surface)',
@@ -219,11 +229,17 @@ export default function ClinicienDashboard() {
               </p>
             </div>
           )}
-          {tab === 'overview' && <OverviewTabClinicien />}
+          {tab === 'overview' && <OverviewTabClinicien onAlerteClick={goToEntitesMedicales} />}
           {tab === 'registre-sep' && <RegistreSepTab />}
           {tab === 'registre-epr' && <RegistreEprTab />}
           {tab === 'analyses' && <AnalyseStatistiqueTab />}
           {tab === 'patients' && <PatientsTab />}
+          {tab === 'entites' && (
+            <EntitesMedicalesTab
+              alertType={alerteEntites}
+              onConsumed={() => setAlerteEntites(null)}
+            />
+          )}
         </div>
       </div>
     </div>
