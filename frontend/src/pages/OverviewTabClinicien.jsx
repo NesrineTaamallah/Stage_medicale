@@ -18,31 +18,43 @@ const GOUVERNORAT_PALETTE = [
   '#059669', '#DC2626', '#818CF8', '#0D9488', '#B45309',
 ];
 
+// NOTE (correction) : les clés étaient comparées telles quelles ('Epilepsie
+// active' sans accent) alors que schema_registre.sql documente la valeur
+// réellement saisie avec accent ('Épilepsie active'). Résultat : le statut
+// EPR "actif" ne matchait jamais aucune clé et retombait silencieusement
+// sur les couleurs/labels par défaut. On normalise désormais la clé de
+// recherche (accents + casse) au lieu de dupliquer chaque variante.
+function normalizeKey(str) {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 const STATUT_LABELS = {
   // SEP (sep_suivi.statut_dernier_suivi)
-  'Stable': 'Stable',
-  'Perdu de vue': 'Perdu de vue',
-  'Décédé': 'Décédé',
+  'stable': 'Stable',
+  'perdu de vue': 'Perdu de vue',
+  'decede': 'Décédé',
   // EPR (epr_suivi.statut_dernier_suivi)
-  'Libre de crises': 'Libre de crises',
-  'Epilepsie active': 'Épilepsie active',
-  'Decede': 'Décédé',
+  'libre de crises': 'Libre de crises',
+  'epilepsie active': 'Épilepsie active',
 };
 const STATUT_COLORS = {
-  'Stable': 'var(--success)',
-  'Libre de crises': 'var(--success)',
-  'Perdu de vue': 'var(--warning, orange)',
-  'Epilepsie active': 'var(--error)',
-  'Decede': 'var(--slate)',
-  'Décédé': 'var(--slate)',
+  'stable': 'var(--success)',
+  'libre de crises': 'var(--success)',
+  'perdu de vue': 'var(--warning, orange)',
+  'epilepsie active': 'var(--error)',
+  'decede': 'var(--slate)',
 };
 
 function statutLabel(statut) {
   if (!statut) return 'Non renseigné';
-  return STATUT_LABELS[statut] || statut;
+  return STATUT_LABELS[normalizeKey(statut)] || statut;
 }
 function statutColor(statut) {
-  return STATUT_COLORS[statut] || 'var(--line)';
+  return STATUT_COLORS[normalizeKey(statut)] || 'var(--line)';
 }
 
 // NOTE (correction) : un dénominateur nul (aucun dossier renseigné) ne veut

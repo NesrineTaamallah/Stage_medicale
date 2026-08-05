@@ -347,6 +347,11 @@ async function getClinicienOverview(req, res) {
       // --- EPR : éligibilité chirurgicale parmi les patients ayant eu un bilan
       //     pré-chirurgical (un patient peut avoir plusieurs bilans -> on ne
       //     retient que le plus récent) ---
+      // NOTE (correction) : total_evalues comptait aussi les bilans où
+      // eligibilite_chirurgie est NULL (champ non renseigné sur ce bilan),
+      // ce qui gonflait artificiellement le dénominateur et sous-estimait le
+      // taux affiché — même défaut que celui déjà corrigé sur pct()/pctLabel
+      // côté frontend pour un dénominateur nul.
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE eligibilite_chirurgie = TRUE)::int AS eligibles,
@@ -354,6 +359,7 @@ async function getClinicienOverview(req, res) {
         FROM (
           SELECT DISTINCT ON (pseudonyme) pseudonyme, eligibilite_chirurgie
           FROM epr_bilan_prechirurgical
+          WHERE eligibilite_chirurgie IS NOT NULL
           ORDER BY pseudonyme, date_bilan DESC
         ) dernier
       `),
@@ -400,7 +406,7 @@ async function getClinicienOverview(req, res) {
         SELECT COUNT(*)::int AS count FROM (
           SELECT s.pseudonyme
           FROM sep_suivi s
-          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede', 'décédé')
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
             AND s.date_dernier_suivi IS NOT NULL
             AND s.date_dernier_suivi < now() - interval '6 months'
 
@@ -430,7 +436,7 @@ async function getClinicienOverview(req, res) {
             WHERE p.registre = 'EPR'
             GROUP BY p.pseudonyme
           ) act ON act.pseudonyme = s.pseudonyme
-          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede', 'décédé')
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
             AND act.derniere_activite IS NOT NULL
             AND act.derniere_activite < now() - interval '6 months'
         ) alertes
