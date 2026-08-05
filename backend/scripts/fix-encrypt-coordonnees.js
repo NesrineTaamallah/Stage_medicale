@@ -16,61 +16,98 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-// Mêmes 3 patients simulés que le seed SQL précédent, avec leurs vraies
-// valeurs en clair (nécessaires pour pouvoir les rechiffrer correctement).
+// Les 5 vraies fiches, reprises telles quelles depuis les INSERT en clair
+// de config/insert_sep_data.sql (lignes 95-99), pour pouvoir les rechiffrer
+// avec les valeurs réellement stockées plutôt que des données de test.
 const PATIENTS = [
   {
     pseudonyme: 'SEP_AZ_005',
     coordonnees: {
-      numero_dossier: '2025-00001',
-      nom_prenom: 'Ben Salah Yasmine',
-      date_naissance: '25/02/2012',
-      adresse: '12 Rue Ibn Khaldoun, Tunis',
-      origine: 'Tunis',
-      telephone: '+216 20 123 456',
-      cin: '09876543',
-      num_cnam: '1122334455',
-      nom_prenom_pere: 'Karim Ben Salah',
-      nom_prenom_mere: 'Sana Ben Salah',
-      frere: 'Ahmed',
-      soeur: 'Ines',
-      autre_antecedent: 'RAS',
+      numero_dossier: 'DOS-2025-00512',
+      nom_prenom: 'Amira Zoghlami',
+      date_naissance: '2009-02-14',
+      adresse: '12 Rue des Jasmins, Ariana, Tunisie',
+      origine: 'Ariana',
+      telephone: '+216 20 111 222',
+      cin: '09512345',
+      num_cnam: 'CNAM-AZ-0005512',
+      nom_prenom_pere: 'Zoghlami Kamel',
+      nom_prenom_mere: 'Zoghlami Sana',
+      frere: 'Zoghlami Youssef (14 ans)',
+      soeur: null,
+      autre_antecedent: null,
     },
   },
   {
     pseudonyme: 'SEP_MBH_003',
     coordonnees: {
-      numero_dossier: '2025-00002',
-      nom_prenom: 'Dupont Lucas',
-      date_naissance: '14/06/2015',
-      adresse: '5 Avenue Habib Bourguiba, Sousse',
-      origine: 'Sousse',
-      telephone: '+216 22 987 654',
-      cin: '08765432',
-      num_cnam: '2233445566',
-      nom_prenom_pere: 'Marc Dupont',
-      nom_prenom_mere: 'Claire Dupont',
-      frere: '—',
-      soeur: 'Emma',
-      autre_antecedent: 'Épilepsie familiale',
+      numero_dossier: 'DOS-2025-00487',
+      nom_prenom: 'Malek Ben Hassine',
+      date_naissance: '2013-01-20',
+      adresse: '45 Avenue Habib Bourguiba, Nabeul, Tunisie',
+      origine: 'Nabeul',
+      telephone: '+216 22 333 444',
+      cin: '13487654',
+      num_cnam: 'CNAM-MBH-0003487',
+      nom_prenom_pere: 'Ben Hassine Fathi',
+      nom_prenom_mere: 'Ben Hassine Leila',
+      frere: 'Ben Hassine Sami (17 ans)',
+      soeur: 'Ben Hassine Rania (15 ans)',
+      autre_antecedent: 'Hypoacousie familiale (tante maternelle, cousin)',
     },
   },
   {
     pseudonyme: 'SEP_MJ_001',
     coordonnees: {
-      numero_dossier: '2025-00003',
-      nom_prenom: 'Trabelsi Amine',
-      date_naissance: '03/09/2013',
-      adresse: '18 Rue de Carthage, Sfax',
+      numero_dossier: 'DOS-2026-00104',
+      nom_prenom: 'Mehdi Jendoubi',
+      date_naissance: '2011-03-05',
+      adresse: '7 Rue de Carthage, Ben Arous, Tunisie',
+      origine: 'Ben Arous',
+      telephone: '+216 24 555 666',
+      cin: '11104321',
+      num_cnam: 'CNAM-MJ-0001104',
+      nom_prenom_pere: 'Jendoubi Nabil',
+      nom_prenom_mere: 'Jendoubi Wafa',
+      frere: null,
+      soeur: 'Jendoubi Ines (17 ans)',
+      autre_antecedent: null,
+    },
+  },
+  {
+    pseudonyme: 'SEP_MJ_002',
+    coordonnees: {
+      numero_dossier: 'DOS-2023-00021',
+      nom_prenom: 'Maryam Jaouadi',
+      date_naissance: '2007-12-09',
+      adresse: '3 Rue Ibn Khaldoun, Sfax, Tunisie',
       origine: 'Sfax',
-      telephone: '+216 55 456 789',
-      cin: '07654321',
-      num_cnam: '3344556677',
-      nom_prenom_pere: 'Nabil Trabelsi',
-      nom_prenom_mere: 'Leïla Trabelsi',
-      frere: 'Yassine',
-      soeur: '—',
-      autre_antecedent: 'RAS',
+      telephone: '+216 25 777 888',
+      cin: '07021987',
+      num_cnam: 'CNAM-MJ-0002021',
+      nom_prenom_pere: 'Jaouadi Slim',
+      nom_prenom_mere: 'Jaouadi Amel',
+      frere: null,
+      soeur: 'Jaouadi Yosra (19 ans)',
+      autre_antecedent: 'Mort fœtale in utero chez la mère',
+    },
+  },
+  {
+    pseudonyme: 'SEP_ZM_004',
+    coordonnees: {
+      numero_dossier: 'DOS-2025-00398',
+      nom_prenom: 'Zied Mansouri',
+      date_naissance: '2009-03-19',
+      adresse: '21 Rue de la République, Bizerte, Tunisie',
+      origine: 'Bizerte',
+      telephone: '+216 26 999 000',
+      cin: '09398765',
+      num_cnam: 'CNAM-ZM-0004398',
+      nom_prenom_pere: 'Mansouri Adel',
+      nom_prenom_mere: 'Mansouri Souad',
+      frere: null,
+      soeur: null,
+      autre_antecedent: 'Tante maternelle suivie pour SEP depuis 21 ans',
     },
   },
 ];
@@ -78,7 +115,12 @@ const PATIENTS = [
 async function fix() {
   for (const p of PATIENTS) {
     const setClauses = SENSITIVE_FIELDS.map((f, i) => `${f} = $${i + 2}`).join(', ');
-    const values = [p.pseudonyme, ...SENSITIVE_FIELDS.map((f) => encrypt(String(p.coordonnees[f])))];
+    const values = [
+      p.pseudonyme,
+      ...SENSITIVE_FIELDS.map((f) =>
+        p.coordonnees[f] ? encrypt(String(p.coordonnees[f])) : null
+      ),
+    ];
 
     const result = await pool.query(
       `UPDATE coordonnee_patient SET ${setClauses} WHERE pseudonyme = $1`,
