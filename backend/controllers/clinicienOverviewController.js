@@ -62,6 +62,7 @@ async function getClinicienOverview(req, res) {
       alertesBilanMultidisciplinaireAbsent,
       alertesTransitionAdulte,
       recentActivity,
+      suiviQualite,
     ] = await Promise.all([
       // --- KPI globaux ---
       pool.query(`
@@ -74,22 +75,21 @@ async function getClinicienOverview(req, res) {
       `),
 
       // --- Répartition par sexe ---
-      // CORRECTION : schema_registre.sql ne documente 'sexe' que côté SEP
-      // (sep_identification_clinique) ; epr_identification_clinique n'a pas
-      // cette colonne. L'ancienne requête noyait donc TOUS les patients EPR
-      // dans "Non renseigné", ce qui rendait le donut trompeur (on ne peut
-      // pas distinguer "EPR sans donnée sexe dans le schéma actuel" de "SEP
-      // avec sexe non saisi"). Sans modifier le schéma, on sépare les deux
-      // cas pour rester honnête vis-à-vis du clinicien.
+      // CORRECTION v2 : la colonne 'sexe' n'existe que côté SEP
+      // (sep_identification_clinique) ; epr_identification_clinique ne l'a
+      // pas. Mélanger les deux dans un seul donut avec un segment "Non
+      // applicable (EPR)" créait un artefact de schéma trompeur (jusqu'à
+      // 44% du donut sur cette cohorte) que le clinicien lisait à tort
+      // comme une vraie catégorie démographique. On restreint donc ce
+      // donut au registre SEP uniquement, avec un intitulé explicite ;
+      // le hint côté frontend précise le périmètre.
       pool.query(`
         SELECT
-          CASE
-            WHEN p.registre = 'EPR' THEN 'Non applicable (EPR — champ absent du registre)'
-            ELSE COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné')
-          END AS sexe,
+          COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné') AS sexe,
           COUNT(*)::int AS count
         FROM patients p
-        LEFT JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
+        JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'SEP'
         GROUP BY 1
       `),
 
@@ -258,6 +258,48 @@ async function getClinicienOverview(req, res) {
          ORDER BY d`,
         [req.user.sub]
       ),
+
+      // --- Indicateur de qualité de suivi agrégé ("% patients à jour") ---
+      // Inspiré des indicateurs de qualité standard des registres SEP de
+      // référence (EDSS/IRM tous les 6-12 mois, cf. registres suédois et
+      // italien) : plutôt que des alertes patient par patient uniquement,
+      // un score global donne au clinicien un baromètre de la qualité de
+      // suivi de sa cohorte active. "À jour" = EDSS ET IRM < 12 mois (SEP),
+      // EEG ET fréquence de crises rapportée < 12 mois (EPR), parmi les
+      // patients en suivi actif (hors perdu de vue / décédé).
+      pool.query(`
+        WITH sep_actifs AS (
+          SELECT s.pseudonyme
+          FROM sep_suivi s
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
+        ),
+        sep_a_jour AS (
+          SELECT a.pseudonyme
+          FROM sep_actifs a
+          JOIN (SELECT pseudonyme, MAX(date_visite) AS d FROM sep_edss_visites GROUP BY pseudonyme) edss
+            ON edss.pseudonyme = a.pseudonyme AND edss.d >= now() - interval '12 months'
+          JOIN (SELECT pseudonyme, MAX(date_examen) AS d FROM sep_irm GROUP BY pseudonyme) irm
+            ON irm.pseudonyme = a.pseudonyme AND irm.d >= now() - interval '12 months'
+        ),
+        epr_actifs AS (
+          SELECT s.pseudonyme
+          FROM epr_suivi s
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
+        ),
+        epr_a_jour AS (
+          SELECT a.pseudonyme
+          FROM epr_actifs a
+          JOIN (SELECT pseudonyme, MAX(date_eeg) AS d FROM epr_eeg GROUP BY pseudonyme) eeg
+            ON eeg.pseudonyme = a.pseudonyme AND eeg.d >= now() - interval '12 months'
+          JOIN (SELECT pseudonyme, MAX(date_rapport) AS d FROM epr_frequence_crises GROUP BY pseudonyme) fc
+            ON fc.pseudonyme = a.pseudonyme AND fc.d >= now() - interval '12 months'
+        )
+        SELECT
+          (SELECT COUNT(*) FROM sep_actifs)::int AS sep_actifs_total,
+          (SELECT COUNT(*) FROM sep_a_jour)::int AS sep_a_jour,
+          (SELECT COUNT(*) FROM epr_actifs)::int AS epr_actifs_total,
+          (SELECT COUNT(*) FROM epr_a_jour)::int AS epr_a_jour
+      `),
     ]);
 
     // --- Répartition par tranche d'âge ---
@@ -327,6 +369,10 @@ async function getClinicienOverview(req, res) {
         fiches_consultees: r.fiches_consultees,
         analyses_lancees: r.analyses_lancees,
       })),
+      suiviQualite: {
+        sep: { aJour: suiviQualite.rows[0]?.sep_a_jour ?? 0, total: suiviQualite.rows[0]?.sep_actifs_total ?? 0 },
+        epr: { aJour: suiviQualite.rows[0]?.epr_a_jour ?? 0, total: suiviQualite.rows[0]?.epr_actifs_total ?? 0 },
+      },
     });
   } catch (err) {
     console.error('Erreur getClinicienOverview :', err);

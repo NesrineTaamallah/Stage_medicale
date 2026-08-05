@@ -28,6 +28,8 @@ async function getClinicienRegistreSep(req, res) {
       sepTapAnnuel,
       sepImpactScolaireCognitif,
       sepSerologieDifferentielle,
+      sepAtcdFamiliauxAutoImmuns,
+      sepObservance,
     ] = await Promise.all([
       // --- Répartition par gouvernorat (registre SEP uniquement — seul registre
       //     qui capture ce champ actuellement) ---
@@ -222,6 +224,37 @@ async function getClinicienRegistreSep(req, res) {
         GROUP BY type
         ORDER BY count DESC
       `),
+
+      // --- SEP : antécédents familiaux auto-immuns neurologiques —
+      //     sep_antecedents.atcd_familiaux_auto_immuns_neuro n'apparaissait
+      //     jusqu'ici nulle part côté dashboard, alors que c'est pertinent
+      //     pour le conseil aux familles et la vigilance sur le diagnostic
+      //     différentiel (SEP vs autre maladie auto-immune). ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE atcd_familiaux_auto_immuns_neuro = TRUE)::int AS positifs,
+          COUNT(*) FILTER (WHERE atcd_familiaux_auto_immuns_neuro IS NOT NULL)::int AS total
+        FROM sep_antecedents
+      `),
+
+      // --- SEP : observance thérapeutique (traitement de fond actif) —
+      //     sep_traitement_fond.observance n'apparaissait jusqu'ici nulle
+      //     part côté dashboard, alors qu'une observance partielle/absente
+      //     peut expliquer un échec apparent de traitement autrement classé
+      //     à tort comme switch pour inefficacité. Un seul traitement actif
+      //     par patient (DISTINCT ON le plus récent) pour éviter de compter
+      //     plusieurs fois un même patient. ---
+      pool.query(`
+        SELECT COALESCE(NULLIF(TRIM(observance), ''), 'Non renseigné') AS observance, COUNT(*)::int AS count
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, observance
+          FROM sep_traitement_fond
+          WHERE date_fin IS NULL
+          ORDER BY pseudonyme, date_debut DESC
+        ) actif
+        GROUP BY observance
+        ORDER BY count DESC
+      `),
     ]);
 
     res.json({
@@ -243,6 +276,8 @@ async function getClinicienRegistreSep(req, res) {
       tapAnnuel: sepTapAnnuel.rows,
       impactScolaireCognitif: sepImpactScolaireCognitif.rows[0],
       serologieDifferentielle: sepSerologieDifferentielle.rows,
+      atcdFamiliauxAutoImmuns: sepAtcdFamiliauxAutoImmuns.rows[0],
+      observanceTherapeutique: sepObservance.rows,
     });
   } catch (err) {
     console.error('Erreur getClinicienRegistreSep :', err);

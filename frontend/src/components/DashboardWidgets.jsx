@@ -24,10 +24,41 @@ export function pct(part, total) {
   return Math.round((part / total) * 100);
 }
 
+// CORRECTION : "Non calculable" seul ne dit pas au clinicien POURQUOI —
+// s'il s'agit d'un dénominateur explicitement à 0 (aucun patient évalué)
+// vs une donnée pas encore chargée. On garde la VALEUR principale courte
+// (elle est affichée en gros caractères par HeroStatCard) et on renvoie
+// l'explication séparément via zeroSampleHint(), à afficher en hint (petit
+// texte) — jamais concaténée dans la valeur principale.
 export function pctLabel(part, total) {
   const value = pct(part, total);
   if (value === null) return 'Non calculable';
   return `${value}% (${part}/${total})`;
+}
+
+// Hint à afficher sous une carte pctLabel quand le dénominateur est
+// explicitement 0 (à distinguer d'une donnée simplement pas encore chargée).
+export function zeroSampleHint(total) {
+  if (total === 0) return 'Aucun patient évalué.';
+  return undefined;
+}
+
+// Combine plusieurs hints potentiels (certains pouvant être undefined) en un
+// seul texte, pour éviter d'écraser un hint existant (ex. explicatif) quand
+// on ajoute un avertissement (petit effectif / dénominateur nul).
+export function combineHints(...hints) {
+  const parts = hints.filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+// CORRECTION : un pourcentage calculé sur un tout petit effectif (ex. 100%
+// sur 4 patients) peut être lu à tort comme un signal fort. On fournit un
+// hint prêt à l'emploi pour les cartes concernées — seuillé à 10 par défaut,
+// cohérent avec la taille de cohorte pédiatrique typique de ce registre.
+export function smallSampleHint(total, threshold = 10) {
+  if (total === null || total === undefined || total === 0) return undefined;
+  if (total < threshold) return `Basé sur un petit effectif (n=${total}) — à interpréter avec prudence.`;
+  return undefined;
 }
 
 export function monthLabel(monthStr) {

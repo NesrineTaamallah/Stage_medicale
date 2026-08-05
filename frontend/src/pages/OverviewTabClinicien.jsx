@@ -5,7 +5,6 @@ import {
   GOUVERNORAT_PALETTE, normalizeKey, pctLabel, monthLabel, dayLabel,
   SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar,
 } from '../components/DashboardWidgets';
-
 const REGISTRE_COLORS = { sep: '#175F69', epr: '#C98A2C' };
 
 const ACTIVITY_SERIES = [
@@ -269,8 +268,9 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <DonutCard
           title="Répartition par sexe"
+          hint="Registre SEP uniquement — le champ 'sexe' n'existe pas dans le schéma du registre EPR."
           segments={data.sexeRepartition.map((s, i) => ({ label: s.sexe, value: s.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
-          centerLabel="patients"
+          centerLabel="patients SEP"
         />
         <DonutCard
           title="Répartition par tranche d'âge"
@@ -290,6 +290,25 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
             {data.fichesIdentite.fiches_renseignees} / {data.fichesIdentite.total_patients} patients ont une fiche de coordonnées saisie.
           </p>
         </div>
+      </div>
+
+      {/* =====================================================================
+          1bis. QUALITÉ DE SUIVI — indicateur agrégé "% patients à jour"
+          Inspiré des indicateurs standard des registres SEP de référence
+          (EDSS/IRM tous les 6-12 mois) : complète les alertes individuelles
+          plus bas par un baromètre de cohorte, en un coup d'œil.
+      ===================================================================== */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="SEP — patients à jour (EDSS + IRM < 12 mois)"
+          value={pctLabel(data.suiviQualite?.sep?.aJour, data.suiviQualite?.sep?.total)}
+          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+        />
+        <HeroStatCard
+          label="EPR — patients à jour (EEG + fréquence crises < 12 mois)"
+          value={pctLabel(data.suiviQualite?.epr?.aJour, data.suiviQualite?.epr?.total)}
+          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+        />
       </div>
 
       <div className="card">

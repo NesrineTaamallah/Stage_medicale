@@ -27,6 +27,10 @@ async function getClinicienRegistreEpr(req, res) {
       eprEtiologieDevenir,
       eprGenetiqueAcmg,
       eprTypesAnomalieEeg,
+      eprAtcdFamiliauxEpilepsie,
+      eprDeveloppementAvantCrises,
+      eprDureeMoyenneCrises,
+      eprPharmacoresistanceIlae,
     ] = await Promise.all([
       // --- EPR : % de pharmacorésistance confirmée ---
       pool.query(`
@@ -207,6 +211,61 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY count DESC
         LIMIT 8
       `),
+
+      // --- EPR : antécédents familiaux d'épilepsie —
+      //     epr_antecedents.atcd_familiaux_epilepsie n'apparaissait jusqu'ici
+      //     nulle part côté dashboard, alors que c'est un élément d'orientation
+      //     vers une cause génétique, en complément de epr_genetique. ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE atcd_familiaux_epilepsie = TRUE)::int AS positifs,
+          COUNT(*) FILTER (WHERE atcd_familiaux_epilepsie IS NOT NULL)::int AS total
+        FROM epr_antecedents
+      `),
+
+      // --- EPR : développement psychomoteur AVANT les crises (Normal / Retard) —
+      //     epr_antecedents.developpement_psychomoteur_avant_crises n'apparaissait
+      //     jusqu'ici nulle part, alors que epr_regression_developpementale
+      //     (régression APRÈS les crises) est déjà affiché. Les deux mis côte
+      //     à côte donnent une vraie lecture évolutive : retard préexistant vs
+      //     régression secondaire aux crises — signal pronostique important. ---
+      pool.query(`
+        SELECT COALESCE(NULLIF(TRIM(developpement_psychomoteur_avant_crises), ''), 'Non renseigné') AS statut, COUNT(*)::int AS count
+        FROM epr_antecedents
+        GROUP BY developpement_psychomoteur_avant_crises
+        ORDER BY count DESC
+      `),
+
+      // --- EPR : durée moyenne des crises (minutes) — epr_frequence_crises.
+      //     duree_moyenne_min n'apparaissait jusqu'ici nulle part ; la
+      //     fréquence seule (déjà affichée) ne dit rien de la sévérité par
+      //     épisode, alors que la durée est un signal de risque d'état de
+      //     mal épileptique (dernier rapport connu par patient). ---
+      pool.query(`
+        SELECT ROUND(AVG(duree_moyenne_min)::numeric, 1) AS moyenne
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, duree_moyenne_min
+          FROM epr_frequence_crises
+          WHERE duree_moyenne_min IS NOT NULL
+          ORDER BY pseudonyme, date_rapport DESC
+        ) dernier
+      `),
+
+      // --- EPR : statut déclaratif de pharmacorésistance vs calcul ILAE —
+      //     réutilise analytics.v_epr_pharmacoresistance_detail (déjà
+      //     définie dans schema_registre.sql, jusqu'ici jamais exploitée).
+      //     Le champ epr_pharmacoresistance.statut_pharmacoresistance_confirme
+      //     est saisi à la main et peut diverger du calcul objectif ILAE
+      //     (≥2 échecs par inefficacité sur epr_liste_ae). Un écart entre les
+      //     deux est un signal de sur/sous-classification à vérifier. ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE statut_declare = TRUE)::int AS declares_positifs,
+          COUNT(*) FILTER (WHERE statut_calcule_ilae = TRUE)::int AS calcules_positifs,
+          COUNT(*) FILTER (WHERE COALESCE(statut_declare, FALSE) IS DISTINCT FROM statut_calcule_ilae)::int AS divergents,
+          COUNT(*)::int AS total
+        FROM analytics.v_epr_pharmacoresistance_detail
+      `),
     ]);
 
     res.json({
@@ -226,6 +285,10 @@ async function getClinicienRegistreEpr(req, res) {
       etiologieDevenir: eprEtiologieDevenir.rows,
       genetiqueAcmg: eprGenetiqueAcmg.rows,
       typesAnomalieEeg: eprTypesAnomalieEeg.rows,
+      atcdFamiliauxEpilepsie: eprAtcdFamiliauxEpilepsie.rows[0],
+      developpementAvantCrises: eprDeveloppementAvantCrises.rows,
+      dureeMoyenneCrisesMin: eprDureeMoyenneCrises.rows[0]?.moyenne,
+      pharmacoresistanceIlae: eprPharmacoresistanceIlae.rows[0],
     });
   } catch (err) {
     console.error('Erreur getClinicienRegistreEpr :', err);

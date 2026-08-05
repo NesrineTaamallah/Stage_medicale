@@ -110,6 +110,23 @@ export default function RegistreSepTab() {
         </div>
       </div>
 
+      {/* ---------- Antécédents familiaux et facteurs de risque ----------
+          sep_antecedents.consanguinite_parentale était déjà remonté par le
+          backend mais jamais affiché ; atcd_familiaux_auto_immuns_neuro
+          n'apparaissait nulle part. Pertinents pour le conseil aux familles
+          et la vigilance sur le diagnostic différentiel. */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="Consanguinité parentale"
+          value={pctLabel(data.consanguinite?.positifs, data.consanguinite?.total)}
+        />
+        <HeroStatCard
+          label="Antécédents familiaux auto-immuns neuro"
+          value={pctLabel(data.atcdFamiliauxAutoImmuns?.positifs, data.atcdFamiliauxAutoImmuns?.total)}
+          hint="Utile au diagnostic différentiel (SEP vs autre maladie auto-immune) et au conseil aux familles."
+        />
+      </div>
+
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard
           label="Impact scolaire/cognitif rapporté"
@@ -145,6 +162,17 @@ export default function RegistreSepTab() {
           <div style={{ marginTop: 16 }}>
             <StackedBar segments={data.lignesTherapeutiques.map((l, i) => ({ label: `Ligne ${l.ligne_therapeutique}`, value: l.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
           </div>
+          {/* Observance du traitement de fond actif : une observance
+              partielle/absente peut expliquer un échec apparent autrement
+              classé à tort comme switch pour inefficacité. */}
+          {(data.observanceTherapeutique || []).length > 0 && (
+            <>
+              <p className="hint" style={{ marginTop: 16, marginBottom: 6 }}>Observance (traitement de fond actif) :</p>
+              <div style={{ marginTop: 4 }}>
+                <StackedBar segments={data.observanceTherapeutique.map((o, i) => ({ label: o.observance, value: o.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
+              </div>
+            </>
+          )}
           {data.motifsSwitch.length > 0 && (
             <>
               <p className="hint" style={{ marginTop: 16, marginBottom: 6 }}>Motifs de switch les plus fréquents :</p>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import client from '../api/client';
 import { IconWave } from '../components/Icons';
 import {
-  GOUVERNORAT_PALETTE, pctLabel,
+  GOUVERNORAT_PALETTE, pctLabel, smallSampleHint,
   SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar, MultiLineChart,
 } from '../components/DashboardWidgets';
 
@@ -55,11 +55,86 @@ export default function RegistreEprTab() {
         <HeroStatCard
           label="Pharmacorésistance confirmée"
           value={pctLabel(data.pharmacoresistance?.confirmes, data.pharmacoresistance?.total)}
+          hint={smallSampleHint(data.pharmacoresistance?.total)}
         />
         <HeroStatCard label="Fréquence de crises moyenne" value={data.frequenceCrisesMoyenne != null ? `${data.frequenceCrisesMoyenne} /mois` : '—'} />
         <HeroStatCard label="Âge moyen au début des crises" value={data.ageDebutCrisesMoyenMois != null ? `${data.ageDebutCrisesMoyenMois} mois` : '—'} />
         <HeroStatCard label="Âge moyen au diagnostic pharmacorésistance" value={data.ageDiagnosticPharmacoresistanceMoyenMois != null ? `${data.ageDiagnosticPharmacoresistanceMoyenMois} mois` : '—'} />
         <HeroStatCard label="Durée de suivi moyenne" value={data.dureeSuiviMoyenneMois != null ? `${data.dureeSuiviMoyenneMois} mois` : '—'} />
+        <HeroStatCard
+          label="Durée moyenne des crises"
+          value={data.dureeMoyenneCrisesMin != null ? `${data.dureeMoyenneCrisesMin} min` : '—'}
+          hint="La fréquence seule ne dit rien de la sévérité par épisode ; une durée élevée est un signal de risque d'état de mal."
+        />
+      </div>
+
+      {/* ---------- Statut déclaratif vs calcul ILAE ----------
+          Le champ epr_pharmacoresistance.statut_pharmacoresistance_confirme
+          est saisi à la main ; le calcul ILAE (≥2 échecs par inefficacité,
+          analytics.v_epr_pharmacoresistance_detail) est objectif. Une
+          divergence entre les deux est un signal à vérifier, pas juste une
+          statistique de plus. */}
+      {data.pharmacoresistanceIlae && data.pharmacoresistanceIlae.total > 0 && (
+        <div
+          className="card"
+          style={{ borderLeft: data.pharmacoresistanceIlae.divergents > 0 ? '3px solid var(--amber)' : '3px solid transparent' }}
+        >
+          <CardTitle hint="Statut saisi par le clinicien comparé au calcul objectif ILAE (≥2 antiépileptiques adaptés en échec par inefficacité, sur epr_liste_ae).">
+            Pharmacorésistance — déclaratif vs calcul ILAE
+          </CardTitle>
+          <div style={{ display: 'flex', gap: 24, marginTop: 12, flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Déclaré par le clinicien</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, margin: '4px 0 0', color: 'var(--ink)' }}>
+                {data.pharmacoresistanceIlae.declares_positifs} / {data.pharmacoresistanceIlae.total}
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Calculé (critère ILAE)</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, margin: '4px 0 0', color: 'var(--ink)' }}>
+                {data.pharmacoresistanceIlae.calcules_positifs} / {data.pharmacoresistanceIlae.total}
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Patients divergents</p>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, margin: '4px 0 0', color: data.pharmacoresistanceIlae.divergents > 0 ? 'var(--amber, orange)' : 'var(--ink)' }}>
+                {data.pharmacoresistanceIlae.divergents}
+              </p>
+            </div>
+          </div>
+          {data.pharmacoresistanceIlae.divergents > 0 && (
+            <p className="hint" style={{ marginTop: 10 }}>
+              À vérifier : ces patients ont un statut saisi qui ne correspond pas au calcul ILAE sur leur historique d'antiépileptiques essayés.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ---------- Antécédents et développement avant les crises ----------
+          atcd_familiaux_epilepsie et developpement_psychomoteur_avant_crises
+          n'apparaissaient jusqu'ici nulle part, alors que
+          "régression développementale" (après les crises) est déjà affiché
+          plus bas. Les deux ensemble donnent une vraie lecture évolutive :
+          retard préexistant vs régression secondaire aux crises. */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="Antécédents familiaux d'épilepsie"
+          value={pctLabel(data.atcdFamiliauxEpilepsie?.positifs, data.atcdFamiliauxEpilepsie?.total)}
+          hint="Oriente vers une cause génétique, en complément du test génétique."
+        />
+        <div className="card" style={{ flex: '1 1 260px' }}>
+          <CardTitle hint="Développement psychomoteur AVANT le début des crises — à distinguer de la régression développementale (après), affichée plus bas.">
+            Développement avant les crises
+          </CardTitle>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+            {(data.developpementAvantCrises || []).map((d) => (
+              <div key={d.statut} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--line)' }}>
+                <span style={{ color: 'var(--ink)' }}>{d.statut}</span>
+                <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{d.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="card">
@@ -111,15 +186,17 @@ export default function RegistreEprTab() {
         <HeroStatCard
           label="Éligibles à la chirurgie (parmi évalués)"
           value={pctLabel(data.eligibiliteChirurgicale?.eligibles, data.eligibiliteChirurgicale?.total_evalues)}
-          hint="Sur les patients ayant eu un bilan pré-chirurgical."
+          hint={smallSampleHint(data.eligibiliteChirurgicale?.total_evalues) ?? "Sur les patients ayant eu un bilan pré-chirurgical."}
         />
         <HeroStatCard
           label="TSA / TDAH associés (parmi évalués)"
           value={pctLabel(data.comorbiditesNeuropsy?.troubles_psy_associes, data.comorbiditesNeuropsy?.total_evalues)}
+          hint={smallSampleHint(data.comorbiditesNeuropsy?.total_evalues)}
         />
         <HeroStatCard
           label="Troubles du sommeil (parmi évalués)"
           value={pctLabel(data.comorbiditesNeuropsy?.troubles_sommeil, data.comorbiditesNeuropsy?.total_evalues)}
+          hint={smallSampleHint(data.comorbiditesNeuropsy?.total_evalues)}
         />
       </div>
 
