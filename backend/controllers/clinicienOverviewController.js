@@ -311,14 +311,27 @@ async function getClinicienOverview(req, res) {
           AND date_fin BETWEEN now() AND now() + interval '30 days'
       `),
 
-      // --- Activité récente du clinicien connecté ---
+      // --- Activité récente du clinicien connecté, agrégée par jour ---
+      // Le graphe (DailyStackedBarChart) attend un tableau de 7 objets
+      // { day: 'YYYY-MM-DD', fiches_consultees: n, analyses_lancees: n },
+      // un par jour sur les 7 derniers jours (y compris les jours à 0),
+      // et non une liste plate de logs individuels.
       pool.query(
-        `SELECT action, success, created_at
-         FROM access_logs
-         WHERE user_id = $1
-           AND (action LIKE 'coordonnee_patient_reveal%' OR action LIKE 'analyse_statistique%')
-         ORDER BY created_at DESC
-         LIMIT 15`,
+        `SELECT
+           d::date AS day,
+           COUNT(*) FILTER (WHERE al.action LIKE 'coordonnee_patient_reveal%')::int AS fiches_consultees,
+           COUNT(*) FILTER (WHERE al.action LIKE 'analyse_statistique%')::int AS analyses_lancees
+         FROM generate_series(
+           (now() - interval '6 days')::date,
+           now()::date,
+           interval '1 day'
+         ) d
+         LEFT JOIN access_logs al
+           ON al.created_at::date = d
+           AND al.user_id = $1
+           AND (al.action LIKE 'coordonnee_patient_reveal%' OR al.action LIKE 'analyse_statistique%')
+         GROUP BY d
+         ORDER BY d`,
         [req.user.sub]
       ),
     ]);
@@ -363,11 +376,11 @@ async function getClinicienOverview(req, res) {
         irmAncienne: alertesIrmAncienne.rows[0]?.count ?? 0,
         traitementsEcheance: alertesTraitementsEcheance.rows[0]?.count ?? 0,
       },
+      // Déjà au bon format : [{ day, fiches_consultees, analyses_lancees }, ...]
       recentActivity: recentActivity.rows.map((r) => ({
-        label: labelForAction(r.action),
-        action: r.action,
-        success: r.success,
-        at: r.created_at,
+        day: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : r.day,
+        fiches_consultees: r.fiches_consultees,
+        analyses_lancees: r.analyses_lancees,
       })),
     });
   } catch (err) {
