@@ -588,6 +588,43 @@ export default function OverviewTabClinicien() {
         />
       </div>
 
+      {/* ---------- Prise en charge globale EPR (nouveau) ----------
+          Jusqu'ici le registre EPR ne montrait que l'axe neurologique
+          (crises, EEG, étiologies). Ces indicateurs exploitent des tables
+          déjà saisies (régression développementale, bilan pré-chirurgical,
+          bilan neuropsy) mais jamais remontées côté clinicien, alors
+          qu'elles sont centrales dans le suivi pédiatrique global d'une
+          épilepsie pharmacorésistante. */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="Régression développementale rapportée"
+          value={pctLabel(data.epr.regressionDeveloppementale?.positifs, data.epr.regressionDeveloppementale?.total)}
+          hint="Signal d'alerte pédiatrique (encéphalopathie épileptique / étiologie génétique)."
+        />
+        <HeroStatCard
+          label="Éligibles à la chirurgie (parmi évalués)"
+          value={pctLabel(data.epr.eligibiliteChirurgicale?.eligibles, data.epr.eligibiliteChirurgicale?.total_evalues)}
+          hint="Sur les patients ayant eu un bilan pré-chirurgical."
+        />
+        <HeroStatCard
+          label="TSA / TDAH associés (parmi évalués)"
+          value={pctLabel(data.epr.comorbiditesNeuropsy?.troubles_psy_associes, data.epr.comorbiditesNeuropsy?.total_evalues)}
+        />
+        <HeroStatCard
+          label="Troubles du sommeil (parmi évalués)"
+          value={pctLabel(data.epr.comorbiditesNeuropsy?.troubles_sommeil, data.epr.comorbiditesNeuropsy?.total_evalues)}
+        />
+      </div>
+
+      {data.epr.evolutionPostChirurgie.length > 0 && (
+        <div className="card">
+          <CardTitle hint="Patients opérés uniquement — devenir rapporté à la dernière évaluation.">Devenir post-chirurgical</CardTitle>
+          <div style={{ marginTop: 16 }}>
+            <StackedBar segments={data.epr.evolutionPostChirurgie.map((e, i) => ({ label: e.evolution, value: e.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))} />
+          </div>
+        </div>
+      )}
+
       {/* =====================================================================
           5. ALERTES — patients à revoir en priorité
       ===================================================================== */}
@@ -605,6 +642,16 @@ export default function OverviewTabClinicien() {
         <HeroStatCard
           label="Traitements SEP à échéance (30 j)"
           value={data.alertes.traitementsEcheance}
+        />
+        <HeroStatCard
+          label="EPR sans EEG depuis > 12 mois"
+          value={data.alertes.eegAncien}
+          hint={data.alertes.eegAncien > 0 ? "Inclut les patients jamais explorés en EEG" : undefined}
+        />
+        <HeroStatCard
+          label="EPR sans aucun bilan multidisciplinaire"
+          value={data.alertes.bilanMultidisciplinaireAbsent}
+          hint="Ni neuropsy, ni orthophonie, ni ergothérapie renseignés."
         />
       </div>
 

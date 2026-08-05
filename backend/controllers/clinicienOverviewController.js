@@ -64,10 +64,16 @@ async function getClinicienOverview(req, res) {
       eprAgeDebutCrises,
       eprAgeDiagnosticPharmacoresistance,
       eprDureeSuivi,
+      eprRegressionDeveloppementale,
+      eprEligibiliteChirurgicale,
+      eprEvolutionPostChirurgie,
+      eprComorbiditesNeuropsy,
       // --- Alertes ---
       alertesSuiviEnRetard,
       alertesIrmAncienne,
       alertesTraitementsEcheance,
+      alertesEegAncien,
+      alertesBilanMultidisciplinaireAbsent,
       recentActivity,
     ] = await Promise.all([
       // --- KPI globaux ---
@@ -326,6 +332,59 @@ async function getClinicienOverview(req, res) {
       // --- EPR : durée de suivi moyenne (mois) ---
       pool.query(`SELECT ROUND(AVG(duree_suivi_mois)::numeric, 1) AS moyenne FROM epr_suivi WHERE duree_suivi_mois IS NOT NULL`),
 
+      // --- EPR : prévalence de la régression développementale ---
+      // NOTE (nouvelle recommandation) : la régression développementale est un
+      // signal d'alerte pédiatrique majeur (oriente vers une encéphalopathie
+      // épileptique / étiologie génétique) et n'était jusqu'ici jamais
+      // remontée dans le tableau de bord clinicien alors que la table existe.
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE presence_regression = TRUE)::int AS positifs,
+          COUNT(*) FILTER (WHERE presence_regression IS NOT NULL)::int AS total
+        FROM epr_regression_developpementale
+      `),
+
+      // --- EPR : éligibilité chirurgicale parmi les patients ayant eu un bilan
+      //     pré-chirurgical (un patient peut avoir plusieurs bilans -> on ne
+      //     retient que le plus récent) ---
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE eligibilite_chirurgie = TRUE)::int AS eligibles,
+          COUNT(*)::int AS total_evalues
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, eligibilite_chirurgie
+          FROM epr_bilan_prechirurgical
+          ORDER BY pseudonyme, date_bilan DESC
+        ) dernier
+      `),
+
+      // --- EPR : devenir post-chirurgical (répartition) ---
+      pool.query(`
+        SELECT COALESCE(evolution_post_chirurgie, 'Non renseigné') AS evolution, COUNT(*)::int AS count
+        FROM epr_chirurgie
+        WHERE chirurgie_realisee = TRUE
+        GROUP BY evolution_post_chirurgie
+        ORDER BY count DESC
+      `),
+
+      // --- EPR : comorbidités neuropsychologiques (dernier bilan neuropsy par
+      //     patient) — TSA/TDAH, troubles du comportement, troubles du sommeil.
+      //     Ces champs existent dans le schéma mais n'étaient exploités nulle
+      //     part : ils sont pourtant centraux dans la prise en charge globale
+      //     de l'enfant épileptique pharmacorésistant. ---
+      pool.query(`
+        SELECT
+          COUNT(*)::int AS total_evalues,
+          COUNT(*) FILTER (WHERE troubles_comportement = TRUE)::int AS troubles_comportement,
+          COUNT(*) FILTER (WHERE ${normalizedSql('troubles_psy_associes')} = 'oui')::int AS troubles_psy_associes,
+          COUNT(*) FILTER (WHERE troubles_sommeil = TRUE)::int AS troubles_sommeil
+        FROM (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, troubles_comportement, troubles_psy_associes, troubles_sommeil
+          FROM epr_bilan_neuropsy
+          ORDER BY pseudonyme, date_bilan DESC
+        ) dernier
+      `),
+
       // --- Alerte : suivi toujours en cours mais dernier point de suivi ancien (> 6 mois) ---
       // NOTE (correction) : le statut réel n'est jamais 'actif' (cf.
       // schema_registre.sql : SEP = Stable / Perdu de vue / Décédé ;
@@ -402,6 +461,36 @@ async function getClinicienOverview(req, res) {
           AND date_fin BETWEEN now() AND now() + interval '30 days'
       `),
 
+      // --- Alerte EPR : pas d'EEG depuis plus de 12 mois, y compris les
+      //     patients n'ayant JAMAIS eu d'EEG (même logique que l'alerte IRM
+      //     SEP ci-dessus — jusqu'ici l'EPR n'avait aucune alerte de suivi
+      //     paraclinique alors que l'EEG est l'examen de surveillance central
+      //     de l'épilepsie pharmacorésistante). ---
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM patients p
+        LEFT JOIN epr_eeg e ON e.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'EPR'
+        GROUP BY p.pseudonyme
+        HAVING MAX(e.date_eeg) IS NULL
+            OR MAX(e.date_eeg) < now() - interval '12 months'
+      `).then((r) => ({ rows: [{ count: r.rowCount }] })),
+
+      // --- Alerte EPR : aucun bilan multidisciplinaire (neuropsy, orthophonie,
+      //     ergothérapie) jamais réalisé — repère les patients pharmacorésistants
+      //     suivis uniquement sur le plan neurologique, sans évaluation globale
+      //     du développement, alors que ces trois bilans existent dans le
+      //     schéma sans jamais être croisés avec la patientèle totale. ---
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM patients p
+        LEFT JOIN epr_bilan_neuropsy bn ON bn.pseudonyme = p.pseudonyme
+        LEFT JOIN epr_bilan_orthophonique bo ON bo.pseudonyme = p.pseudonyme
+        LEFT JOIN epr_bilan_ergotherapique be ON be.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'EPR'
+          AND bn.pseudonyme IS NULL AND bo.pseudonyme IS NULL AND be.pseudonyme IS NULL
+      `),
+
       // --- Activité récente du clinicien connecté, agrégée par jour ---
       // Le graphe (DailyStackedBarChart) attend un tableau de 7 objets
       // { day: 'YYYY-MM-DD', fiches_consultees: n, analyses_lancees: n },
@@ -461,11 +550,17 @@ async function getClinicienOverview(req, res) {
         ageDebutCrisesMoyenMois: eprAgeDebutCrises.rows[0]?.moyenne,
         ageDiagnosticPharmacoresistanceMoyenMois: eprAgeDiagnosticPharmacoresistance.rows[0]?.moyenne,
         dureeSuiviMoyenneMois: eprDureeSuivi.rows[0]?.moyenne,
+        regressionDeveloppementale: eprRegressionDeveloppementale.rows[0],
+        eligibiliteChirurgicale: eprEligibiliteChirurgicale.rows[0],
+        evolutionPostChirurgie: eprEvolutionPostChirurgie.rows,
+        comorbiditesNeuropsy: eprComorbiditesNeuropsy.rows[0],
       },
       alertes: {
         suiviEnRetard: alertesSuiviEnRetard.rows[0]?.count ?? 0,
         irmAncienne: alertesIrmAncienne.rows[0]?.count ?? 0,
         traitementsEcheance: alertesTraitementsEcheance.rows[0]?.count ?? 0,
+        eegAncien: alertesEegAncien.rows[0]?.count ?? 0,
+        bilanMultidisciplinaireAbsent: alertesBilanMultidisciplinaireAbsent.rows[0]?.count ?? 0,
       },
       // Déjà au bon format : [{ day, fiches_consultees, analyses_lancees }, ...]
       recentActivity: recentActivity.rows.map((r) => ({
