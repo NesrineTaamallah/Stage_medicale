@@ -45,9 +45,20 @@ function statutColor(statut) {
   return STATUT_COLORS[statut] || 'var(--line)';
 }
 
+// NOTE (correction) : un dénominateur nul (aucun dossier renseigné) ne veut
+// pas dire "0 %" — cela veut dire "non calculable". L'ancienne version
+// renvoyait 0, ce qui affichait un taux clinique faux (ex. "0 % de bandes
+// oligoclonales positives" au lieu de "donnée non disponible"). pct() renvoie
+// désormais null dans ce cas ; pctLabel() formate l'affichage en conséquence.
 function pct(part, total) {
-  if (!total) return 0;
+  if (!total) return null;
   return Math.round((part / total) * 100);
+}
+
+function pctLabel(part, total) {
+  const value = pct(part, total);
+  if (value === null) return 'Non calculable';
+  return `${value}% (${part}/${total})`;
 }
 
 function monthLabel(monthStr) {
@@ -483,18 +494,15 @@ export default function OverviewTabClinicien() {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard
           label="Dernières IRM avec nouvelles lésions"
-          value={`${pct(irm?.avec_nouvelles_lesions, irm?.total)}%`}
-          hint={`${irm?.avec_nouvelles_lesions ?? 0} / ${irm?.total ?? 0} patients`}
+          value={pctLabel(irm?.avec_nouvelles_lesions, irm?.total)}
         />
         <HeroStatCard
           label="Bandes oligoclonales positives (LCR)"
-          value={`${pct(lcr?.positifs, lcr?.total)}%`}
-          hint={`${lcr?.positifs ?? 0} / ${lcr?.total ?? 0} prélèvements`}
+          value={pctLabel(lcr?.positifs, lcr?.total)}
         />
         <HeroStatCard
           label="Consanguinité parentale"
-          value={`${pct(cons?.positifs, cons?.total)}%`}
-          hint={`${cons?.positifs ?? 0} / ${cons?.total ?? 0} patients`}
+          value={pctLabel(cons?.positifs, cons?.total)}
         />
         <HeroStatCard
           label="Délai moyen avant forme secondairement progressive"
@@ -524,7 +532,7 @@ export default function OverviewTabClinicien() {
             {data.sep.presentationInitiale.map((p) => (
               <div key={p.type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
                 <span style={{ color: 'var(--ink)' }}>{p.type}</span>
-                <span style={{ color: 'var(--slate)' }}>{p.count} patient(s) · {pct(p.recuperation_complete, p.count)}% récup. complète</span>
+                <span style={{ color: 'var(--slate)' }}>{p.count} patient(s) · {pctLabel(p.recuperation_complete, p.count)} récup. complète</span>
               </div>
             ))}
           </div>
@@ -558,8 +566,7 @@ export default function OverviewTabClinicien() {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard
           label="Pharmacorésistance confirmée"
-          value={`${pct(data.epr.pharmacoresistance?.confirmes, data.epr.pharmacoresistance?.total)}%`}
-          hint={`${data.epr.pharmacoresistance?.confirmes ?? 0} / ${data.epr.pharmacoresistance?.total ?? 0} patients`}
+          value={pctLabel(data.epr.pharmacoresistance?.confirmes, data.epr.pharmacoresistance?.total)}
         />
         <HeroStatCard label="Fréquence de crises moyenne" value={data.epr.frequenceCrisesMoyenne != null ? `${data.epr.frequenceCrisesMoyenne} /mois` : '—'} />
         <HeroStatCard label="Âge moyen au début des crises" value={data.epr.ageDebutCrisesMoyenMois != null ? `${data.epr.ageDebutCrisesMoyenMois} mois` : '—'} />

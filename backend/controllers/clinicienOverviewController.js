@@ -11,6 +11,22 @@ function labelForAction(action) {
 }
 
 /**
+ * Normalise un fragment SQL texte : accents retirés (via translate sur les
+ * accents français courants), espaces superflus supprimés, casse uniformisée.
+ * Utilisé pour toute comparaison de valeur catégorielle saisie librement
+ * (Oui/oui/OUI, Positif/positif, Décédé/decede, etc.) sans jamais modifier
+ * le schéma imposé — uniquement au niveau des requêtes.
+ */
+const UNACCENT_SQL = `translate(
+  LOWER(TRIM(%COL%::text)),
+  'àâäéèêëïîôöùûüçÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ',
+  'aaaeeeeiioouucaaaeeeeiioouuc'
+)`;
+function normalizedSql(column) {
+  return UNACCENT_SQL.replace(/%COL%/g, column);
+}
+
+/**
  * GET /api/clinicien/overview
  * Alimente l'onglet "Vue d'Ensemble" du dashboard clinicien : KPI globaux,
  * courbe des inclusions, répartition géographique (SEP), statut de suivi,
@@ -69,11 +85,15 @@ async function getClinicienOverview(req, res) {
       // elle vit désormais uniquement dans `sep_identification_clinique`.
       // Le registre EPR n'a pas d'équivalent -> ces patients tombent dans
       // 'Non renseigné' via le LEFT JOIN.
+      // NOTE (correction) : le GROUP BY portait sur ic.sexe brut, donc des
+      // variantes de casse/espaces ('M', 'm', ' M') auraient créé des lignes
+      // distinctes au lieu d'être fusionnées. On groupe désormais sur la
+      // valeur normalisée effectivement affichée.
       pool.query(`
-        SELECT COALESCE(ic.sexe, 'Non renseigné') AS sexe, COUNT(*)::int AS count
+        SELECT COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné') AS sexe, COUNT(*)::int AS count
         FROM patients p
         LEFT JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
-        GROUP BY ic.sexe
+        GROUP BY COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné')
       `),
 
       // --- Répartition par tranche d'âge ---
@@ -186,24 +206,37 @@ async function getClinicienOverview(req, res) {
       `),
 
       // --- SEP : % de bandes oligoclonales positives (dernier prélèvement LCR) ---
+      // NOTE (correction) : bandes_oligoclonales est un VARCHAR "Positif / Négatif"
+      // (cf. schema_registre.sql). L'ancienne requête ne cherchait que
+      // 'oui'/'true'/'t'/'1' et ne matchait donc jamais 'Positif' : le taux
+      // affiché était systématiquement 0, quelle que soit la réalité clinique.
       pool.query(`
         SELECT
-          COUNT(*) FILTER (WHERE LOWER(TRIM(bandes_oligoclonales::text)) IN ('oui', 'true', 't', '1'))::int AS positifs,
+          COUNT(*) FILTER (
+            WHERE ${normalizedSql('bandes_oligoclonales')}
+                  IN ('positif', 'positive', 'oui', 'true', 't', '1')
+          )::int AS positifs,
           COUNT(*)::int AS total
         FROM (
           SELECT DISTINCT ON (pseudonyme) pseudonyme, bandes_oligoclonales
           FROM sep_biologie_lcr
           WHERE bandes_oligoclonales IS NOT NULL
+            AND TRIM(bandes_oligoclonales) <> ''
           ORDER BY pseudonyme, date_prelevement DESC
         ) dernier
       `),
 
       // --- SEP : présentation initiale (type de 1er événement + récupération complète) ---
+      // NOTE (correction) : recuperation_complete est un VARCHAR libre
+      // (Oui / Non / Partielle). La comparaison stricte '= oui' ratait toute
+      // variante de casse ('Oui', 'OUI'). Normalisation appliquée ici.
       pool.query(`
         SELECT
           COALESCE(type_premier_evenement, 'Non renseigné') AS type,
           COUNT(*)::int AS count,
-          COUNT(*) FILTER (WHERE recuperation_complete = 'oui')::int AS recuperation_complete
+          COUNT(*) FILTER (
+            WHERE ${normalizedSql('recuperation_complete')} = 'oui'
+          )::int AS recuperation_complete
         FROM sep_presentation_initiale
         GROUP BY type_premier_evenement
         ORDER BY count DESC
@@ -293,25 +326,73 @@ async function getClinicienOverview(req, res) {
       // --- EPR : durée de suivi moyenne (mois) ---
       pool.query(`SELECT ROUND(AVG(duree_suivi_mois)::numeric, 1) AS moyenne FROM epr_suivi WHERE duree_suivi_mois IS NOT NULL`),
 
-      // --- Alerte : suivi "actif" mais dernier point de suivi ancien (> 6 mois) ---
+      // --- Alerte : suivi toujours en cours mais dernier point de suivi ancien (> 6 mois) ---
+      // NOTE (correction) : le statut réel n'est jamais 'actif' (cf.
+      // schema_registre.sql : SEP = Stable / Perdu de vue / Décédé ;
+      // EPR = Libre de crises / Épilepsie active / Perdu de vue). Un patient
+      // est considéré "en suivi" tant qu'il n'est ni perdu de vue ni décédé.
+      // - SEP : sep_suivi possède bien date_dernier_suivi -> comparaison directe.
+      // - EPR : epr_suivi n'a AUCUNE colonne de date (schéma imposé). On estime
+      //   donc la date de dernière activité comme la plus récente parmi les
+      //   dates disponibles dans les tables cliniques EPR (GREATEST des MAX
+      //   par patient). Si aucune date n'existe, le patient est exclu du
+      //   comptage plutôt que compté à tort comme "à jour".
       pool.query(`
         SELECT COUNT(*)::int AS count FROM (
-          SELECT date_dernier_suivi FROM sep_suivi WHERE statut_dernier_suivi = 'actif' AND date_dernier_suivi < now() - interval '6 months'
+          SELECT s.pseudonyme
+          FROM sep_suivi s
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede', 'décédé')
+            AND s.date_dernier_suivi IS NOT NULL
+            AND s.date_dernier_suivi < now() - interval '6 months'
+
           UNION ALL
-          SELECT NULL FROM epr_suivi WHERE statut_dernier_suivi = 'actif'
-        ) s
-        WHERE s.date_dernier_suivi IS NOT NULL
+
+          SELECT s.pseudonyme
+          FROM epr_suivi s
+          LEFT JOIN (
+            SELECT p.pseudonyme,
+                   GREATEST(
+                     MAX(fc.date_rapport), MAX(tc.date_observation), MAX(eeg.date_eeg),
+                     MAX(im.date_examen), MAX(bp.date_bilan), MAX(bn.date_bilan),
+                     MAX(bo.date_bilan), MAX(be.date_bilan), MAX(ch.date_chirurgie),
+                     MAX(alt.date_debut)
+                   ) AS derniere_activite
+            FROM patients p
+            LEFT JOIN epr_frequence_crises fc ON fc.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_type_crise tc ON tc.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_eeg eeg ON eeg.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_imagerie im ON im.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_bilan_prechirurgical bp ON bp.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_bilan_neuropsy bn ON bn.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_bilan_orthophonique bo ON bo.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_bilan_ergotherapique be ON be.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_chirurgie ch ON ch.pseudonyme = p.pseudonyme
+            LEFT JOIN epr_alternatives_therapeutiques alt ON alt.pseudonyme = p.pseudonyme
+            WHERE p.registre = 'EPR'
+            GROUP BY p.pseudonyme
+          ) act ON act.pseudonyme = s.pseudonyme
+          WHERE ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede', 'décédé')
+            AND act.derniere_activite IS NOT NULL
+            AND act.derniere_activite < now() - interval '6 months'
+        ) alertes
       `),
 
-      // --- Alerte SEP : pas d'IRM depuis plus de 12 mois (patients avec au moins une IRM) ---
+      // --- Alerte SEP : pas d'IRM depuis plus de 12 mois, y compris les patients
+      //     n'ayant JAMAIS eu d'IRM ---
+      // NOTE (correction) : l'ancienne requête partait de sep_irm, donc un
+      // patient SEP sans aucune IRM n'apparaissait dans aucune ligne et
+      // n'était jamais compté dans l'alerte — c'est pourtant le cas le plus
+      // grave (patient totalement non exploré). On part maintenant de la
+      // table patients avec un LEFT JOIN.
       pool.query(`
-        SELECT COUNT(*)::int AS count FROM (
-          SELECT pseudonyme, MAX(date_examen) AS derniere
-          FROM sep_irm
-          GROUP BY pseudonyme
-        ) d
-        WHERE derniere < now() - interval '12 months'
-      `),
+        SELECT COUNT(*)::int AS count
+        FROM patients p
+        LEFT JOIN sep_irm i ON i.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'SEP'
+        GROUP BY p.pseudonyme
+        HAVING MAX(i.date_examen) IS NULL
+            OR MAX(i.date_examen) < now() - interval '12 months'
+      `).then((r) => ({ rows: [{ count: r.rowCount }] })),
 
       // --- Alerte SEP : traitement de fond arrivant à échéance sous 30 jours ---
       pool.query(`
