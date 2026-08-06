@@ -11,7 +11,7 @@ const { normalizedSql } = require('../utils/clinicienSql');
  *
  * :type ∈ {
  *   suiviEnRetard, irmAncienne, traitementsEcheance,
- *   eegAncien, bilanMultidisciplinaireAbsent
+ *   eegAncien, bilanMultidisciplinaireAbsent, transitionAdulte
  * }
  */
 
@@ -108,6 +108,28 @@ const REQUETES = {
     WHERE p.registre = 'EPR'
       AND bn.pseudonyme IS NULL AND bo.pseudonyme IS NULL AND be.pseudonyme IS NULL
   `),
+
+  // --- Transition ado → adulte (16-18 ans), en suivi actif ---
+  // Reprend EXACTEMENT la même condition que la carte de comptage
+  // correspondante dans clinicienOverviewController.js.
+  transitionAdulte: async () => pool.query(`
+    SELECT e.pseudonyme, e.registre, NULL::date AS derniere_info,
+           e.statut
+    FROM (
+      SELECT
+        p.pseudonyme,
+        p.registre,
+        p.age + EXTRACT(YEAR FROM age(now(), COALESCE(p.date_inclusion, now()))) AS age_estime,
+        COALESCE(ss.statut_dernier_suivi, es.statut_dernier_suivi) AS statut
+      FROM patients p
+      LEFT JOIN sep_suivi ss ON ss.pseudonyme = p.pseudonyme
+      LEFT JOIN epr_suivi es ON es.pseudonyme = p.pseudonyme
+      WHERE p.age IS NOT NULL
+    ) e
+    WHERE e.age_estime BETWEEN 16 AND 18
+      AND ${normalizedSql('e.statut')} NOT IN ('perdu de vue', 'decede')
+    ORDER BY e.pseudonyme
+  `),
 };
 
 const LABELS = {
@@ -116,6 +138,7 @@ const LABELS = {
   traitementsEcheance: 'Traitements SEP à échéance (30 j)',
   eegAncien: 'EPR sans EEG depuis > 12 mois',
   bilanMultidisciplinaireAbsent: 'EPR sans aucun bilan multidisciplinaire',
+  transitionAdulte: 'Transition ado → adulte (16-18 ans)',
 };
 
 async function getListePatientsAlerte(req, res) {
