@@ -21,6 +21,7 @@ const initialForm = {
   numero_dossier: '',
   pathologie: '',
   date_diagnostic: '',
+  date_inclusion: '',
   type_document: '',
   type_entree: '',
 };
@@ -50,7 +51,7 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
   }
 
   function canGoNext() {
-    if (step === 0) return form.numero_dossier.trim() && form.pathologie && form.date_diagnostic;
+    if (step === 0) return form.numero_dossier.trim() && form.pathologie && form.date_diagnostic && form.date_inclusion;
     if (step === 1) return !!form.type_document;
     if (step === 2) return !!form.type_entree && !!file;
     return true;
@@ -204,14 +205,28 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
                 </div>
               </Field>
 
-              <Field label="Date de diagnostic">
-                <input
-                  type="date"
-                  value={form.date_diagnostic}
-                  onChange={(e) => update('date_diagnostic', e.target.value)}
-                  style={inputStyle}
-                />
-              </Field>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <Field label="Date de diagnostic">
+                    <input
+                      type="date"
+                      value={form.date_diagnostic}
+                      onChange={(e) => update('date_diagnostic', e.target.value)}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Field label="Date d'inclusion">
+                    <input
+                      type="date"
+                      value={form.date_inclusion}
+                      onChange={(e) => update('date_inclusion', e.target.value)}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+              </div>
             </div>
           )}
 
@@ -302,6 +317,7 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
               <SummaryRow label="Numéro de dossier" value={form.numero_dossier} />
               <SummaryRow label="Pathologie" value={form.pathologie} />
               <SummaryRow label="Date de diagnostic" value={form.date_diagnostic} />
+              <SummaryRow label="Date d'inclusion" value={form.date_inclusion} />
               <SummaryRow label="Type de document" value={TYPES_DOCUMENT.find((t) => t.value === form.type_document)?.label} />
               <SummaryRow label="Type d'entrée" value={form.type_entree === 'audio' ? 'Audio (transcription automatique)' : 'Document scanné'} />
               <SummaryRow label="Fichier" value={file?.name} />

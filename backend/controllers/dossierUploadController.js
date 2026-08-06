@@ -200,10 +200,10 @@ async function ocrScan(filePath) {
  * est fait par une étape ultérieure du pipeline, pas par ce endpoint.
  */
 async function creerDossier(req, res) {
-  const { numero_dossier, pathologie, date_diagnostic, type_document, type_entree } = req.body;
+  const { numero_dossier, pathologie, date_diagnostic, date_inclusion, type_document, type_entree } = req.body;
   const fichier = req.file;
 
-  if (!numero_dossier || !pathologie || !date_diagnostic || !type_document || !type_entree) {
+  if (!numero_dossier || !pathologie || !date_diagnostic || !date_inclusion || !type_document || !type_entree) {
     return res.status(400).json({ error: 'Champs requis manquants.' });
   }
   if (!['SEP', 'EPR'].includes(pathologie)) {
@@ -259,13 +259,32 @@ async function creerDossier(req, res) {
     // `patients` pour que le dossier apparaisse tout de suite dans la liste
     // côté clinicien — les colonnes d'identité (nom, prénom, ...) restent
     // vides tant que `coordonnee_patient` n'a pas été renseignée par l'étape
-    // d'extraction ultérieure.
+    // d'extraction ultérieure. Un seul et même patient (même pseudonyme)
+    // peut recevoir plusieurs documents au fil du temps : ON CONFLICT DO
+    // NOTHING garantit qu'il reste toujours une seule ligne dans `patients`,
+    // quel que soit le nombre de documents ajoutés.
     const pseudonyme = genererPseudonyme(pathologie, numero_dossier);
     await pool.query(
       `INSERT INTO patients (pseudonyme, registre, date_inclusion)
        VALUES ($1, $2, $3)
        ON CONFLICT (pseudonyme) DO NOTHING`,
-      [pseudonyme, pathologie, date_diagnostic]
+      [pseudonyme, pathologie, date_inclusion]
+    );
+
+    // Idem côté table "entité patient" du registre concerné (identification
+    // clinique SEP ou EPR) : on ne renseigne ici QUE la date de diagnostic,
+    // saisie manuellement par le clinicien à cette étape. Tous les autres
+    // champs (sexe, gouvernorat, âges calculés, antécédents, évolution...)
+    // restent NULL tant qu'ils n'auront pas été remplis par une future étape
+    // d'extraction automatique d'entités médicales à partir du texte brut.
+    const identificationTable = pathologie === 'SEP'
+      ? 'sep_identification_clinique'
+      : 'epr_identification_clinique';
+    await pool.query(
+      `INSERT INTO ${identificationTable} (pseudonyme, date_diagnostic)
+       VALUES ($1, $2)
+       ON CONFLICT (pseudonyme) DO NOTHING`,
+      [pseudonyme, date_diagnostic]
     );
 
     await logAccess({ userId: req.user.sub, action: 'dossier_document_creer', success: true, req });

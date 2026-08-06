@@ -59,7 +59,14 @@ export default function PatientsTab() {
   const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
-    client.get('/api/coordonnees')
+    // On liste depuis /api/dossiers (table `patients`) et non /api/coordonnees
+    // (table `coordonnee_patient`) : un dossier créé par le wizard "Ajouter
+    // un patient" existe immédiatement dans `patients` (ligne stub avec
+    // pseudonyme + date_inclusion), mais `coordonnee_patient` ne sera
+    // rempli que par une future étape d'extraction d'identité. Si on
+    // écoutait /api/coordonnees, les nouveaux dossiers n'apparaîtraient
+    // jamais tant que cette étape n'existe pas.
+    client.get('/api/dossiers')
       .then((res) => setRows(res.data.map((r) => ({ ...r, data: null }))))
       .catch(() => setError('Impossible de charger la liste des patients.'))
       .finally(() => setLoading(false));
@@ -357,6 +364,13 @@ export default function PatientsTab() {
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--slate-soft)' }}>{d.statut}</span>
                 </div>
+                <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate-soft)' }}>
+                  Ajouté le {d.created_at
+                    ? new Date(d.created_at).toLocaleString('fr-FR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })
+                    : '—'}
+                </p>
                 {d.texte_transcrit && (
                   <p style={{
                     margin: '0 0 8px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5,
