@@ -210,35 +210,53 @@ async function verifierDossier(req, res) {
   }
 
   try {
-    // On ne recalcule plus de pseudonyme par HMAC pour cette vérification :
-    // ça ne fonctionnait que pour les patients créés après l'introduction
-    // de ce schéma, pas pour les pseudonymes legacy attribués à la main
-    // (ex. SEP_MJ_001) — cf. bug où le pseudonyme affiché ne correspondait
-    // pas au vrai dossier. La seule source fiable du lien numero_dossier ->
-    // pseudonyme est coordonnee_patient ; le numéro y est chiffré avec un
-    // IV aléatoire (donc pas recherchable directement en SQL), on déchiffre
-    // chaque ligne pour comparer. Coûteux si la table grossit beaucoup,
-    // mais un registre clinique reste de taille modeste ; à revoir avec un
-    // index déterministe si ça devient un problème de perf.
     const numeroNormalise = String(numero_dossier).trim().toUpperCase();
-    const coordResult = await pool.query(
-      `SELECT pseudonyme, numero_dossier FROM coordonnee_patient WHERE numero_dossier IS NOT NULL`
-    );
-    const match = coordResult.rows.find((r) => {
-      try {
-        return decrypt(r.numero_dossier).trim().toUpperCase() === numeroNormalise;
-      } catch {
-        return false;
-      }
-    });
 
-    if (!match) {
+    // 1) Source principale : `documents_bruts`, où le numero_dossier est
+    // stocké en clair dès l'upload initial (creerDossier), avant même toute
+    // pseudonymisation ou saisie d'identité civile. C'est la source la plus
+    // fiable et la moins coûteuse (comparaison SQL directe, indexée) — et
+    // surtout la seule qui couvre les dossiers dont `coordonnee_patient`
+    // n'a pas encore été rempli (identité pas encore saisie/extraite), qui
+    // passaient auparavant sous le radar du check de doublon.
+    const docResult = await pool.query(
+      `SELECT numero_dossier FROM documents_bruts
+        WHERE pathologie = $1 AND UPPER(TRIM(numero_dossier)) = $2
+        LIMIT 1`,
+      [pathologie, numeroNormalise]
+    );
+
+    let pseudonyme = null;
+    if (docResult.rows[0]) {
+      pseudonyme = genererPseudonyme(pathologie, docResult.rows[0].numero_dossier);
+    } else {
+      // 2) Repli : pseudonymes legacy attribués à la main (ex. SEP_MJ_001),
+      // dont le seul lien vers le numero_dossier passe par
+      // coordonnee_patient (chiffré avec IV aléatoire, donc pas
+      // recherchable directement en SQL — on déchiffre chaque ligne pour
+      // comparer). Coûteux si la table grossit beaucoup, mais un registre
+      // clinique reste de taille modeste ; à revoir avec un index
+      // déterministe si ça devient un problème de perf.
+      const coordResult = await pool.query(
+        `SELECT pseudonyme, numero_dossier FROM coordonnee_patient WHERE numero_dossier IS NOT NULL`
+      );
+      const match = coordResult.rows.find((r) => {
+        try {
+          return decrypt(r.numero_dossier).trim().toUpperCase() === numeroNormalise;
+        } catch {
+          return false;
+        }
+      });
+      if (match) pseudonyme = match.pseudonyme;
+    }
+
+    if (!pseudonyme) {
       return res.json({ existe: false });
     }
 
     const patientResult = await pool.query(
       `SELECT pseudonyme, registre, date_inclusion FROM patients WHERE pseudonyme = $1`,
-      [match.pseudonyme]
+      [pseudonyme]
     );
     const patient = patientResult.rows[0];
     // On ne signale le doublon que si la pathologie du patient trouvé
@@ -252,7 +270,7 @@ async function verifierDossier(req, res) {
       : 'epr_identification_clinique';
     const identResult = await pool.query(
       `SELECT date_diagnostic FROM ${identificationTable} WHERE pseudonyme = $1`,
-      [pseudonyme]
+      [patient.pseudonyme]
     );
 
     res.json({

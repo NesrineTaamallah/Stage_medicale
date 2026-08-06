@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const { encrypt, decrypt } = require('../utils/cryptoUtils');
 const { verifyPassword } = require('../utils/passwordUtils');
 const { logAccess } = require('../utils/accessLog');
+const { genererPseudonyme } = require('../utils/pseudonymUtils');
 
 const SENSITIVE_FIELDS = [
   'numero_dossier', 'nom_prenom', 'date_naissance', 'adresse', 'origine',
@@ -56,8 +57,41 @@ async function revealCoordonnee(req, res) {
       [pseudonyme]
     );
     const row = result.rows[0];
+
     if (!row) {
-      return res.status(404).json({ error: 'Fiche introuvable.' });
+      // Pas encore de fiche coordonnee_patient pour ce pseudonyme (identité
+      // civile pas encore saisie / extraite) — ça ne veut pas dire qu'il n'y
+      // a rien à montrer : un numero_dossier en clair existe déjà côté
+      // documents_bruts dès l'upload initial (voir creerDossier). On le
+      // retrouve en recalculant le pseudonyme de chaque document du même
+      // registre (même fonction déterministe qu'à l'upload) et on renvoie
+      // au moins ce champ, le reste restant `null` tant que la fiche n'est
+      // pas complétée, plutôt que de renvoyer une 404 qui bloque l'écran.
+      const patientResult = await pool.query(
+        `SELECT registre FROM patients WHERE pseudonyme = $1`,
+        [pseudonyme]
+      );
+      const patient = patientResult.rows[0];
+      if (!patient) {
+        await logAccess({ userId: req.user.sub, action: 'coordonnee_patient_reveal', success: false, req });
+        return res.status(404).json({ error: 'Fiche introuvable.' });
+      }
+
+      const docsResult = await pool.query(
+        `SELECT numero_dossier FROM documents_bruts WHERE pathologie = $1`,
+        [patient.registre]
+      );
+      const doc = docsResult.rows.find(
+        (d) => genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme
+      );
+
+      const decrypted = { pseudonyme, numero_dossier: doc ? doc.numero_dossier.trim() : null };
+      for (const field of SENSITIVE_FIELDS) {
+        if (field !== 'numero_dossier') decrypted[field] = null;
+      }
+
+      await logAccess({ userId: req.user.sub, action: 'coordonnee_patient_reveal', success: true, req });
+      return res.json(decrypted);
     }
 
     const decrypted = { pseudonyme: row.pseudonyme };

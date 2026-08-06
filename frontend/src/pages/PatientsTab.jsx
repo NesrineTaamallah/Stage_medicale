@@ -124,12 +124,29 @@ export default function PatientsTab() {
         // Une requête par ligne, avec le même mot de passe déjà saisi une
         // fois côté utilisateur — le serveur re-vérifie quand même à chaque
         // appel (aucune confiance accordée côté client).
-        const results = await Promise.all(
+        // allSettled plutôt que all : une fiche en erreur (ex. mot de passe
+        // rejeté entre-temps sur une requête isolée, ou tout autre souci
+        // ponctuel) ne doit pas empêcher d'afficher les autres fiches qui,
+        // elles, ont réussi — sinon "Toutes les lignes" échoue en bloc dès
+        // qu'une seule ligne pose problème.
+        const results = await Promise.allSettled(
           rows.map((r) =>
             client.post('/api/coordonnees/reveal', { pseudonyme: r.pseudonyme, password })
           )
         );
-        setRows((prev) => prev.map((r, i) => ({ ...r, data: results[i].data })));
+        const failed = results.filter((r) => r.status === 'rejected');
+        setRows((prev) => prev.map((r, i) => {
+          const res = results[i];
+          return res.status === 'fulfilled' ? { ...r, data: res.value.data } : r;
+        }));
+        if (failed.length > 0 && failed.length === results.length) {
+          // Aucune fiche déchiffrée : probablement un mot de passe incorrect,
+          // on garde le modal ouvert avec le message d'erreur habituel.
+          throw failed[0].reason;
+        }
+        // Échec partiel (une fraction seulement) : on ferme quand même le
+        // modal, les fiches qui ont réussi restent affichées — closeModal()
+        // réinitialiserait un message d'erreur ici de toute façon.
       } else {
         const res = await client.post('/api/coordonnees/reveal', { pseudonyme: modal, password });
         setRows((prev) => prev.map((r) => (r.pseudonyme === modal ? { ...r, data: res.data } : r)));
