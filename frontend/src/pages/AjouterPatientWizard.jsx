@@ -33,10 +33,29 @@ const initialForm = {
  *
  * onClose() referme le wizard (annulation ou succès).
  * onCreated(result) est appelé après création réussie côté serveur.
+ *
+ * `existingPatient`, si fourni ({ pseudonyme, pathologie, numero_dossier,
+ * date_diagnostic, date_inclusion }), bascule le wizard en mode "ajout de
+ * document à un dossier déjà existant" : l'étape 0 (numéro de dossier /
+ * pathologie / dates) est sautée, ces valeurs étant déjà connues et
+ * réutilisées telles quelles à la soumission — le clinicien n'a plus qu'à
+ * choisir le type de fiche puis le mode d'entrée (audio/scan) et uploader.
  */
-export default function AjouterPatientWizard({ onClose, onCreated }) {
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState(initialForm);
+export default function AjouterPatientWizard({ onClose, onCreated, existingPatient = null, onSwitchToAjout = null }) {
+  const isAjoutDocument = !!existingPatient;
+  const STEPS_ACTIVES = isAjoutDocument ? STEPS.slice(1) : STEPS;
+  const FIRST_STEP = isAjoutDocument ? 1 : 0;
+
+  const [step, setStep] = useState(FIRST_STEP);
+  const [form, setForm] = useState(() => (isAjoutDocument
+    ? {
+        ...initialForm,
+        numero_dossier: existingPatient.numero_dossier || '',
+        pathologie: existingPatient.pathologie || '',
+        date_diagnostic: existingPatient.date_diagnostic || '',
+        date_inclusion: existingPatient.date_inclusion || '',
+      }
+    : initialForm));
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
@@ -45,9 +64,35 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
   const [texteCorrige, setTexteCorrige] = useState('');
   const [validating, setValidating] = useState(false);
 
+  // Alerte "patient déjà existant" détectée à l'étape 0 (mode création
+  // normale uniquement — sans objet en mode ajout de document).
+  const [doublon, setDoublon] = useState(null); // { pseudonyme, pathologie, numero_dossier, date_diagnostic, date_inclusion } | null
+  const [checkingDoublon, setCheckingDoublon] = useState(false);
+
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
     setError('');
+    if (field === 'numero_dossier' || field === 'pathologie') setDoublon(null);
+  }
+
+  async function checkDoublon() {
+    if (isAjoutDocument) return;
+    if (!form.numero_dossier.trim() || !form.pathologie) return;
+    setCheckingDoublon(true);
+    try {
+      const res = await client.get('/api/dossiers/verifier', {
+        params: { pathologie: form.pathologie, numero_dossier: form.numero_dossier.trim() },
+      });
+      if (res.data.existe) {
+        setDoublon({ ...res.data, numero_dossier: form.numero_dossier.trim() });
+      } else {
+        setDoublon(null);
+      }
+    } catch {
+      // Vérification best-effort : en cas d'échec on laisse le clinicien continuer.
+    } finally {
+      setCheckingDoublon(false);
+    }
   }
 
   function canGoNext() {
@@ -62,13 +107,17 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
       setError('Veuillez compléter les champs requis avant de continuer.');
       return;
     }
+    if (step === 0 && doublon) {
+      setError('Ce numéro de dossier correspond à un patient déjà existant.');
+      return;
+    }
     setError('');
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
   function goBack() {
     setError('');
-    setStep((s) => Math.max(s - 1, 0));
+    setStep((s) => Math.max(s - 1, FIRST_STEP));
   }
 
   function handleFileSelect(f) {
@@ -145,9 +194,16 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
         padding: '20px 32px', borderBottom: '1px solid var(--line)', background: 'var(--card)',
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontFamily: 'var(--font-display)' }}>Ajouter un patient</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontFamily: 'var(--font-display)' }}>
+            {isAjoutDocument ? 'Ajouter un document' : 'Ajouter un patient'}
+          </h2>
           <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate-soft)' }}>
-            Étape {step + 1} sur {STEPS.length} — {STEPS[step]}
+            {isAjoutDocument && (
+              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--teal-deep)' }}>
+                {existingPatient.pseudonyme} —{' '}
+              </span>
+            )}
+            Étape {STEPS_ACTIVES.indexOf(STEPS[step]) + 1} sur {STEPS_ACTIVES.length} — {STEPS[step]}
           </p>
         </div>
         <button onClick={onClose} aria-label="Fermer" style={{
@@ -181,9 +237,40 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
                   autoFocus
                   value={form.numero_dossier}
                   onChange={(e) => update('numero_dossier', e.target.value)}
+                  onBlur={checkDoublon}
                   placeholder="ex. 2026-EPR-0142"
                   style={inputStyle}
                 />
+                {checkingDoublon && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate-soft)' }}>
+                    Vérification…
+                  </p>
+                )}
+                {doublon && (
+                  <div style={{
+                    marginTop: 10, padding: '12px 14px', borderRadius: 10,
+                    border: '1.5px solid var(--error)', background: 'rgba(220,38,38,.06)',
+                    display: 'flex', flexDirection: 'column', gap: 8,
+                  }}>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                      <IconAlert size={14} /> Patient déjà existant pour ce numéro de dossier.
+                    </p>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>
+                      Pseudonyme :{' '}
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{doublon.pseudonyme}</span>
+                    </p>
+                    <button
+                      onClick={() => onSwitchToAjout?.(doublon)}
+                      style={{
+                        alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '7px 12px', borderRadius: 8, border: 'none',
+                        background: 'var(--teal)', color: '#fff', fontWeight: 600, fontSize: 12,
+                      }}
+                    >
+                      Ajouter un document à ce dossier
+                    </button>
+                  </div>
+                )}
               </Field>
 
               <Field label="Pathologie">
@@ -390,10 +477,10 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
         ) : (
           <>
             <button
-              onClick={step === 0 ? onClose : goBack}
+              onClick={step === FIRST_STEP ? onClose : goBack}
               style={secondaryBtn}
             >
-              <IconArrowLeft size={14} /> {step === 0 ? 'Annuler' : 'Retour'}
+              <IconArrowLeft size={14} /> {step === FIRST_STEP ? 'Annuler' : 'Retour'}
             </button>
 
             {step < STEPS.length - 1 ? (

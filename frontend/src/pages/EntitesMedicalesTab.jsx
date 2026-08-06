@@ -586,6 +586,42 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   const [alertLoading, setAlertLoading] = useState(false);
   const [alertError, setAlertError] = useState('');
 
+  // Mode "ajout de document à un dossier existant" : rempli soit en cliquant
+  // sur "Ajouter" pour un pseudonyme déjà listé (on va chercher son numéro
+  // de dossier + pathologie + date de diagnostic auprès du serveur), soit
+  // depuis l'alerte "patient déjà existant" affichée par le wizard lui-même.
+  const [ajoutPatient, setAjoutPatient] = useState(null);
+  const [ajoutLoading, setAjoutLoading] = useState(null); // pseudonyme en cours de résolution, ou null
+  const [ajoutError, setAjoutError] = useState('');
+
+  async function ouvrirAjoutDocument(row) {
+    setAjoutError('');
+    setAjoutLoading(row.pseudonyme);
+    try {
+      const res = await client.get(`/api/dossiers/${row.pseudonyme}/documents`);
+      const premier = res.data.documents?.[0];
+      if (!premier?.numero_dossier) {
+        setAjoutError("Impossible de retrouver le numéro de dossier pour ce patient.");
+        return;
+      }
+      const verif = await client.get('/api/dossiers/verifier', {
+        params: { pathologie: row.registre, numero_dossier: premier.numero_dossier },
+      });
+      setAjoutPatient({
+        pseudonyme: row.pseudonyme,
+        pathologie: row.registre,
+        numero_dossier: premier.numero_dossier,
+        date_diagnostic: verif.data.date_diagnostic,
+        date_inclusion: verif.data.date_inclusion,
+      });
+      setShowAdd(true);
+    } catch {
+      setAjoutError("Échec de la préparation de l'ajout de document.");
+    } finally {
+      setAjoutLoading(null);
+    }
+  }
+
   function loadDossiers() {
     setLoading(true);
     client.get('/api/dossiers')
@@ -710,17 +746,33 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                     <td style={{ padding: '11px 10px' }}>{fmtDate(r.derniere_visite)}</td>
                     <td style={{ padding: '11px 10px' }}><CompletudeCell value={r.completude} /></td>
                     <td style={{ padding: '11px 10px' }}>
-                      <button
-                        onClick={() => setViewPseudo(r.pseudonyme)}
-                        style={{
-                          width: 'auto', margin: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
-                          borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
-                          color: 'var(--teal-deep)', fontSize: 11.5, fontWeight: 600,
-                        }}
-                      >
-                        <IconEye size={13} />
-                        Voir
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => setViewPseudo(r.pseudonyme)}
+                          style={{
+                            width: 'auto', margin: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                            borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
+                            color: 'var(--teal-deep)', fontSize: 11.5, fontWeight: 600,
+                          }}
+                        >
+                          <IconEye size={13} />
+                          Voir
+                        </button>
+                        <button
+                          onClick={() => ouvrirAjoutDocument(r)}
+                          disabled={ajoutLoading === r.pseudonyme}
+                          title="Ajouter un document (audio/scan) à ce dossier existant"
+                          style={{
+                            width: 'auto', margin: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                            borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
+                            color: 'var(--teal-deep)', fontSize: 11.5, fontWeight: 600,
+                            opacity: ajoutLoading === r.pseudonyme ? 0.6 : 1,
+                          }}
+                        >
+                          <IconPlus size={13} />
+                          {ajoutLoading === r.pseudonyme ? '…' : 'Ajouter'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -728,11 +780,24 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
             </table>
           </div>
         )}
+        {ajoutError && (
+          <p style={{ fontSize: 12, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+            <IconAlert size={13} /> {ajoutError}
+          </p>
+        )}
       </div>
 
       {showAdd && (
         <AjouterPatientWizard
-          onClose={() => setShowAdd(false)}
+          existingPatient={ajoutPatient}
+          onSwitchToAjout={(doublon) => setAjoutPatient({
+            pseudonyme: doublon.pseudonyme,
+            pathologie: doublon.pathologie,
+            numero_dossier: doublon.numero_dossier,
+            date_diagnostic: doublon.date_diagnostic,
+            date_inclusion: doublon.date_inclusion,
+          })}
+          onClose={() => { setShowAdd(false); setAjoutPatient(null); }}
           onCreated={() => loadDossiers()}
         />
       )}
