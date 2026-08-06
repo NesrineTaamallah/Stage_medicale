@@ -459,9 +459,32 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
 
           {step === 3 && !result && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {isAjoutDocument && !form.date_diagnostic && (
+                <p style={{
+                  display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5,
+                  color: 'var(--amber, #c8790f)', margin: 0,
+                }}>
+                  <IconAlert size={14} /> La date de diagnostic n'est pas renseignée pour ce dossier. Merci de la compléter ci-dessous pour pouvoir créer le document.
+                </p>
+              )}
               <SummaryRow label="Numéro de dossier" value={form.numero_dossier} />
               <SummaryRow label="Pathologie" value={form.pathologie} />
-              <SummaryRow label="Date de diagnostic" value={form.date_diagnostic} />
+              {isAjoutDocument && !form.date_diagnostic ? (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px',
+                  background: 'var(--card)', border: '1px solid var(--amber, #c8790f)', borderRadius: 10, fontSize: 13, gap: 12,
+                }}>
+                  <span style={{ color: 'var(--slate-soft)', whiteSpace: 'nowrap' }}>Date de diagnostic</span>
+                  <input
+                    type="date"
+                    value={form.date_diagnostic}
+                    onChange={(e) => update('date_diagnostic', e.target.value)}
+                    style={{ ...inputStyle, padding: '6px 10px', maxWidth: 170 }}
+                  />
+                </div>
+              ) : (
+                <SummaryRow label="Date de diagnostic" value={form.date_diagnostic} />
+              )}
               <SummaryRow label="Date d'inclusion" value={form.date_inclusion} />
               <SummaryRow label="Type de document" value={TYPES_DOCUMENT.find((t) => t.value === form.type_document)?.label} />
               <SummaryRow label="Type d'entrée" value={form.type_entree === 'audio' ? 'Audio (transcription automatique)' : 'Document scanné'} />
@@ -550,7 +573,11 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                 Suivant <IconArrowRight size={14} />
               </button>
             ) : (
-              <button onClick={handleSubmit} disabled={submitting} style={{ ...primaryBtn, opacity: submitting ? 0.7 : 1 }}>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || !form.date_diagnostic}
+                style={{ ...primaryBtn, opacity: (submitting || !form.date_diagnostic) ? 0.5 : 1, cursor: (!form.date_diagnostic) ? 'not-allowed' : 'pointer' }}
+              >
                 {submitting ? 'Création…' : 'Créer le dossier'}
               </button>
             )}

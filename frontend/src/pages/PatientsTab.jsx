@@ -357,10 +357,7 @@ export default function PatientsTab() {
             }}>
               Pseudonyme : {detailPseudonyme}
             </p>
-            <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--slate-soft)', lineHeight: 1.5 }}>
-              Nom, prénom et autres coordonnées restent vides tant que l'extraction d'entités
-              n'a pas encore été effectuée pour ce dossier.
-            </p>
+      
 
             {detailLoading && <p style={{ fontSize: 13, color: 'var(--slate)' }}>Chargement…</p>}
             {detailError && (

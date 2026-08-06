@@ -281,4 +281,88 @@ async function buildEntitesEPR(pseudonyme) {
   };
 }
 
-module.exports = { listDossiers, getDossierDetail };
+// Whitelist stricte des colonnes modifiables depuis l'onglet Identification
+// (et compagnie) du dossier détaillé. Volontairement minimal et explicite :
+// - la clé primaire (pseudonyme) et les métadonnées (created_at, registre)
+//   ne doivent jamais être modifiables depuis ce endpoint ;
+// - delai_diagnostic_mois est une colonne GENERATED ALWAYS AS (...) STORED
+//   côté SQL (voir schema_registre.sql) : PostgreSQL refuse de toute façon
+//   un UPDATE dessus, donc elle est explicitement exclue ici pour renvoyer
+//   une erreur claire côté client plutôt qu'une erreur SQL brute.
+const EDITABLE_FIELDS = {
+  patients: ['date_inclusion', 'age'],
+  sep_identification_clinique: [
+    'sexe', 'gouvernorat_code', 'date_diagnostic',
+    'age_diagnostic_mois', 'age_premier_symptome_mois',
+  ],
+  epr_identification_clinique: [
+    'age_debut_crises_mois', 'age_diagnostic_pharmacoresistance_mois',
+  ],
+};
+
+/**
+ * PATCH /api/dossiers/:pseudonyme/champ
+ * body : { table, colonne, valeur }
+ *
+ * Endpoint générique mais volontairement restreint par whitelist
+ * (EDITABLE_FIELDS) : impossible de cibler une table ou une colonne hors de
+ * cette liste, même en forgeant la requête. Une seule colonne modifiée par
+ * appel, ce qui correspond au flux "édition champ par champ avec
+ * confirmation" côté frontend (FieldsGrid) — pas de mise à jour en masse
+ * pouvant écraser des données par erreur.
+ */
+async function updateChampDossier(req, res) {
+  const { pseudonyme } = req.params;
+  const { table, colonne, valeur } = req.body;
+
+  const colonnesAutorisees = EDITABLE_FIELDS[table];
+  if (!colonnesAutorisees) {
+    return res.status(400).json({ error: 'Table inconnue ou non modifiable.' });
+  }
+  if (!colonnesAutorisees.includes(colonne)) {
+    return res.status(400).json({ error: 'Champ inconnu ou non modifiable.' });
+  }
+
+  try {
+    const patientResult = await pool.query('SELECT pseudonyme, registre FROM patients WHERE pseudonyme = $1', [pseudonyme]);
+    const patient = patientResult.rows[0];
+    if (!patient) {
+      return res.status(404).json({ error: 'Dossier introuvable.' });
+    }
+    // Les tables sep_* / epr_* sont réservées au registre correspondant :
+    // on évite qu'un appel malformé écrive dans epr_identification_clinique
+    // pour un patient SEP (ou l'inverse), ce qui créerait une ligne fantôme.
+    if (table.startsWith('sep_') && patient.registre !== 'SEP') {
+      return res.status(400).json({ error: 'Ce champ ne correspond pas au registre de ce dossier.' });
+    }
+    if (table.startsWith('epr_') && patient.registre !== 'EPR') {
+      return res.status(400).json({ error: 'Ce champ ne correspond pas au registre de ce dossier.' });
+    }
+
+    // La valeur vide est normalisée en NULL SQL plutôt qu'en chaîne vide,
+    // conformément à la convention NULL/'NA' déjà utilisée ailleurs dans
+    // le registre pour représenter une donnée manquante.
+    const valeurNormalisee = valeur === '' || valeur === undefined ? null : valeur;
+
+    // `table` et `colonne` proviennent de la whitelist ci-dessus (pas
+    // interpolés directement depuis req.body sans vérification) : l'usage
+    // de template string ici est donc sûr, seule `valeurNormalisee` passe
+    // en paramètre lié ($1/$2).
+    const query = table === 'patients'
+      ? `UPDATE patients SET ${colonne} = $1 WHERE pseudonyme = $2 RETURNING ${colonne}`
+      : `INSERT INTO ${table} (pseudonyme, ${colonne}) VALUES ($2, $1)
+         ON CONFLICT (pseudonyme) DO UPDATE SET ${colonne} = EXCLUDED.${colonne}
+         RETURNING ${colonne}`;
+
+    const result = await pool.query(query, [valeurNormalisee, pseudonyme]);
+
+    await logAccess({ userId: req.user.sub, action: 'dossier_edit_champ', success: true, req });
+
+    res.json({ colonne, valeur: result.rows[0]?.[colonne] ?? null });
+  } catch (err) {
+    console.error('Erreur updateChampDossier :', err);
+    res.status(500).json({ error: "Échec de l'enregistrement." });
+  }
+}
+
+module.exports = { listDossiers, getDossierDetail, updateChampDossier };

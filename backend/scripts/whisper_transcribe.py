@@ -46,7 +46,10 @@ if _HF_TOKEN:
 MODEL_NAME = "nesrine56/whisper-large-v3-ct2"
 ALIGN_MODEL_NAME = "jonatasgrosman/wav2vec2-large-xlsr-53-french"
 LANGUAGE = "fr"
-BATCH_SIZE = 4
+# Réduit de 4 à 2 : sur un GPU 6 Go (ex. RTX 3050), un batch_size=4 laisse
+# trop peu de marge une fois le modèle d'alignement chargé en plus du
+# modèle ASR, provoquant des CUDA OOM sur les fichiers audio un peu longs.
+BATCH_SIZE = 2
 
 DOMAIN_PROMPT = (
     "Compte-rendu médical dicté en français. Antécédents personnels et familiaux, "
@@ -177,18 +180,52 @@ def _load_models():
     import torch
     import whisperx
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_type = "int8_float16" if device == "cuda" else "int8"
+    # Fixe explicitement l'index de device CUDA AVANT tout appel torch.cuda.* :
+    # sur certaines machines (GPU hybride iGPU/dGPU, ou contexte CUDA laissé
+    # dans un état incohérent par un process précédent), l'index 0 par défaut
+    # peut ne plus correspondre au bon GPU -> "invalid device ordinal".
+    device = "cpu"
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.set_device(0)
+            device = "cuda"
+        except Exception as e:
+            print(f"[WARN] GPU CUDA indisponible ({e}), bascule sur CPU.", file=sys.stderr)
+            device = "cpu"
+
+    # int8 (au lieu de int8_float16) réduit encore l'empreinte VRAM — utile
+    # sur les GPU 6 Go (ex. RTX 3050) où le modèle d'alignement + les buffers
+    # d'inférence peuvent facilement dépasser la mémoire disponible.
+    compute_type = "int8" if device == "cuda" else "int8"
 
     print(f"[INFO] Chargement du modèle {MODEL_NAME} ({device}, {compute_type})...", file=sys.stderr)
-    model = whisperx.load_model(
-        MODEL_NAME,
-        device=device,
-        compute_type=compute_type,
-        language=LANGUAGE,
-        asr_options=ASR_OPTIONS,
-        vad_options=VAD_OPTIONS,
-    )
+    try:
+        model = whisperx.load_model(
+            MODEL_NAME,
+            device=device,
+            compute_type=compute_type,
+            language=LANGUAGE,
+            asr_options=ASR_OPTIONS,
+            vad_options=VAD_OPTIONS,
+        )
+    except RuntimeError as e:
+        # OOM ou erreur CUDA au chargement -> on retombe sur CPU plutôt que
+        # de planter tout le service (plus lent, mais fonctionnel).
+        if device == "cuda" and ("CUDA" in str(e) or "cuda" in str(e).lower()):
+            print(f"[WARN] Échec chargement GPU ({e}). Repli sur CPU.", file=sys.stderr)
+            torch.cuda.empty_cache()
+            device = "cpu"
+            compute_type = "int8"
+            model = whisperx.load_model(
+                MODEL_NAME,
+                device=device,
+                compute_type=compute_type,
+                language=LANGUAGE,
+                asr_options=ASR_OPTIONS,
+                vad_options=VAD_OPTIONS,
+            )
+        else:
+            raise
 
     print(f"[INFO] Chargement du modèle d'alignement ({ALIGN_MODEL_NAME})...", file=sys.stderr)
     model_a, metadata_a = whisperx.load_align_model(
@@ -248,6 +285,16 @@ def transcribe_audio(audio_path: str) -> str:
     full_text = normalize_medical(full_text)
 
     gc.collect()
+    if device == "cuda":
+        try:
+            import torch
+            # Libère les blocs mémoire mis en cache par PyTorch (buffers
+            # d'inférence de la requête précédente) : sans ça, dans le
+            # service persistant (whisper_service.py), la VRAM libre tend
+            # à diminuer requête après requête jusqu'au CUDA OOM.
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
     return full_text.strip()
 
 

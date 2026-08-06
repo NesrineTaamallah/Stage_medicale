@@ -55,6 +55,14 @@ function formatValue(v) {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return fmtDate(v);
+  // Les colonnes numériques (NUMERIC côté PostgreSQL) reviennent souvent
+  // en JS comme des chaînes ("180.00", "15.0"...) : on les affiche comme
+  // de vrais chiffres formatés (fr-FR, sans zéros décimaux inutiles)
+  // plutôt que de laisser passer la chaîne brute telle quelle.
+  if (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)))) {
+    const n = typeof v === 'number' ? v : Number(v);
+    return n.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+  }
   return String(v);
 }
 
@@ -77,6 +85,182 @@ function FieldsGrid({ entries }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Miroir strict de EDITABLE_FIELDS côté backend (dossierController.js) :
+// seuls ces champs peuvent être modifiés depuis le dossier détaillé.
+// Toute clé absente d'ici reste en lecture seule (ex. delai_diagnostic_mois,
+// colonne calculée côté SQL — la modifier n'aurait de toute façon aucun
+// effet et provoquerait une erreur serveur).
+const IDENTIFICATION_TABLE_MAP = {
+  SEP: {
+    date_inclusion: 'patients', age: 'patients',
+    sexe: 'sep_identification_clinique', gouvernorat_code: 'sep_identification_clinique',
+    date_diagnostic: 'sep_identification_clinique', age_diagnostic_mois: 'sep_identification_clinique',
+    age_premier_symptome_mois: 'sep_identification_clinique',
+  },
+  EPR: {
+    date_inclusion: 'patients', age: 'patients',
+    age_debut_crises_mois: 'epr_identification_clinique',
+    age_diagnostic_pharmacoresistance_mois: 'epr_identification_clinique',
+  },
+};
+
+/**
+ * Variante éditable de FieldsGrid, réservée à l'onglet Identification.
+ *
+ * Parcours d'édition volontairement "à friction" pour éviter tout
+ * enregistrement accidentel (clic malheureux + Entrée) :
+ *   1. le champ est en lecture seule par défaut ;
+ *   2. un clic explicite sur l'icône crayon bascule CE champ, et lui seul,
+ *      en mode édition (input local, rien n'est envoyé au serveur) ;
+ *   3. "Annuler" abandonne sans rien envoyer ;
+ *   4. "Enregistrer" ouvre une confirmation native (window.confirm) — il
+ *      faut valider ce second dialogue pour que la requête PATCH parte
+ *      réellement. Appuyer sur Entrée dans le champ ne déclenche PAS
+ *      l'enregistrement (onKeyDown intercepté) : il faut passer par le
+ *      bouton + la confirmation.
+ */
+function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
+  const tableMap = IDENTIFICATION_TABLE_MAP[registre] || {};
+  const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre'].includes(k));
+  const [editingKey, setEditingKey] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [savingKey, setSavingKey] = useState(null);
+  const [rowError, setRowError] = useState({ key: null, message: '' });
+
+  if (filtered.length === 0) return null;
+
+  function startEdit(k, currentValue) {
+    setEditingKey(k);
+    setDraft(currentValue === null || currentValue === undefined ? '' : currentValue);
+    setRowError({ key: null, message: '' });
+  }
+
+  function cancelEdit() {
+    setEditingKey(null);
+    setDraft('');
+  }
+
+  async function confirmSave(k) {
+    const table = tableMap[k];
+    if (!table) return; // sécurité : ne devrait pas arriver, le crayon n'est pas affiché sinon
+    const confirmed = window.confirm(
+      `Confirmer la modification du champ "${humanizeKey(k)}" ?\n\nNouvelle valeur : ${draft || '(vide)'}`
+    );
+    if (!confirmed) return;
+
+    setSavingKey(k);
+    setRowError({ key: null, message: '' });
+    try {
+      const res = await client.patch(`/api/dossiers/${pseudonyme}/champ`, {
+        table, colonne: k, valeur: draft,
+      });
+      onFieldSaved?.(k, res.data.valeur);
+      setEditingKey(null);
+      setDraft('');
+    } catch (err) {
+      setRowError({ key: k, message: err.response?.data?.error || "Échec de l'enregistrement." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px 18px' }}>
+      {filtered.map(([k, v]) => {
+        const editable = !!tableMap[k];
+        const isEditing = editingKey === k;
+        return (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+              {humanizeKey(k)}
+            </p>
+
+            {isEditing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <input
+                  autoFocus
+                  type={k.startsWith('date_') ? 'date' : 'text'}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  // Entrée ne soumet rien : évite qu'une pression accidentelle
+                  // (ou un clavier virtuel mal maîtrisé) enregistre sans passer
+                  // par le bouton + la confirmation ci-dessous.
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                  style={{
+                    padding: '8px 10px', border: '1.5px solid var(--teal)', borderRadius: 9,
+                    fontSize: 13.5, background: 'var(--paper)', color: 'var(--ink)',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => confirmSave(k)}
+                    disabled={savingKey === k}
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 7, border: 'none',
+                      background: 'var(--teal)', color: '#fff', fontSize: 12, fontWeight: 600,
+                      cursor: savingKey === k ? 'default' : 'pointer', opacity: savingKey === k ? 0.7 : 1,
+                    }}
+                  >
+                    {savingKey === k ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    disabled={savingKey === k}
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 7, border: '1.5px solid var(--line)',
+                      background: 'var(--card)', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                </div>
+                {rowError.key === k && (
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--error, #c23b4e)' }}>{rowError.message}</p>
+                )}
+              </div>
+            ) : (
+              // position: relative + le crayon en position absolute DANS la
+              // boîte (au lieu d'être accolé au libellé au-dessus, où il
+              // pouvait se retrouver mal placé quand le libellé passait sur
+              // plusieurs lignes, ex. "AGE DIAGNOSTIC MOIS").
+              <div style={{ position: 'relative' }}>
+                <div style={{
+                  padding: '9px 34px 9px 11px', border: '1.5px solid var(--line)', borderRadius: 9,
+                  background: 'var(--paper)', fontSize: 13.5, color: 'var(--ink)',
+                }}>
+                  {formatValue(v)}
+                </div>
+                {editable && (
+                  <button
+                    type="button"
+                    onClick={() => startEdit(k, v)}
+                    title="Modifier ce champ"
+                    style={{
+                      // Coin haut-droit, à distance fixe des bords (pas de
+                      // centrage vertical par transform) : l'icône reste
+                      // strictement DANS le cadre, quelle que soit la
+                      // hauteur de la boîte, avec un petit fond qui la
+                      // détache visuellement du texte en dessous.
+                      position: 'absolute', top: 5, right: 5, width: 20, height: 20,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: 'none', borderRadius: 5, background: 'var(--teal-tint)',
+                      cursor: 'pointer', padding: 0, color: 'var(--teal-deep)', fontSize: 11, lineHeight: 1,
+                    }}
+                  >
+                    ✎
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -542,7 +726,16 @@ function DossierView({ pseudonyme, onBack }) {
             <HorizontalNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
             <h3 style={{ margin: '0 0 14px', fontSize: 15, fontFamily: 'var(--font-display)' }}>{activeDef.label}</h3>
             {activeTab === 'suivi' && <SuiviChart registre={registre} data={data} />}
-            <SectionContent data={activeDef.get(data)} />
+            {activeTab === 'identification' ? (
+              <EditableFieldsGrid
+                entries={Object.entries(activeDef.get(data) || {})}
+                pseudonyme={pseudonyme}
+                registre={registre}
+                onFieldSaved={(k, v) => setData((d) => ({ ...d, identification: { ...d.identification, [k]: v } }))}
+              />
+            ) : (
+              <SectionContent data={activeDef.get(data)} />
+            )}
           </div>
         </div>
       )}
