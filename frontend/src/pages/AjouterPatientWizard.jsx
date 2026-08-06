@@ -41,6 +41,8 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [texteCorrige, setTexteCorrige] = useState('');
+  const [validating, setValidating] = useState(false);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -92,11 +94,32 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setResult(res.data);
+      setTexteCorrige(res.data.texte_transcrit || '');
       onCreated?.(res.data);
     } catch (err) {
       setError(err.response?.data?.error || "Échec de la création du dossier.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleValider() {
+    if (!result?.document_id) {
+      onClose();
+      return;
+    }
+    setValidating(true);
+    setError('');
+    try {
+      const res = await client.patch(`/api/dossiers/documents/${result.document_id}/texte`, {
+        texte_transcrit: texteCorrige,
+      });
+      onCreated?.({ ...result, ...res.data });
+      onClose();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Échec de la validation.');
+    } finally {
+      setValidating(false);
     }
   }
 
@@ -302,15 +325,25 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
               <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', fontFamily: 'var(--font-mono)' }}>
                 {result.numero_dossier}
               </p>
-              {result.texte_transcrit && (
+              {result.texte_transcrit != null && (
                 <div style={{
                   width: '100%', textAlign: 'left', background: 'var(--card)', border: '1px solid var(--line)',
                   borderRadius: 12, padding: 16, marginTop: 8,
                 }}>
                   <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate-soft)' }}>
-                    Texte transcrit
+                    Texte transcrit — vérifiez et corrigez si besoin
                   </p>
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--slate)' }}>{result.texte_transcrit}</p>
+                  <textarea
+                    value={texteCorrige}
+                    onChange={(e) => setTexteCorrige(e.target.value)}
+                    rows={8}
+                    style={{
+                      width: '100%', fontSize: 13, lineHeight: 1.6, color: 'var(--slate)',
+                      border: '1.5px solid var(--line)', borderRadius: 8, padding: 10,
+                      fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical',
+                      background: 'var(--paper)',
+                    }}
+                  />
                 </div>
               )}
               {result.statut === 'erreur_transcription' && (
@@ -335,8 +368,8 @@ export default function AjouterPatientWizard({ onClose, onCreated }) {
         borderTop: '1px solid var(--line)', background: 'var(--card)',
       }}>
         {result ? (
-          <button onClick={onClose} style={{ ...primaryBtn, marginLeft: 'auto' }}>
-            Terminer
+          <button onClick={handleValider} disabled={validating} style={{ ...primaryBtn, marginLeft: 'auto', opacity: validating ? 0.7 : 1 }}>
+            {validating ? 'Validation…' : 'Valider'}
           </button>
         ) : (
           <>

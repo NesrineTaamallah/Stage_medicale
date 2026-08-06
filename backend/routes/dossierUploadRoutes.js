@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { creerDossier } = require('../controllers/dossierUploadController');
+const { creerDossier, corrigerTexteTranscrit } = require('../controllers/dossierUploadController');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 
@@ -36,6 +36,10 @@ const upload = multer({
 
 // Seul le clinicien saisit de nouveaux dossiers.
 router.post('/creer', requireAuth, requireRole('clinicien'), upload.single('fichier'), creerDossier);
+
+// Correction du texte transcrit (audio ou OCR) avant validation finale,
+// depuis l'étape de confirmation du wizard.
+router.patch('/documents/:id/texte', requireAuth, requireRole('clinicien'), corrigerTexteTranscrit);
 
 module.exports = router;
 

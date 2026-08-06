@@ -1,5 +1,6 @@
 import argparse
 import gc
+import io
 import json
 import os
 import re
@@ -7,12 +8,29 @@ import sys
 from collections import Counter
 from difflib import SequenceMatcher
 
+# Force stdout/stderr en UTF-8 : sur Windows, quand ce script est lancé via
+# spawn() (sortie redirigée vers un pipe, pas une vraie console), Python
+# retombe sur l'encodage de la page de code Windows (souvent cp1252) au
+# lieu d'UTF-8. Les caractères accentués (é, è, à...) sont alors remplacés
+# par le caractère de substitution "�" au moment même de l'impression —
+# la transcription elle-même est correcte, seule la sortie stdout est
+# corrompue. C'est ce texte déjà corrompu qui finit stocké en base.
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 from dotenv import load_dotenv
 
-# Charge les variables du fichier .env (doit contenir HF_TOKEN=hf_xxx) situé
-# dans le même dossier que ce script, ou dans backend/ selon l'endroit d'où
-# le script est lancé.
-load_dotenv()
+# Charge les variables du fichier .env (doit contenir HF_TOKEN=hf_xxx).
+# On résout explicitement le chemin par rapport à ce script (dossier parent
+# = backend/), car load_dotenv() sans argument cherche depuis le cwd du
+# process appelant — quand ce script est lancé via spawn() depuis Node,
+# ce cwd n'est pas forcément backend/, et le .env ne serait alors jamais
+# trouvé (d'où un 401/404 Hugging Face qui n'apparaît qu'en lancement Node,
+# jamais en terminal où le cwd est déjà backend/).
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
+load_dotenv(dotenv_path=_ENV_PATH)
 
 _HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 if _HF_TOKEN:

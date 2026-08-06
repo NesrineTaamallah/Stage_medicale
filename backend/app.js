@@ -1,5 +1,5 @@
 const express = require('express');
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');

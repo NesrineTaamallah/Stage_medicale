@@ -2,3 +2,15 @@
 torch
 whisperx @ git+https://github.com/m-bain/whisperX.git
 text2num
+fastapi
+uvicorn[standard]
+
+# OCR documents scannés (PaddleOCR-VL) — voir scripts/paddleocr_service.py.
+# Peut être installé dans un venv séparé (venv-paddleocr) si conflit de
+# versions torch/paddle avec le venv whisper.
+paddlepaddle-gpu
+paddleocr[doc-parser]>=3.6.0
+opencv-python
+pymupdf
+beautifulsoup4
+python-dotenv
