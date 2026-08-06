@@ -1,0 +1,249 @@
+
+import argparse
+import gc
+import json
+import os
+import re
+import sys
+from collections import Counter
+from difflib import SequenceMatcher
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+MODEL_NAME = "nesrine56/whisper-large-v3-ct2"
+ALIGN_MODEL_NAME = "jonatasgrosman/wav2vec2-large-xlsr-53-french"
+LANGUAGE = "fr"
+BATCH_SIZE = 16
+
+DOMAIN_PROMPT = (
+    "Compte-rendu médical dicté en français. Antécédents personnels et familiaux, "
+    "motif de consultation, examen clinique, signes fonctionnels, diagnostic, "
+    "bilan biologique et radiologique, IRM, scanner, échographie, ECG, EEG, "
+    "hospitalisation, évolution clinique, surveillance, consultation de suivi. "
+    "Exemple de posologie : traitement par 20 mg/kg/jour en 2 prises, "
+    "amoxicilline 500 mg 3 x/jour pendant 7 jours, dose de charge de 15 mg/kg."
+)
+
+ASR_OPTIONS = {
+    "temperatures": [0.0],
+    "initial_prompt": DOMAIN_PROMPT,
+    "no_speech_threshold": 0.5,
+    "compression_ratio_threshold": 2.2,
+    "log_prob_threshold": -0.8,
+    "condition_on_previous_text": False,
+    "beam_size": 5,
+    "patience": 1.0,
+    "suppress_numerals": False,
+}
+
+VAD_OPTIONS = {
+    "vad_onset": 0.3,
+    "vad_offset": 0.363,
+}
+
+# Règles de correction lexicale (regex, remplacement) — vide par défaut,
+# à compléter au besoin (ex. homophones Whisper récurrents identifiés en
+# pratique : "Sousse" -> "poussée", "gadoline" -> "gadolinium", etc.)
+CORRECTION_RULES = []
+
+FR_NUM_WORDS_FOIS = {
+    "deux": "2", "trois": "3", "quatre": "4",
+    "cinq": "5", "six": "6", "sept": "7", "huit": "8", "neuf": "9", "dix": "10",
+}
+
+
+# ---------------------------------------------------------------------------
+# Post-traitement (repris tel quel du notebook)
+# ---------------------------------------------------------------------------
+
+def detect_ngram_repetition(text, n=5, max_repeat=3):
+    """Détecte les boucles d'hallucination (n-gramme répété trop souvent)."""
+    words = re.findall(r"\w+", text.lower())
+    if len(words) < n * 2:
+        return False, None
+    ngrams = [" ".join(words[i:i + n]) for i in range(len(words) - n + 1)]
+    counts = Counter(ngrams)
+    for ngram, count in counts.items():
+        if count > max_repeat:
+            return True, ngram
+    return False, None
+
+
+def dedup_consecutive_segments(segments, similarity_threshold=0.9):
+    """Supprime les segments consécutifs quasi identiques et les boucles."""
+    cleaned = []
+    for seg in segments:
+        text = seg["text"].strip()
+
+        has_loop, ngram = detect_ngram_repetition(text)
+        if has_loop:
+            print(f"  [WARN] Boucle détectée ({seg['start']:.2f}s) : '{ngram}' répété. Segment ignoré.")
+            continue
+
+        if cleaned:
+            prev_text = cleaned[-1]["text"].strip()
+            ratio = SequenceMatcher(None, text.lower(), prev_text.lower()).ratio()
+            if ratio > similarity_threshold and len(text) > 0:
+                continue
+
+        cleaned.append(seg)
+    return cleaned
+
+
+def apply_corrections(text, rules=CORRECTION_RULES):
+    corrected = text
+    for pattern, replacement in rules:
+        corrected = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
+    return corrected
+
+
+def normalize_medical(text):
+    """Normalise les nombres écrits en toutes lettres et les unités médicales."""
+    from text_to_num import alpha2digit
+
+    text = re.sub(r"\bune\b", "ZZZARTFEMZZZ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bun\b", "ZZZARTMASZZZ", text, flags=re.IGNORECASE)
+
+    text = re.sub(r"\bpoint\s+d[\'’]?\s*interrogation\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bpoint\s+d[\'’]?\s*exclamation\b", "", text, flags=re.IGNORECASE)
+
+    text = alpha2digit(text, "fr", threshold=0)
+
+    text = re.sub(r"ZZZARTFEMZZZ", "une", text, flags=re.IGNORECASE)
+    text = re.sub(r"ZZZARTMASZZZ", "un", text, flags=re.IGNORECASE)
+
+    for word, digit in FR_NUM_WORDS_FOIS.items():
+        text = re.sub(rf"\b{word}\s+fois\b", f"{digit} fois", text, flags=re.IGNORECASE)
+
+    text = re.sub(r"(\d+)\s*fois\s*(?=\d)", r"\1 * ", text)
+
+    unit_map = [
+        (r"\bmilligrammes?\b", "mg"), (r"\bkilogrammes?\b", "kg"), (r"\bmicrogrammes?\b", "ug"),
+        (r"\bgrammes?\b", "g"),
+        (r"\bmillilitres?\b", "ml"), (r"\blitres?\b", "l"),
+    ]
+    for pattern, repl in unit_map:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+
+    text = re.sub(r"(\d)(mg|g|kg|ug|ml|l)\b", r"\1 \2", text)
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Chargement du modèle (singleton — coûteux, à ne faire qu'une fois par process)
+# ---------------------------------------------------------------------------
+
+_MODEL_CACHE = {}
+
+
+def _load_models():
+    """Charge (une seule fois) le modèle ASR WhisperX + le modèle d'alignement FR."""
+    if _MODEL_CACHE:
+        return _MODEL_CACHE["model"], _MODEL_CACHE["model_a"], _MODEL_CACHE["metadata_a"], _MODEL_CACHE["device"]
+
+    import torch
+    import whisperx
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "int8_float16" if device == "cuda" else "int8"
+
+    print(f"[INFO] Chargement du modèle {MODEL_NAME} ({device}, {compute_type})...", file=sys.stderr)
+    model = whisperx.load_model(
+        MODEL_NAME,
+        device=device,
+        compute_type=compute_type,
+        language=LANGUAGE,
+        asr_options=ASR_OPTIONS,
+        vad_options=VAD_OPTIONS,
+    )
+
+    print(f"[INFO] Chargement du modèle d'alignement ({ALIGN_MODEL_NAME})...", file=sys.stderr)
+    model_a, metadata_a = whisperx.load_align_model(
+        language_code=LANGUAGE,
+        device=device,
+        model_name=ALIGN_MODEL_NAME,
+    )
+
+    print("[INFO] Modèles chargés.", file=sys.stderr)
+
+    _MODEL_CACHE.update({"model": model, "model_a": model_a, "metadata_a": metadata_a, "device": device})
+    return model, model_a, metadata_a, device
+
+
+# ---------------------------------------------------------------------------
+# Fonction principale
+# ---------------------------------------------------------------------------
+
+def transcribe_audio(audio_path: str) -> str:
+    """
+    Transcrit un fichier audio en texte français nettoyé.
+
+    Étapes : ASR WhisperX -> alignement wav2vec2 FR (best effort) ->
+    dédoublonnage des segments -> corrections lexicales -> normalisation
+    médicale (nombres, unités).
+
+    Args:
+        audio_path: chemin vers le fichier audio (wav, mp3, m4a, flac...).
+
+    Returns:
+        Le texte transcrit et nettoyé (chaîne unique).
+
+    Raises:
+        FileNotFoundError: si audio_path n'existe pas.
+    """
+    if not os.path.isfile(audio_path):
+        raise FileNotFoundError(f"Fichier audio introuvable : {audio_path}")
+
+    import whisperx
+
+    model, model_a, metadata_a, device = _load_models()
+
+    audio = whisperx.load_audio(audio_path)
+    result = model.transcribe(audio, batch_size=BATCH_SIZE, language=LANGUAGE)
+
+    try:
+        result = whisperx.align(
+            result["segments"], model_a, metadata_a, audio, device,
+            return_char_alignments=False,
+        )
+    except Exception as e:
+        print(f"[WARN] Alignement indisponible ({e}). Timestamps au niveau segment conservés.", file=sys.stderr)
+
+    cleaned_segments = dedup_consecutive_segments(result["segments"])
+    full_text = " ".join(seg["text"].strip() for seg in cleaned_segments)
+    full_text = apply_corrections(full_text)
+    full_text = normalize_medical(full_text)
+
+    gc.collect()
+    return full_text.strip()
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="Transcrit un fichier audio en texte (WhisperX, français médical).")
+    parser.add_argument("--audio", required=True, help="Chemin vers le fichier audio à transcrire.")
+    parser.add_argument("--json", action="store_true", help="Sortie au format JSON ({\"text\": ...}) au lieu de texte brut.")
+    args = parser.parse_args()
+
+    try:
+        text = transcribe_audio(args.audio)
+    except FileNotFoundError as e:
+        print(json.dumps({"error": str(e)}) if args.json else f"[ERREUR] {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"error": str(e)}) if args.json else f"[ERREUR] Transcription échouée : {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.json:
+        print(json.dumps({"text": text}, ensure_ascii=False))
+    else:
+        print(text)
+
+
+if __name__ == "__main__":
+    main()

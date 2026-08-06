@@ -12,6 +12,7 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const coordonneePatientRoutes = require('./routes/coordonneePatientRoutes');
 const clinicienOverviewRoutes = require('./routes/clinicienOverviewRoutes');
 const dossierRoutes = require('./routes/dossierRoutes');
+const dossierUploadRoutes = require('./routes/dossierUploadRoutes'); // AJOUT : création dossier + upload audio/scan
 const app = express();
 
 // Ces 4 middlewares doivent être montés AVANT toute route : sans cookieParser
@@ -33,6 +34,7 @@ app.use('/api/analyses', analysisRoutes);
 app.use('/api/coordonnees', coordonneePatientRoutes);
 app.use('/api/clinicien', clinicienOverviewRoutes);
 app.use('/api/dossiers', dossierRoutes);
+app.use('/api/dossiers', dossierUploadRoutes); // AJOUT : cohabite avec dossierRoutes (sous-chemins différents : GET / vs POST /creer)
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Serveur démarré sur le port ${PORT}`));

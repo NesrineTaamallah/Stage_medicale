@@ -3,9 +3,10 @@ import client from '../api/client';
 import useDragScroll from '../hooks/useDragScroll';
 import { SectionHeading } from '../components/DashboardWidgets';
 import LineChartSVG from '../components/ClinicalChart';
+import AjouterPatientWizard from './AjouterPatientWizard';
 import {
-  IconEye, IconPlus, IconSearch, IconX, IconFolder, IconAlert,
-  IconUsers, IconHistory, IconActivity, IconTarget, IconHeart, IconWave, IconUpload,
+  IconEye, IconPlus, IconSearch, IconFolder, IconAlert,
+  IconUsers, IconHistory, IconActivity, IconTarget, IconHeart, IconWave,
   IconArrowLeft, IconShield, IconGlobe, IconKey, IconRefresh, IconLock, IconEyeOff,
 } from '../components/Icons';
 
@@ -550,67 +551,11 @@ function DossierView({ pseudonyme, onBack }) {
 }
 
 /**
- * Modale "Ajouter" — pipeline audio → transcription → pseudonymisation → NER.
- * Non branché pour l'instant (cf. suite du stage) : simple aperçu visuel des
- * étapes, même codage visuel "Bientôt disponible" que le reste du dashboard
- * clinicien (voir NAV_ITEMS dans ClinicienDashboard.jsx).
+ * L'ajout d'un dossier (audio/scan -> transcription WhisperX -> pseudonymisation
+ * -> NER) ouvre désormais le wizard plein écran AjouterPatientWizard —
+ * voir son rendu plus bas, dans EntitesMedicalesTab.
  */
-function AddDossierModal({ onClose }) {
-  const steps = [
-    { label: 'Audio', hint: 'Enregistrement du compte rendu dicté' },
-    { label: 'Transcription', hint: 'Whisper' },
-    { label: 'Pseudonymisation', hint: 'AES-256-GCM + HMAC-SHA256' },
-    { label: 'Extraction NER', hint: 'Champs structurés injectés en base' },
-  ];
-  return (
-    <div onClick={onClose} className="modal-overlay">
-      <div onClick={(e) => e.stopPropagation()} className="modal-panel" style={{ maxWidth: 460 }}>
-        <div className="modal-header">
-          <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-display)' }}>Ajouter un dossier</h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">
-            <IconX size={16} />
-          </button>
-        </div>
-        <p className="hint" style={{ marginTop: 4 }}>
-          Le pipeline complet n'est pas encore branché à cette interface.
-        </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-          {steps.map((s, i) => (
-            <div key={s.label} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
-              borderRadius: 10, border: '1px dashed var(--line)', background: 'var(--paper)', opacity: 0.75,
-            }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%', background: 'var(--line)', color: 'var(--slate)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0,
-              }}>
-                {i + 1}
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{s.label}</p>
-                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>{s.hint}</p>
-              </div>
-              {i === 0 && <IconUpload size={16} color="var(--slate-soft)" />}
-            </div>
-          ))}
-        </div>
-
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 16,
-          padding: '5px 11px', borderRadius: 999, background: 'var(--line)', color: 'var(--slate)',
-          fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',
-        }}>
-          Bientôt disponible
-        </div>
-
-        <button type="button" className="secondary" style={{ marginTop: 18 }} onClick={onClose}>
-          Fermer
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Fenêtre "Entités Médicales" — tableau de tous les dossiers (pseudonyme,
@@ -641,12 +586,15 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   const [alertLoading, setAlertLoading] = useState(false);
   const [alertError, setAlertError] = useState('');
 
-  useEffect(() => {
+  function loadDossiers() {
+    setLoading(true);
     client.get('/api/dossiers')
       .then((res) => setRows(res.data))
       .catch(() => setError('Impossible de charger la liste des dossiers.'))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(loadDossiers, []);
 
   useEffect(() => {
     if (!alertType) return;
@@ -782,7 +730,12 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
         )}
       </div>
 
-      {showAdd && <AddDossierModal onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+        <AjouterPatientWizard
+          onClose={() => setShowAdd(false)}
+          onCreated={() => loadDossiers()}
+        />
+      )}
     </div>
   );
 }
