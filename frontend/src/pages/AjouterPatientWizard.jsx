@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import client from '../api/client';
 import {
   IconX, IconArrowLeft, IconArrowRight, IconUpload, IconCheckCircle,
@@ -41,7 +41,7 @@ const initialForm = {
  * réutilisées telles quelles à la soumission — le clinicien n'a plus qu'à
  * choisir le type de fiche puis le mode d'entrée (audio/scan) et uploader.
  */
-export default function AjouterPatientWizard({ onClose, onCreated, existingPatient = null, onSwitchToAjout = null }) {
+export default function AjouterPatientWizard({ onClose, onCreated, existingPatient = null, onSwitchToAjout = null, onVoirDossier = null }) {
   const isAjoutDocument = !!existingPatient;
   const STEPS_ACTIVES = isAjoutDocument ? STEPS.slice(1) : STEPS;
   const FIRST_STEP = isAjoutDocument ? 1 : 0;
@@ -95,20 +95,35 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
     }
   }
 
+  // Le champ "numéro de dossier" déclenche déjà la vérification à son blur
+  // (checkDoublon ci-dessus) ; ici on la relance aussi quand la pathologie
+  // change (choisie en second, après avoir déjà saisi le numéro), pour ne
+  // pas dépendre de l'ordre dans lequel le clinicien remplit l'étape 0.
+  useEffect(() => {
+    if (isAjoutDocument) return;
+    if (form.numero_dossier.trim() && form.pathologie) checkDoublon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.pathologie]);
+
   function canGoNext() {
-    if (step === 0) return form.numero_dossier.trim() && form.pathologie && form.date_diagnostic && form.date_inclusion;
+    // Étape 0 : un doublon détecté bloque systématiquement la suite tant
+    // que le numéro de dossier n'a pas été modifié (voir update() ci-dessus,
+    // qui réinitialise `doublon` dès que numero_dossier/pathologie changent).
+    if (step === 0) {
+      return !doublon && form.numero_dossier.trim() && form.pathologie && form.date_diagnostic && form.date_inclusion;
+    }
     if (step === 1) return !!form.type_document;
     if (step === 2) return !!form.type_entree && !!file;
     return true;
   }
 
   function goNext() {
-    if (!canGoNext()) {
-      setError('Veuillez compléter les champs requis avant de continuer.');
-      return;
-    }
     if (step === 0 && doublon) {
       setError('Ce numéro de dossier correspond à un patient déjà existant.');
+      return;
+    }
+    if (!canGoNext()) {
+      setError('Veuillez compléter les champs requis avant de continuer.');
       return;
     }
     setError('');
@@ -259,61 +274,76 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                       Pseudonyme :{' '}
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{doublon.pseudonyme}</span>
                     </p>
-                    <button
-                      onClick={() => onSwitchToAjout?.(doublon)}
-                      style={{
-                        alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '7px 12px', borderRadius: 8, border: 'none',
-                        background: 'var(--teal)', color: '#fff', fontWeight: 600, fontSize: 12,
-                      }}
-                    >
-                      Ajouter un document à ce dossier
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => onVoirDossier?.(doublon.pseudonyme)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '7px 12px', borderRadius: 8,
+                          border: '1.5px solid var(--error)', background: '#fff',
+                          color: 'var(--error)', fontWeight: 600, fontSize: 12,
+                        }}
+                      >
+                        Voir le dossier
+                      </button>
+                      <button
+                        onClick={() => onSwitchToAjout?.(doublon)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '7px 12px', borderRadius: 8, border: 'none',
+                          background: 'var(--teal)', color: '#fff', fontWeight: 600, fontSize: 12,
+                        }}
+                      >
+                        Ajouter un document à ce dossier
+                      </button>
+                    </div>
                   </div>
                 )}
               </Field>
 
-              <Field label="Pathologie">
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <PathologyCard
-                    active={form.pathologie === 'SEP'}
-                    icon={<IconActivity size={18} />}
-                    label="SEP"
-                    sublabel="Sclérose en plaques pédiatrique"
-                    onClick={() => update('pathologie', 'SEP')}
-                  />
-                  <PathologyCard
-                    active={form.pathologie === 'EPR'}
-                    icon={<IconHeart size={18} />}
-                    label="EPR"
-                    sublabel="Épilepsie pharmacorésistante"
-                    onClick={() => update('pathologie', 'EPR')}
-                  />
-                </div>
-              </Field>
+              <fieldset disabled={!!doublon} style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18, opacity: doublon ? 0.5 : 1 }}>
+                <Field label="Pathologie">
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <PathologyCard
+                      active={form.pathologie === 'SEP'}
+                      icon={<IconActivity size={18} />}
+                      label="SEP"
+                      sublabel="Sclérose en plaques pédiatrique"
+                      onClick={() => update('pathologie', 'SEP')}
+                    />
+                    <PathologyCard
+                      active={form.pathologie === 'EPR'}
+                      icon={<IconHeart size={18} />}
+                      label="EPR"
+                      sublabel="Épilepsie pharmacorésistante"
+                      onClick={() => update('pathologie', 'EPR')}
+                    />
+                  </div>
+                </Field>
 
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <Field label="Date de diagnostic">
-                    <input
-                      type="date"
-                      value={form.date_diagnostic}
-                      onChange={(e) => update('date_diagnostic', e.target.value)}
-                      style={inputStyle}
-                    />
-                  </Field>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <Field label="Date de diagnostic">
+                      <input
+                        type="date"
+                        value={form.date_diagnostic}
+                        onChange={(e) => update('date_diagnostic', e.target.value)}
+                        style={inputStyle}
+                      />
+                    </Field>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Field label="Date d'inclusion">
+                      <input
+                        type="date"
+                        value={form.date_inclusion}
+                        onChange={(e) => update('date_inclusion', e.target.value)}
+                        style={inputStyle}
+                      />
+                    </Field>
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <Field label="Date d'inclusion">
-                    <input
-                      type="date"
-                      value={form.date_inclusion}
-                      onChange={(e) => update('date_inclusion', e.target.value)}
-                      style={inputStyle}
-                    />
-                  </Field>
-                </div>
-              </div>
+              </fieldset>
             </div>
           )}
 
@@ -484,7 +514,11 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
             </button>
 
             {step < STEPS.length - 1 ? (
-              <button onClick={goNext} style={primaryBtn}>
+              <button
+                onClick={goNext}
+                disabled={step === 0 && !!doublon}
+                style={{ ...primaryBtn, opacity: (step === 0 && doublon) ? 0.5 : 1, cursor: (step === 0 && doublon) ? 'not-allowed' : 'pointer' }}
+              >
                 Suivant <IconArrowRight size={14} />
               </button>
             ) : (

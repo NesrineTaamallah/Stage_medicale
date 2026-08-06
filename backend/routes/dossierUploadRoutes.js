@@ -4,6 +4,7 @@ const path = require('path');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
+  verifierDossier,
   creerDossier,
   corrigerTexteTranscrit,
   getDocumentsByPseudonyme,
@@ -38,6 +39,11 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+// Vérification "doublon" à l'étape 0 du wizard (numéro de dossier déjà
+// utilisé pour cette pathologie). Doit être déclarée avant toute route
+// dynamique de ce routeur pour ne jamais être capturée par erreur.
+router.get('/verifier', requireAuth, requireRole('clinicien'), verifierDossier);
 
 // Seul le clinicien saisit de nouveaux dossiers.
 router.post('/creer', requireAuth, requireRole('clinicien'), upload.single('fichier'), creerDossier);

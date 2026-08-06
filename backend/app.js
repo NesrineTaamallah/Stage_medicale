@@ -33,8 +33,13 @@ app.use('/2fa', totpRoutes);
 app.use('/api/analyses', analysisRoutes);
 app.use('/api/coordonnees', coordonneePatientRoutes);
 app.use('/api/clinicien', clinicienOverviewRoutes);
+// IMPORTANT : dossierUploadRoutes AVANT dossierRoutes. dossierRoutes définit
+// `GET /:pseudonyme` (wildcard un seul segment) qui, monté en premier,
+// capturait par erreur `GET /api/dossiers/verifier` (pseudonyme="verifier")
+// avant même d'atteindre la vraie route /verifier de dossierUploadRoutes —
+// la vérification de doublon échouait donc systématiquement.
+app.use('/api/dossiers', dossierUploadRoutes);
 app.use('/api/dossiers', dossierRoutes);
-app.use('/api/dossiers', dossierUploadRoutes); // AJOUT : cohabite avec dossierRoutes (sous-chemins différents : GET / vs POST /creer)
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Serveur démarré sur le port ${PORT}`));

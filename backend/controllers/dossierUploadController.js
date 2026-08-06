@@ -185,6 +185,64 @@ async function ocrScan(filePath) {
 }
 
 /**
+ * GET /api/dossiers/verifier?pathologie=SEP|EPR&numero_dossier=...
+ *
+ * Vérifie, dès la saisie du numéro de dossier à l'étape 0 du wizard, si ce
+ * numéro (pour cette pathologie) correspond déjà à un patient existant. Le
+ * pseudonyme étant déterministe (HMAC sur registre + numéro de dossier), on
+ * peut le recalculer et regarder s'il existe déjà dans `patients`, sans
+ * jamais stocker le numéro de dossier en clair côté patients.
+ *
+ * Renvoie { existe: false } si aucun patient, ou { existe: true, pseudonyme,
+ * pathologie, numero_dossier, date_diagnostic, date_inclusion } sinon —
+ * c'est cette réponse qui alimente l'alerte "patient déjà existant" et le
+ * bouton "Voir le dossier" côté wizard.
+ */
+async function verifierDossier(req, res) {
+  const { pathologie, numero_dossier } = req.query;
+
+  if (!pathologie || !numero_dossier) {
+    return res.status(400).json({ error: 'pathologie et numero_dossier requis.' });
+  }
+  if (!['SEP', 'EPR'].includes(pathologie)) {
+    return res.status(400).json({ error: 'Pathologie invalide.' });
+  }
+
+  try {
+    const pseudonyme = genererPseudonyme(pathologie, numero_dossier);
+
+    const patientResult = await pool.query(
+      `SELECT pseudonyme, registre, date_inclusion FROM patients WHERE pseudonyme = $1`,
+      [pseudonyme]
+    );
+    const patient = patientResult.rows[0];
+    if (!patient) {
+      return res.json({ existe: false });
+    }
+
+    const identificationTable = pathologie === 'SEP'
+      ? 'sep_identification_clinique'
+      : 'epr_identification_clinique';
+    const identResult = await pool.query(
+      `SELECT date_diagnostic FROM ${identificationTable} WHERE pseudonyme = $1`,
+      [pseudonyme]
+    );
+
+    res.json({
+      existe: true,
+      pseudonyme: patient.pseudonyme,
+      pathologie: patient.registre,
+      numero_dossier: numero_dossier.trim(),
+      date_diagnostic: identResult.rows[0]?.date_diagnostic || null,
+      date_inclusion: patient.date_inclusion,
+    });
+  } catch (err) {
+    console.error('Erreur verifierDossier :', err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
+}
+
+/**
  * POST /api/dossiers/creer
  * multipart/form-data :
  *   numero_dossier, pathologie (SEP|EPR), date_diagnostic (YYYY-MM-DD),
@@ -308,6 +366,14 @@ async function creerDossier(req, res) {
  *
  * Permet au clinicien de corriger le texte transcrit (audio ou OCR) avant
  * validation finale, directement depuis l'étape de confirmation du wizard.
+ *
+ * À la validation, le texte définitif est également répercuté dans
+ * `patients.detaille` (colonne texte libre du pseudonyme concerné) : c'est
+ * là qu'atterrit le résultat de l'extraction, quel que soit le type
+ * d'entrée (audio transcrit ou document scanné). Un même patient pouvant
+ * recevoir plusieurs documents au fil du temps, chaque nouveau texte validé
+ * est ajouté à la suite du contenu déjà présent (jamais écrasé), séparé par
+ * un bandeau indiquant le type de document et la date.
  */
 async function corrigerTexteTranscrit(req, res) {
   const { id } = req.params;
@@ -322,7 +388,7 @@ async function corrigerTexteTranscrit(req, res) {
       `UPDATE documents_bruts
          SET texte_transcrit = $1, statut = 'valide'
        WHERE id = $2
-       RETURNING id, numero_dossier, texte_transcrit, statut`,
+       RETURNING id, numero_dossier, pathologie, type_document, texte_transcrit, statut`,
       [texte_transcrit, id]
     );
 
@@ -330,9 +396,25 @@ async function corrigerTexteTranscrit(req, res) {
       return res.status(404).json({ error: 'Document introuvable.' });
     }
 
+    const doc = result.rows[0];
+    const pseudonyme = genererPseudonyme(doc.pathologie, doc.numero_dossier);
+
+    if (texte_transcrit.trim()) {
+      const entete = `--- ${doc.type_document || 'document'} · ${new Date().toLocaleDateString('fr-FR')} ---`;
+      await pool.query(
+        `UPDATE patients
+            SET detaille = CASE
+                              WHEN detaille IS NULL OR detaille = '' THEN $1
+                              ELSE detaille || E'\n\n' || $1
+                            END
+          WHERE pseudonyme = $2`,
+        [`${entete}\n${texte_transcrit}`, pseudonyme]
+      );
+    }
+
     await logAccess({ userId: req.user.sub, action: 'dossier_document_corriger', success: true, req });
 
-    res.json(result.rows[0]);
+    res.json({ ...doc, pseudonyme });
   } catch (err) {
     console.error('Erreur corrigerTexteTranscrit :', err);
     res.status(500).json({ error: 'Erreur serveur.' });
@@ -422,6 +504,7 @@ async function telechargerFichier(req, res) {
 }
 
 module.exports = {
+  verifierDossier,
   creerDossier,
   corrigerTexteTranscrit,
   getDocumentsByPseudonyme,

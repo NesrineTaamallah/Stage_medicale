@@ -797,6 +797,15 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
             date_diagnostic: doublon.date_diagnostic,
             date_inclusion: doublon.date_inclusion,
           })}
+          onVoirDossier={(pseudonyme) => {
+            // "Voir le dossier" depuis l'alerte doublon : ferme le wizard et
+            // ouvre directement la vue détail (DossierView) de ce
+            // pseudonyme — équivalent au clic sur "Voir" dans la ligne du
+            // tableau Entités Médicales.
+            setShowAdd(false);
+            setAjoutPatient(null);
+            setViewPseudo(pseudonyme);
+          }}
           onClose={() => { setShowAdd(false); setAjoutPatient(null); }}
           onCreated={() => loadDossiers()}
         />
