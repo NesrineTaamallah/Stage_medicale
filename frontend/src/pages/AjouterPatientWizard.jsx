@@ -28,8 +28,13 @@ const initialForm = {
 
 /**
  * Wizard plein écran d'ajout de patient.
- * 4 étapes : identification du dossier -> type de document -> mode
- * d'entrée (audio à transcrire / document scanné) + upload -> confirmation.
+ * 4 étapes : identification du dossier -> type de document (visite,
+ * admission, ...) -> mode d'entrée (audio à transcrire / document scanné) +
+ * upload du fichier -> confirmation. Le type de document est demandé AVANT
+ * le type d'entrée (ordre volontaire) : le clinicien précise d'abord de
+ * quelle fiche il s'agit (visite, admission, ...), puis seulement ensuite
+ * s'il apporte une dictée audio ou un document scanné — c'est à ce moment-là
+ * que le bouton d'upload apparaît, déjà filtré sur le bon format de fichier.
  *
  * onClose() referme le wizard (annulation ou succès).
  * onCreated(result) est appelé après création réussie côté serveur.
@@ -39,7 +44,7 @@ const initialForm = {
  * document à un dossier déjà existant" : l'étape 0 (numéro de dossier /
  * pathologie / dates) est sautée, ces valeurs étant déjà connues et
  * réutilisées telles quelles à la soumission — le clinicien n'a plus qu'à
- * choisir le type de fiche puis le mode d'entrée (audio/scan) et uploader.
+ * choisir le type de fiche, puis le mode d'entrée (audio/scan) et uploader.
  */
 export default function AjouterPatientWizard({ onClose, onCreated, existingPatient = null, onSwitchToAjout = null, onVoirDossier = null }) {
   const isAjoutDocument = !!existingPatient;
@@ -401,6 +406,9 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                 </div>
               </Field>
 
+              {/* Le bouton d'upload n'apparaît qu'une fois le type d'entrée
+                  choisi (audio ou scan) — le type de document (visite,
+                  admission, ...) est déjà connu depuis l'étape précédente. */}
               {form.type_entree && (
                 <Field label={form.type_entree === 'audio' ? 'Fichier audio' : 'Fichier scanné'}>
                   <label
