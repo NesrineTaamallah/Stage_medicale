@@ -33,3 +33,9 @@ p {
   from { opacity: 0; transform: translateY(-16px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Glisser pour défiler (drag-to-scroll) sur les tableaux larges — voir useDragScroll */
+.drag-scrolling {
+  cursor: grabbing !important;
+  user-select: none;
+}

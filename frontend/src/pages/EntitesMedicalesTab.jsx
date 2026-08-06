@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
+import useDragScroll from '../hooks/useDragScroll';
 import { SectionHeading } from '../components/DashboardWidgets';
 import LineChartSVG from '../components/ClinicalChart';
 import {
@@ -627,6 +628,7 @@ function AddDossierModal({ onClose }) {
  * liste complète, pas un filtre périmé.
  */
 export default function EntitesMedicalesTab({ alertType, onConsumed }) {
+  const dossiersScrollRef = useDragScroll();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -736,7 +738,10 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div style={{ overflowX: 'auto', borderRadius: 10 }}>
+          <div
+            ref={dossiersScrollRef}
+            style={{ overflowX: 'auto', borderRadius: 10, cursor: 'grab' }}
+          >
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.8 }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: 'var(--slate)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: '1px solid var(--line)' }}>

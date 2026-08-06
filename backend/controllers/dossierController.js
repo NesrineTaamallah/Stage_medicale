@@ -48,17 +48,38 @@ const DATE_SOURCES = [
   ['epr_bilan_ergotherapique', 'date_bilan'],
 ];
 
-/** % de champs renseignés (non NULL) sur l'ensemble des tables singleton du registre, pour un pseudonyme donné. */
-function computeCompletude(rowsByTable, tables) {
+// Convention du registre : une valeur manquante est soit un vrai NULL SQL,
+// soit littéralement la chaîne 'NA' (utilisée dans plusieurs scripts
+// d'analyse, ex. `WHERE age_debut_crises_mois != 'NA'`) — les deux doivent
+// compter comme "non renseigné" pour la complétude.
+function isMissingValue(val) {
+  if (val === null || val === undefined || val === '') return true;
+  if (typeof val === 'string' && val.trim().toUpperCase() === 'NA') return true;
+  return false;
+}
+
+/**
+ * % de champs renseignés (non NULL / non 'NA') sur l'ensemble des tables
+ * singleton du registre, pour un pseudonyme donné.
+ *
+ * `columnsByTable` fournit, pour chaque table, la liste complète de ses
+ * colonnes (hors exclusions) — utile quand la ligne n'existe pas encore
+ * pour ce patient : dans ce cas on compte quand même toutes ses colonnes
+ * comme "non renseignées" au lieu de les ignorer, sinon un dossier dont
+ * aucune table n'est créée obtient artificiellement 100% (division par 0
+ * -> 0, ou pire, un total réduit qui gonfle le taux des tables restantes).
+ */
+function computeCompletude(rowsByTable, tables, columnsByTable) {
   let filled = 0;
   let total = 0;
   for (const t of tables) {
     const row = rowsByTable[t];
-    if (!row) continue; // table pas encore créée pour ce patient -> aucun champ compté
-    for (const [col, val] of Object.entries(row)) {
+    const cols = (columnsByTable && columnsByTable[t]) || (row ? Object.keys(row) : []);
+    for (const col of cols) {
       if (COMPLETUDE_EXCLUDE.has(col)) continue;
       total += 1;
-      if (val !== null && val !== undefined && val !== '') filled += 1;
+      const val = row ? row[col] : undefined;
+      if (row && !isMissingValue(val)) filled += 1;
     }
   }
   return total === 0 ? 0 : Math.round((filled / total) * 100);
@@ -89,9 +110,15 @@ async function listDossiers(req, res) {
 
     // Une requête par table singleton (SEP + EPR confondues), indexée par pseudonyme.
     const allTables = [...COMPLETUDE_TABLES.SEP, ...COMPLETUDE_TABLES.EPR];
-    const tableResults = await Promise.all(
-      allTables.map((t) => pool.query(`SELECT * FROM ${t}`))
-    );
+    const [tableResults, columnResult] = await Promise.all([
+      Promise.all(allTables.map((t) => pool.query(`SELECT * FROM ${t}`))),
+      pool.query(
+        `SELECT table_name, column_name
+         FROM information_schema.columns
+         WHERE table_name = ANY($1::text[])`,
+        [allTables]
+      ),
+    ]);
     const rowsByTableByPseudo = {}; // { pseudonyme: { table: row } }
     allTables.forEach((table, i) => {
       for (const row of tableResults[i].rows) {
@@ -99,13 +126,19 @@ async function listDossiers(req, res) {
         rowsByTableByPseudo[row.pseudonyme][table] = row;
       }
     });
+    const columnsByTable = {}; // { table: [col, ...] } — toutes colonnes, y compris pour les lignes absentes
+    for (const { table_name, column_name } of columnResult.rows) {
+      columnsByTable[table_name] = columnsByTable[table_name] || [];
+      columnsByTable[table_name].push(column_name);
+    }
 
     const rows = patientsResult.rows.map((p) => ({
       ...p,
       derniere_visite: derniereVisiteByPseudo.get(p.pseudonyme) || null,
       completude: computeCompletude(
         rowsByTableByPseudo[p.pseudonyme] || {},
-        COMPLETUDE_TABLES[p.registre] || []
+        COMPLETUDE_TABLES[p.registre] || [],
+        columnsByTable
       ),
     }));
 
