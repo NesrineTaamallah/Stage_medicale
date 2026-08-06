@@ -68,6 +68,23 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
   const [result, setResult] = useState(null);
   const [texteCorrige, setTexteCorrige] = useState('');
   const [validating, setValidating] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+
+  // URL locale (blob:) pour prévisualiser/réécouter l'audio choisi, avant
+  // même l'envoi au serveur — recréée à chaque nouveau fichier, et toujours
+  // révoquée (evite une fuite mémoire) au changement de fichier ou à la
+  // fermeture du wizard. Reste valable à l'étape Confirmation ET après
+  // création (pendant la relecture/correction de la transcription), puisque
+  // `file` n'est jamais réinitialisé après la soumission.
+  const [audioUrl, setAudioUrl] = useState(null);
+  useEffect(() => {
+    if (file && form.type_entree === 'audio') {
+      const url = URL.createObjectURL(file);
+      setAudioUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setAudioUrl(null);
+  }, [file, form.type_entree]);
 
   // Alerte "patient déjà existant" détectée à l'étape 0 (mode création
   // normale uniquement — sans objet en mode ajout de document).
@@ -204,11 +221,16 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const res = await client.patch(`/api/dossiers/documents/${result.document_id}/texte`, {
         texte_transcrit: texteCorrige,
       });
-      onCreated?.({ ...result, ...res.data });
-      onClose();
+      // Le wizard se fermait auparavant instantanément après "Valider", sans
+      // aucun signe visible de succès — un petit toast le temps d'un aller-
+      // retour visuel avant de fermer, plutôt qu'une fermeture silencieuse.
+      setShowToast(true);
+      setTimeout(() => {
+        onCreated?.({ ...result, ...res.data });
+        onClose();
+      }, 1200);
     } catch (err) {
       setError(err.response?.data?.error || 'Échec de la validation.');
-    } finally {
       setValidating(false);
     }
   }
@@ -228,6 +250,27 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       background: 'var(--paper)', zIndex: 20,
       display: 'flex', flexDirection: 'column',
     }}>
+      {/* Keyframes du spinner (bouton "Créer le dossier" pendant la
+          transcription) — injectées une fois ici plutôt que dans un fichier
+          CSS séparé, pour que ce fichier reste autonome (copier-coller vers
+          un autre poste sans rien oublier). */}
+      <style>{`@keyframes wizardSpin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Toast de confirmation après "Valider" — visible ~1.2s avant que le
+          wizard ne se ferme, pour remplacer la fermeture silencieuse
+          d'avant (rien n'indiquait que l'enregistrement avait réussi). */}
+      {showToast && (
+        <div style={{
+          position: 'absolute', top: 20, right: 32, zIndex: 30,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '12px 18px', borderRadius: 12,
+          background: 'var(--teal-deep)', color: '#fff',
+          fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+        }}>
+          <IconCheckCircle size={16} /> Document ajouté au dossier
+        </div>
+      )}
+
       {/* ---- En-tête ---- */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -452,6 +495,12 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                       style={{ display: 'none' }}
                     />
                   </label>
+                  {/* Réécoute immédiate du fichier choisi, avant même l'envoi
+                      au serveur — permet de vérifier qu'on n'a pas
+                      sélectionné le mauvais enregistrement. */}
+                  {form.type_entree === 'audio' && audioUrl && (
+                    <audio controls src={audioUrl} style={{ width: '100%', marginTop: 10 }} />
+                  )}
                 </Field>
               )}
             </div>
@@ -489,6 +538,9 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
               <SummaryRow label="Type de document" value={TYPES_DOCUMENT.find((t) => t.value === form.type_document)?.label} />
               <SummaryRow label="Type d'entrée" value={form.type_entree === 'audio' ? 'Audio (transcription automatique)' : 'Document scanné'} />
               <SummaryRow label="Fichier" value={file?.name} />
+              {form.type_entree === 'audio' && audioUrl && (
+                <audio controls src={audioUrl} style={{ width: '100%' }} />
+              )}
               <p style={{ fontSize: 12, color: 'var(--slate-soft)', marginTop: 6 }}>
                 {form.type_entree === 'audio'
                   ? "L'audio sera transcrit automatiquement (WhisperX) à la création du dossier."
@@ -517,6 +569,9 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                   <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate-soft)' }}>
                     Texte transcrit — vérifiez et corrigez si besoin
                   </p>
+                  {audioUrl && (
+                    <audio controls src={audioUrl} style={{ width: '100%', marginBottom: 10 }} />
+                  )}
                   <textarea
                     value={texteCorrige}
                     onChange={(e) => setTexteCorrige(e.target.value)}
@@ -552,8 +607,8 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
         borderTop: '1px solid var(--line)', background: 'var(--card)',
       }}>
         {result ? (
-          <button onClick={handleValider} disabled={validating} style={{ ...primaryBtn, marginLeft: 'auto', opacity: validating ? 0.7 : 1 }}>
-            {validating ? 'Validation…' : 'Valider'}
+          <button onClick={handleValider} disabled={validating || showToast} style={{ ...primaryBtn, marginLeft: 'auto', opacity: (validating || showToast) ? 0.7 : 1 }}>
+            {validating ? <><Spinner /> Validation…</> : showToast ? 'Enregistré' : 'Valider'}
           </button>
         ) : (
           <>
@@ -578,13 +633,32 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                 disabled={submitting || !form.date_diagnostic}
                 style={{ ...primaryBtn, opacity: (submitting || !form.date_diagnostic) ? 0.5 : 1, cursor: (!form.date_diagnostic) ? 'not-allowed' : 'pointer' }}
               >
-                {submitting ? 'Création…' : 'Créer le dossier'}
+                {submitting ? (
+                  <>
+                    <Spinner />
+                    {form.type_entree === 'audio'
+                      ? 'Transcription en cours (Whisper)…'
+                      : form.type_entree === 'scan'
+                        ? 'Extraction en cours (OCR)…'
+                        : 'Création…'}
+                  </>
+                ) : 'Créer le dossier'}
               </button>
             )}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span style={{
+      width: 13, height: 13, borderRadius: '50%',
+      border: '2px solid rgba(255,255,255,.4)', borderTopColor: '#fff',
+      display: 'inline-block', animation: 'wizardSpin .7s linear infinite',
+    }} />
   );
 }
 

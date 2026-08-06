@@ -266,12 +266,154 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
 }
 
 /**
+ * Variante générique de EditableFieldsGrid (voir plus haut, initialement
+ * réservée à l'onglet Identification) : ici toutes les entrées viennent
+ * d'UNE SEULE table (`table`), ce qui couvre toutes les autres catégories
+ * cliniques. `rowId` doit être fourni pour les tables "répétées" (une ligne
+ * parmi plusieurs pour ce patient — visite, poussée, examen...) ; il est
+ * ignoré pour les tables "singleton" (une ligne par patient).
+ *
+ * Même parcours à friction volontaire que l'original : lecture seule par
+ * défaut -> crayon -> input local -> confirmation native avant tout PATCH.
+ */
+function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldSaved }) {
+  const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre', 'created_at'].includes(k));
+  const [editingKey, setEditingKey] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [savingKey, setSavingKey] = useState(null);
+  const [rowError, setRowError] = useState({ key: null, message: '' });
+
+  if (filtered.length === 0) return null;
+
+  function startEdit(k, currentValue) {
+    setEditingKey(k);
+    setDraft(currentValue === null || currentValue === undefined ? '' : currentValue);
+    setRowError({ key: null, message: '' });
+  }
+
+  function cancelEdit() {
+    setEditingKey(null);
+    setDraft('');
+  }
+
+  async function confirmSave(k) {
+    const confirmed = window.confirm(
+      `Confirmer la modification du champ "${humanizeKey(k)}" ?\n\nNouvelle valeur : ${draft || '(vide)'}`
+    );
+    if (!confirmed) return;
+
+    setSavingKey(k);
+    setRowError({ key: null, message: '' });
+    try {
+      const res = await client.patch(`/api/dossiers/${pseudonyme}/champ`, {
+        table, colonne: k, valeur: draft, id: rowId,
+      });
+      onFieldSaved?.(k, res.data.valeur);
+      setEditingKey(null);
+      setDraft('');
+    } catch (err) {
+      setRowError({ key: k, message: err.response?.data?.error || "Échec de l'enregistrement." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 18px' }}>
+      {filtered.map(([k, v]) => {
+        const isEditing = editingKey === k;
+        return (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+              {humanizeKey(k)}
+            </p>
+
+            {isEditing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <input
+                  autoFocus
+                  type={k.startsWith('date_') ? 'date' : 'text'}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                  style={{
+                    padding: '8px 10px', border: '1.5px solid var(--teal)', borderRadius: 9,
+                    fontSize: 13.5, background: 'var(--paper)', color: 'var(--ink)',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => confirmSave(k)}
+                    disabled={savingKey === k}
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 7, border: 'none',
+                      background: 'var(--teal)', color: '#fff', fontSize: 12, fontWeight: 600,
+                      cursor: savingKey === k ? 'default' : 'pointer', opacity: savingKey === k ? 0.7 : 1,
+                    }}
+                  >
+                    {savingKey === k ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    disabled={savingKey === k}
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 7, border: '1.5px solid var(--line)',
+                      background: 'var(--card)', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                </div>
+                {rowError.key === k && (
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--error, #c23b4e)' }}>{rowError.message}</p>
+                )}
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <div style={{
+                  padding: '9px 34px 9px 11px', border: '1.5px solid var(--line)', borderRadius: 9,
+                  background: 'var(--paper)', fontSize: 13.5, color: 'var(--ink)',
+                }}>
+                  {formatValue(v)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => startEdit(k, v)}
+                  title="Modifier ce champ"
+                  style={{
+                    position: 'absolute', top: 5, right: 5, width: 20, height: 20,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: 'none', borderRadius: 5, background: 'var(--teal-tint)',
+                    cursor: 'pointer', padding: 0, color: 'var(--teal-deep)', fontSize: 11, lineHeight: 1,
+                  }}
+                >
+                  ✎
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * Rendu générique et récursif d'un bloc d'entités : champs simples en grille,
  * sous-objets en sous-titre, tableaux répétés (visites, IRM, traitements...)
  * en liste de fiches. Évite de coder en dur chaque champ du schéma clinique,
  * qui évolue encore (cf. corrections successives dans schema_registre.sql).
+ *
+ * `tables` décrit, pour CETTE section, à quelle table SQL appartient chaque
+ * clé de premier niveau (voir SECTION_TABLES_SEP / SECTION_TABLES_EPR plus
+ * bas) — la clé spéciale `self` s'applique quand les champs simples de
+ * `data` appartiennent directement à une table (ex. Antécédents). Quand
+ * aucune correspondance n'est trouvée pour une clé, la section reste en
+ * lecture seule par sécurité plutôt que de risquer un mauvais mapping.
  */
-function SectionContent({ data, depth = 0 }) {
+function SectionContent({ data, tables, pseudonyme, onSaved, depth = 0 }) {
   if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
     return <p className="hint" style={{ margin: 0 }}>Aucune donnée extraite pour cette section.</p>;
   }
@@ -281,40 +423,117 @@ function SectionContent({ data, depth = 0 }) {
   const nestedObjects = entries.filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v));
   const nestedArrays = entries.filter(([, v]) => Array.isArray(v));
 
+  const selfTable = tables?.self;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <FieldsGrid entries={simple} />
+      {selfTable ? (
+        <GenericEditableFieldsGrid
+          entries={simple}
+          table={selfTable.table}
+          rowId={selfTable.singleton ? undefined : data.id}
+          pseudonyme={pseudonyme}
+          onFieldSaved={onSaved}
+        />
+      ) : (
+        <FieldsGrid entries={simple} />
+      )}
 
       {nestedObjects.map(([k, v]) => (
         <div key={k}>
           <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>{humanizeKey(k)}</p>
-          <SectionContent data={v} depth={depth + 1} />
+          <SectionContent
+            data={v}
+            tables={tables?.[k] ? { self: tables[k] } : undefined}
+            pseudonyme={pseudonyme}
+            onSaved={onSaved}
+            depth={depth + 1}
+          />
         </div>
       ))}
 
-      {nestedArrays.map(([k, arr]) => (
-        <div key={k}>
-          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
-            {humanizeKey(k)} <span style={{ color: 'var(--slate-soft)', fontWeight: 500 }}>({arr.length})</span>
-          </p>
-          {arr.length === 0 ? (
-            <p className="hint" style={{ margin: 0 }}>Aucun élément.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {arr.map((item, i) => (
-                <div key={item.id ?? i} style={{
-                  border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', background: 'var(--paper)',
-                }}>
-                  <FieldsGrid entries={Object.entries(item)} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+      {nestedArrays.map(([k, arr]) => {
+        const arrTable = tables?.[k];
+        return (
+          <div key={k}>
+            <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+              {humanizeKey(k)} <span style={{ color: 'var(--slate-soft)', fontWeight: 500 }}>({arr.length})</span>
+            </p>
+            {arr.length === 0 ? (
+              <p className="hint" style={{ margin: 0 }}>Aucun élément.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {arr.map((item, i) => (
+                  <div key={item.id ?? i} style={{
+                    border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', background: 'var(--paper)',
+                  }}>
+                    {arrTable ? (
+                      <GenericEditableFieldsGrid
+                        entries={Object.entries(item)}
+                        table={arrTable.table}
+                        rowId={item.id}
+                        pseudonyme={pseudonyme}
+                        onFieldSaved={onSaved}
+                      />
+                    ) : (
+                      <FieldsGrid entries={Object.entries(item)} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
+
+// Table SQL d'origine de chaque catégorie affichée dans le dossier détaillé
+// (hors Identification, qui a son propre mapping mixte plus haut) — permet
+// à SectionContent de savoir quel PATCH envoyer pour chaque champ. `self`
+// = les champs simples de la section viennent directement de cette table ;
+// une clé nommée = ce sous-objet/tableau vient de cette table.
+const SECTION_TABLES_SEP = {
+  antecedents: { self: { table: 'sep_antecedents', singleton: true } },
+  presentation: { self: { table: 'sep_presentation_initiale', singleton: true } },
+  poussees: { poussees: { table: 'sep_poussees', singleton: false } },
+  handicap: {
+    evolution: { table: 'sep_evolution', singleton: true },
+    edssVisites: { table: 'sep_edss_visites', singleton: false },
+  },
+  irm: { irm: { table: 'sep_irm', singleton: false } },
+  biologie: { biologieLcr: { table: 'sep_biologie_lcr', singleton: false } },
+  pe: { potentielsEvoques: { table: 'sep_potentiels_evoques', singleton: false } },
+  traitement: { traitementFond: { table: 'sep_traitement_fond', singleton: false } },
+  suivi: { self: { table: 'sep_suivi', singleton: true } },
+};
+
+const SECTION_TABLES_EPR = {
+  antecedents: { self: { table: 'epr_antecedents', singleton: true } },
+  semiologie: {
+    typeCrise: { table: 'epr_type_crise', singleton: false },
+    frequenceCrises: { table: 'epr_frequence_crises', singleton: false },
+  },
+  examen: { examen: { table: 'epr_examen', singleton: false } },
+  etiologie: { etiologie: { table: 'epr_etiologie', singleton: false } },
+  regression: { self: { table: 'epr_regression_developpementale', singleton: true } },
+  eeg: { eeg: { table: 'epr_eeg', singleton: false } },
+  imagerie: { imagerie: { table: 'epr_imagerie', singleton: false } },
+  genetique: { genetique: { table: 'epr_genetique', singleton: false } },
+  pharmacoresistance: { listeAe: { table: 'epr_liste_ae', singleton: false } },
+  chirurgie: {
+    bilanPrechirurgical: { table: 'epr_bilan_prechirurgical', singleton: false },
+    chirurgie: { table: 'epr_chirurgie', singleton: false },
+  },
+  alternatives: { alternatives: { table: 'epr_alternatives_therapeutiques', singleton: false } },
+  multidisciplinaire: {
+    bilanOrthophonique: { table: 'epr_bilan_orthophonique', singleton: false },
+    bilanNeuropsy: { table: 'epr_bilan_neuropsy', singleton: false },
+    bilanErgotherapique: { table: 'epr_bilan_ergotherapique', singleton: false },
+  },
+  suivi: { self: { table: 'epr_suivi', singleton: true } },
+};
 
 /**
  * Catégories d'entités par registre, une par onglet — reprises telles quelles
@@ -573,7 +792,11 @@ function IdentityReveal({ pseudonyme }) {
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && confirm()}
             placeholder="Mot de passe"
-            autoComplete="current-password"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            readOnly
+            onFocus={(e) => e.target.removeAttribute('readonly')}
             style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid var(--line)', fontSize: 12.5, background: 'var(--card)' }}
           />
           {error && <p className="error" style={{ margin: 0, fontSize: 11 }}>{error}</p>}
@@ -665,6 +888,15 @@ function DossierView({ pseudonyme, onBack }) {
   const registre = data?.identification?.registre;
   const tabs = useMemo(() => (registre === 'EPR' ? TABS_EPR : TABS_SEP), [registre]);
   const activeDef = tabs.find((t) => t.key === activeTab) || tabs[0];
+  const sectionTables = (registre === 'EPR' ? SECTION_TABLES_EPR : SECTION_TABLES_SEP)[activeTab];
+
+  // Après tout enregistrement hors onglet Identification (structure plus
+  // variée : objets imbriqués, tableaux de lignes), on recharge simplement
+  // le dossier complet plutôt que de rejouer une mise à jour "à la main"
+  // de l'état local pour chaque forme de donnée possible.
+  function reloadDossier() {
+    client.get(`/api/dossiers/${pseudonyme}`).then((res) => setData(res.data)).catch(() => {});
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -734,7 +966,12 @@ function DossierView({ pseudonyme, onBack }) {
                 onFieldSaved={(k, v) => setData((d) => ({ ...d, identification: { ...d.identification, [k]: v } }))}
               />
             ) : (
-              <SectionContent data={activeDef.get(data)} />
+              <SectionContent
+                data={activeDef.get(data)}
+                tables={sectionTables}
+                pseudonyme={pseudonyme}
+                onSaved={reloadDossier}
+              />
             )}
           </div>
         </div>
@@ -894,6 +1131,8 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                 placeholder="Rechercher un pseudonyme..."
                 autoComplete="off"
                 name="dossier-search"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute('readonly')}
                 style={{ width: 220, padding: '9px 12px 9px 32px', borderRadius: 10, border: '1.5px solid var(--line)', fontSize: 12.8, background: 'var(--paper)' }}
               />
             </div>

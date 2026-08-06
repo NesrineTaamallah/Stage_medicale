@@ -281,49 +281,90 @@ async function buildEntitesEPR(pseudonyme) {
   };
 }
 
-// Whitelist stricte des colonnes modifiables depuis l'onglet Identification
-// (et compagnie) du dossier détaillé. Volontairement minimal et explicite :
-// - la clé primaire (pseudonyme) et les métadonnées (created_at, registre)
-//   ne doivent jamais être modifiables depuis ce endpoint ;
-// - delai_diagnostic_mois est une colonne GENERATED ALWAYS AS (...) STORED
-//   côté SQL (voir schema_registre.sql) : PostgreSQL refuse de toute façon
-//   un UPDATE dessus, donc elle est explicitement exclue ici pour renvoyer
-//   une erreur claire côté client plutôt qu'une erreur SQL brute.
-const EDITABLE_FIELDS = {
-  patients: ['date_inclusion', 'age'],
-  sep_identification_clinique: [
-    'sexe', 'gouvernorat_code', 'date_diagnostic',
-    'age_diagnostic_mois', 'age_premier_symptome_mois',
-  ],
-  epr_identification_clinique: [
-    'age_debut_crises_mois', 'age_diagnostic_pharmacoresistance_mois',
-  ],
-};
+// Whitelist des tables modifiables depuis le dossier détaillé, désormais
+// TOUTES les catégories cliniques (Identification, Antécédents, Présentation,
+// Poussées, Handicap, Imagerie, Biologie, Potentiels évoqués, Traitement,
+// Suivi — SEP comme EPR), et plus seulement Identification.
+//
+// - SINGLETON_TABLES : une ligne par patient (clé primaire = pseudonyme) ->
+//   upsert par pseudonyme, comme avant.
+// - REPEATED_TABLES : plusieurs lignes possibles par patient (visites,
+//   poussées, IRM, EEG...) -> il faut cibler la ligne exacte par son `id`
+//   (colonne SERIAL PRIMARY KEY), sans quoi on ne pourrait pas savoir
+//   laquelle des N lignes modifier.
+const SINGLETON_TABLES = new Set([
+  'patients',
+  'sep_identification_clinique', 'sep_presentation_initiale', 'sep_evolution',
+  'sep_antecedents', 'sep_suivi',
+  'epr_identification_clinique', 'epr_antecedents',
+  'epr_regression_developpementale', 'epr_pharmacoresistance', 'epr_suivi',
+]);
+
+const REPEATED_TABLES = new Set([
+  'sep_edss_visites', 'sep_poussees', 'sep_irm', 'sep_biologie_lcr',
+  'sep_potentiels_evoques', 'sep_traitement_fond',
+  'epr_type_crise', 'epr_frequence_crises', 'epr_examen', 'epr_etiologie',
+  'epr_eeg', 'epr_imagerie', 'epr_genetique', 'epr_liste_ae',
+  'epr_bilan_prechirurgical', 'epr_chirurgie', 'epr_alternatives_therapeutiques',
+  'epr_bilan_orthophonique', 'epr_bilan_neuropsy', 'epr_bilan_ergotherapique',
+]);
+
+const ALLOWED_TABLES = new Set([...SINGLETON_TABLES, ...REPEATED_TABLES]);
+
+// Colonnes techniques jamais modifiables depuis ce endpoint, quelle que soit
+// la table : clé primaire, clé étrangère patient, métadonnées.
+const EXCLUDED_COLUMNS = new Set(['id', 'pseudonyme', 'created_at', 'registre']);
+
+/**
+ * Colonnes réellement éditables d'une table : toutes ses colonnes SQL, moins
+ * les colonnes techniques ci-dessus et les colonnes générées côté SQL
+ * (GENERATED ALWAYS AS ... STORED, ex. delai_diagnostic_mois) — PostgreSQL
+ * refuse de toute façon un UPDATE dessus. Interrogé dynamiquement sur
+ * information_schema plutôt qu'une whitelist codée en dur par colonne : reste
+ * synchronisé avec schema_registre.sql sans double maintenance, tout en
+ * bloquant strictement toute table/colonne hors de ce périmètre.
+ */
+async function getColonnesEditables(table) {
+  const result = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_name = $1 AND (is_generated IS NULL OR is_generated = 'NEVER')`,
+    [table]
+  );
+  return new Set(
+    result.rows.map((r) => r.column_name).filter((c) => !EXCLUDED_COLUMNS.has(c))
+  );
+}
 
 /**
  * PATCH /api/dossiers/:pseudonyme/champ
- * body : { table, colonne, valeur }
+ * body : { table, colonne, valeur, id? }
  *
- * Endpoint générique mais volontairement restreint par whitelist
- * (EDITABLE_FIELDS) : impossible de cibler une table ou une colonne hors de
- * cette liste, même en forgeant la requête. Une seule colonne modifiée par
- * appel, ce qui correspond au flux "édition champ par champ avec
- * confirmation" côté frontend (FieldsGrid) — pas de mise à jour en masse
- * pouvant écraser des données par erreur.
+ * `id` (clé SERIAL de la ligne) est requis pour les tables "répétées"
+ * (REPEATED_TABLES) où un patient peut avoir plusieurs lignes (visites,
+ * poussées, examens...) — sans lui on ne pourrait pas savoir laquelle
+ * modifier. Il est ignoré pour les tables "singleton".
+ *
+ * Endpoint générique mais volontairement restreint par whitelist de tables
+ * + vérification dynamique des colonnes réelles : impossible de cibler une
+ * table ou une colonne hors du schéma clinique, même en forgeant la requête.
+ * Une seule colonne modifiée par appel (édition champ par champ avec
+ * confirmation côté frontend) — pas de mise à jour en masse pouvant écraser
+ * des données par erreur.
  */
 async function updateChampDossier(req, res) {
   const { pseudonyme } = req.params;
-  const { table, colonne, valeur } = req.body;
+  const { table, colonne, valeur, id } = req.body;
 
-  const colonnesAutorisees = EDITABLE_FIELDS[table];
-  if (!colonnesAutorisees) {
+  if (!ALLOWED_TABLES.has(table)) {
     return res.status(400).json({ error: 'Table inconnue ou non modifiable.' });
-  }
-  if (!colonnesAutorisees.includes(colonne)) {
-    return res.status(400).json({ error: 'Champ inconnu ou non modifiable.' });
   }
 
   try {
+    const colonnesEditables = await getColonnesEditables(table);
+    if (!colonnesEditables.has(colonne)) {
+      return res.status(400).json({ error: 'Champ inconnu ou non modifiable.' });
+    }
+
     const patientResult = await pool.query('SELECT pseudonyme, registre FROM patients WHERE pseudonyme = $1', [pseudonyme]);
     const patient = patientResult.rows[0];
     if (!patient) {
@@ -344,17 +385,34 @@ async function updateChampDossier(req, res) {
     // le registre pour représenter une donnée manquante.
     const valeurNormalisee = valeur === '' || valeur === undefined ? null : valeur;
 
-    // `table` et `colonne` proviennent de la whitelist ci-dessus (pas
-    // interpolés directement depuis req.body sans vérification) : l'usage
-    // de template string ici est donc sûr, seule `valeurNormalisee` passe
-    // en paramètre lié ($1/$2).
-    const query = table === 'patients'
-      ? `UPDATE patients SET ${colonne} = $1 WHERE pseudonyme = $2 RETURNING ${colonne}`
-      : `INSERT INTO ${table} (pseudonyme, ${colonne}) VALUES ($2, $1)
-         ON CONFLICT (pseudonyme) DO UPDATE SET ${colonne} = EXCLUDED.${colonne}
-         RETURNING ${colonne}`;
+    // `table` et `colonne` sont vérifiés ci-dessus contre le schéma réel
+    // (pas interpolés directement depuis req.body sans vérification) :
+    // l'usage de template string ici est donc sûr, seules les valeurs
+    // variables passent en paramètres liés.
+    let query;
+    let params;
+    if (table === 'patients') {
+      query = `UPDATE patients SET ${colonne} = $1 WHERE pseudonyme = $2 RETURNING ${colonne}`;
+      params = [valeurNormalisee, pseudonyme];
+    } else if (SINGLETON_TABLES.has(table)) {
+      query = `INSERT INTO ${table} (pseudonyme, ${colonne}) VALUES ($2, $1)
+           ON CONFLICT (pseudonyme) DO UPDATE SET ${colonne} = EXCLUDED.${colonne}
+           RETURNING ${colonne}`;
+      params = [valeurNormalisee, pseudonyme];
+    } else {
+      // Table répétée : il faut la ligne exacte (id), sinon on ne sait pas
+      // laquelle des N lignes du patient modifier.
+      if (!id) {
+        return res.status(400).json({ error: 'Identifiant de ligne manquant pour ce champ.' });
+      }
+      query = `UPDATE ${table} SET ${colonne} = $1 WHERE id = $2 AND pseudonyme = $3 RETURNING ${colonne}`;
+      params = [valeurNormalisee, id, pseudonyme];
+    }
 
-    const result = await pool.query(query, [valeurNormalisee, pseudonyme]);
+    const result = await pool.query(query, params);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Ligne introuvable pour ce dossier.' });
+    }
 
     await logAccess({ userId: req.user.sub, action: 'dossier_edit_champ', success: true, req });
 

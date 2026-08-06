@@ -53,11 +53,21 @@ export default function PatientsTab() {
   // ---- Modale "Détail" : textes/audios/scans associés à un pseudonyme,
   // disponibles dès l'upload même si l'extraction d'entités n'a pas
   // encore été faite (auquel cas les autres colonnes restent vides).
+  // Protégée par mot de passe (même mécanisme que "Voir"/BlurCell,
+  // POST /api/coordonnees/reveal) : les textes transcrits sont aussi
+  // sensibles que les coordonnées, ils ne s'affichent qu'après confirmation.
   const [detailPseudonyme, setDetailPseudonyme] = useState(null);
   const [detailRegistre, setDetailRegistre] = useState(null);
   const [detailDocuments, setDetailDocuments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+
+  // Pseudonyme/registre en attente de confirmation mot de passe avant
+  // d'ouvrir la modale "Détail" ci-dessus.
+  const [pendingDetail, setPendingDetail] = useState(null);
+  const [detailAuthPassword, setDetailAuthPassword] = useState('');
+  const [detailAuthError, setDetailAuthError] = useState('');
+  const [detailAuthSubmitting, setDetailAuthSubmitting] = useState(false);
 
   useEffect(() => {
     // On liste depuis /api/dossiers (table `patients`) et non /api/coordonnees
@@ -116,6 +126,41 @@ export default function PatientsTab() {
     setDetailRegistre(null);
     setDetailDocuments([]);
     setDetailError('');
+  }
+
+  // Étape 1 : au clic sur "Détail", on ouvre la modale mot de passe au lieu
+  // de charger les documents directement.
+  function requestDetail(pseudonyme, registre) {
+    setPendingDetail({ pseudonyme, registre });
+    setDetailAuthPassword('');
+    setDetailAuthError('');
+  }
+
+  function closeDetailAuth() {
+    setPendingDetail(null);
+    setDetailAuthPassword('');
+    setDetailAuthError('');
+  }
+
+  // Étape 2 : mot de passe confirmé (re-vérifié côté serveur via le même
+  // endpoint que "Voir les coordonnées") -> on ouvre enfin la modale
+  // "Détail" avec les textes en clair.
+  async function confirmDetailAuth() {
+    if (!detailAuthPassword || !pendingDetail) return;
+    setDetailAuthSubmitting(true);
+    setDetailAuthError('');
+    try {
+      await client.post('/api/coordonnees/reveal', {
+        pseudonyme: pendingDetail.pseudonyme, password: detailAuthPassword,
+      });
+      const { pseudonyme, registre } = pendingDetail;
+      closeDetailAuth();
+      openDetail(pseudonyme, registre);
+    } catch (err) {
+      setDetailAuthError(err.response?.data?.error || 'Mot de passe incorrect.');
+    } finally {
+      setDetailAuthSubmitting(false);
+    }
   }
 
   async function confirmReveal() {
@@ -198,6 +243,14 @@ export default function PatientsTab() {
                 placeholder="Rechercher un pseudonyme..."
                 autoComplete="off"
                 name="patient-search"
+                // Astuce anti-autofill : le champ démarre en lecture seule
+                // (donc ignoré par le remplissage automatique du navigateur,
+                // qui l'avait confondu avec un champ "identifiant" à cause
+                // du champ mot de passe présent ailleurs sur la page) et
+                // redevient éditable dès le premier focus, avant toute
+                // saisie de l'utilisateur — aucun impact sur l'usage normal.
+                readOnly
+                onFocus={(e) => e.target.removeAttribute('readonly')}
                 style={{
                   width: 240, padding: '9px 12px 9px 32px', borderRadius: 10,
                   border: '1.5px solid var(--line)', fontSize: 12.8, background: 'var(--paper)',
@@ -236,8 +289,8 @@ export default function PatientsTab() {
                       ))}
                       <td style={{ padding: '11px 10px' }}>
                         <button
-                          onClick={() => openDetail(r.pseudonyme, r.registre)}
-                          title="Voir les textes et fichiers (audio/scan) associés"
+                          onClick={() => requestDetail(r.pseudonyme, r.registre)}
+                          title="Voir les textes et fichiers (audio/scan) associés — mot de passe requis"
                           style={{
                             display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
                             borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
@@ -303,6 +356,18 @@ export default function PatientsTab() {
               type="password"
               autoFocus
               autoComplete="new-password"
+              // Empêche le navigateur de proposer/remplir automatiquement un
+              // mot de passe déjà enregistré pour ce site (ex. celui du
+              // compte clinicien) : ce champ sert à RE-confirmer une
+              // identité, pas à se connecter — un remplissage automatique
+              // serait trompeur (on ne saurait plus si c'est vraiment
+              // l'utilisateur qui a tapé son mot de passe) et peu sûr si
+              // quelqu'un d'autre utilise le même poste avec la session
+              // ouverte.
+              data-lpignore="true"
+              data-1p-ignore="true"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute('readonly')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && confirmReveal()}
@@ -330,6 +395,67 @@ export default function PatientsTab() {
                 opacity: submitting ? 0.7 : 1,
               }}>
                 {submitting ? 'Vérification…' : 'Déverrouiller'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Modale mot de passe avant "Détail" ---- */}
+      {pendingDetail && (
+        <div
+          onClick={closeDetailAuth}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(18,42,48,.55)', backdropFilter: 'blur(2px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--card)', borderRadius: 16, width: 380, maxWidth: '100%',
+            padding: '26px 26px 22px', boxShadow: '0 20px 50px -10px rgba(18,42,48,.35)',
+          }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontFamily: 'var(--font-display)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <IconLock size={16} /> Mot de passe requis
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)' }}>
+              Les textes transcrits et documents associés sont des données sensibles. Confirmez votre mot de passe pour les afficher — accès journalisé.
+            </p>
+            <input
+              type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              readOnly
+              onFocus={(e) => e.target.removeAttribute('readonly')}
+              value={detailAuthPassword}
+              onChange={(e) => setDetailAuthPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmDetailAuth()}
+              placeholder="Mot de passe"
+              autoFocus
+              style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid var(--line)', fontSize: 13, background: 'var(--paper)', width: '100%', marginBottom: 8 }}
+            />
+            {detailAuthError && <p className="error" style={{ margin: '0 0 8px', fontSize: 11.5 }}>{detailAuthError}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={confirmDetailAuth}
+                disabled={detailAuthSubmitting || !detailAuthPassword}
+                style={{
+                  flex: 1, padding: '9px 14px', borderRadius: 10, border: 'none',
+                  background: 'var(--teal)', color: '#fff', fontWeight: 600, fontSize: 13,
+                  opacity: detailAuthSubmitting || !detailAuthPassword ? 0.7 : 1,
+                }}
+              >
+                {detailAuthSubmitting ? 'Vérification…' : 'Confirmer'}
+              </button>
+              <button
+                onClick={closeDetailAuth}
+                disabled={detailAuthSubmitting}
+                style={{
+                  flex: 1, padding: '9px 14px', borderRadius: 10, border: '1.5px solid var(--line)',
+                  background: 'var(--card)', color: 'var(--teal-deep)', fontWeight: 600, fontSize: 13,
+                }}
+              >
+                Annuler
               </button>
             </div>
           </div>
