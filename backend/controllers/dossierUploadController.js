@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
 const { genererPseudonyme } = require('../utils/pseudonymUtils');
+const { decrypt } = require('../utils/cryptoUtils');
 
 const TYPES_DOCUMENT = ['visite', 'admission', 'prelevement_sang', 'eeg', 'emg', 'irm', 'autre'];
 const TYPES_ENTREE = ['audio', 'scan'];
@@ -209,14 +210,40 @@ async function verifierDossier(req, res) {
   }
 
   try {
-    const pseudonyme = genererPseudonyme(pathologie, numero_dossier);
+    // On ne recalcule plus de pseudonyme par HMAC pour cette vérification :
+    // ça ne fonctionnait que pour les patients créés après l'introduction
+    // de ce schéma, pas pour les pseudonymes legacy attribués à la main
+    // (ex. SEP_MJ_001) — cf. bug où le pseudonyme affiché ne correspondait
+    // pas au vrai dossier. La seule source fiable du lien numero_dossier ->
+    // pseudonyme est coordonnee_patient ; le numéro y est chiffré avec un
+    // IV aléatoire (donc pas recherchable directement en SQL), on déchiffre
+    // chaque ligne pour comparer. Coûteux si la table grossit beaucoup,
+    // mais un registre clinique reste de taille modeste ; à revoir avec un
+    // index déterministe si ça devient un problème de perf.
+    const numeroNormalise = String(numero_dossier).trim().toUpperCase();
+    const coordResult = await pool.query(
+      `SELECT pseudonyme, numero_dossier FROM coordonnee_patient WHERE numero_dossier IS NOT NULL`
+    );
+    const match = coordResult.rows.find((r) => {
+      try {
+        return decrypt(r.numero_dossier).trim().toUpperCase() === numeroNormalise;
+      } catch {
+        return false;
+      }
+    });
+
+    if (!match) {
+      return res.json({ existe: false });
+    }
 
     const patientResult = await pool.query(
       `SELECT pseudonyme, registre, date_inclusion FROM patients WHERE pseudonyme = $1`,
-      [pseudonyme]
+      [match.pseudonyme]
     );
     const patient = patientResult.rows[0];
-    if (!patient) {
+    // On ne signale le doublon que si la pathologie du patient trouvé
+    // correspond bien à celle demandée dans le wizard.
+    if (!patient || patient.registre !== pathologie) {
       return res.json({ existe: false });
     }
 

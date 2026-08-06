@@ -77,17 +77,28 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
 
   async function checkDoublon() {
     if (isAjoutDocument) return;
-    if (!form.numero_dossier.trim() || !form.pathologie) return;
+    // On fige le numéro/la pathologie interrogés dès le départ : si le
+    // clinicien modifie le champ pendant que la requête est en vol, on ne
+    // doit surtout pas réassocier la réponse (calculée pour l'ancienne
+    // valeur) à la valeur courante du formulaire au moment où le .then()
+    // s'exécute — c'était la cause du pseudonyme affiché ne correspondant
+    // plus au numéro de dossier visible à l'écran.
+    const numeroInterroge = form.numero_dossier.trim();
+    const pathologieInterrogee = form.pathologie;
+    if (!numeroInterroge || !pathologieInterrogee) return;
     setCheckingDoublon(true);
     try {
       const res = await client.get('/api/dossiers/verifier', {
-        params: { pathologie: form.pathologie, numero_dossier: form.numero_dossier.trim() },
+        params: { pathologie: pathologieInterrogee, numero_dossier: numeroInterroge },
       });
-      if (res.data.existe) {
-        setDoublon({ ...res.data, numero_dossier: form.numero_dossier.trim() });
-      } else {
-        setDoublon(null);
+      // Le formulaire a pu changer entre-temps : si le numéro/la pathologie
+      // actuels ne correspondent plus à ceux de cette requête, la réponse
+      // est obsolète et ne doit pas écraser l'état courant (une requête
+      // plus récente, déclenchée par le changement, s'en chargera).
+      if (form.numero_dossier.trim() !== numeroInterroge || form.pathologie !== pathologieInterrogee) {
+        return;
       }
+      setDoublon(res.data.existe ? res.data : null);
     } catch {
       // Vérification best-effort : en cas d'échec on laisse le clinicien continuer.
     } finally {
