@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
 import { SectionHeading } from '../components/DashboardWidgets';
+import LineChartSVG from '../components/ClinicalChart';
 import {
   IconEye, IconPlus, IconSearch, IconX, IconFolder, IconAlert,
   IconUsers, IconHistory, IconActivity, IconTarget, IconHeart, IconWave, IconUpload,
+  IconArrowLeft, IconShield, IconGlobe, IconKey, IconRefresh, IconLock, IconEyeOff,
 } from '../components/Icons';
 
 const REGISTRE_STYLE = {
@@ -26,6 +28,20 @@ function RegistreBadge({ registre }) {
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR');
+}
+
+/** Barre de complétude compacte pour la liste des dossiers — couleur selon le seuil (rouge < 50%, ambre < 80%, vert >= 80%). */
+function CompletudeCell({ value }) {
+  const pct = Number.isFinite(value) ? value : 0;
+  const color = pct >= 80 ? 'var(--success, #1c7a52)' : pct >= 50 ? 'var(--amber, #c8790f)' : 'var(--error, #c23b4e)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 90 }}>
+      <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--line)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 999 }} />
+      </div>
+      <span style={{ fontSize: 11.5, fontWeight: 700, color, minWidth: 30, textAlign: 'right' }}>{pct}%</span>
+    </div>
+  );
 }
 
 function humanizeKey(key) {
@@ -114,52 +130,335 @@ function SectionContent({ data, depth = 0 }) {
   );
 }
 
-// Catégories d'entités, dans l'ordre où elles sont saisies/extraites en pratique
-// (cf. brief du stage : identification, antécédents, évolution clinique, imagerie,
-// traitements, suivi). "Notes" est ajouté à part — ce n'est pas une entité NER,
-// c'est une information libre laissée par le clinicien.
-const TABS = [
-  { key: 'identification', label: 'Identification', Icon: IconUsers },
-  { key: 'antecedents', label: 'Antécédents', Icon: IconHistory },
-  { key: 'evolutionClinique', label: 'Évolution clinique', Icon: IconActivity },
-  { key: 'imagerie', label: 'Imagerie & examens', Icon: IconTarget },
-  { key: 'traitements', label: 'Traitements', Icon: IconHeart },
-  { key: 'suivi', label: 'Suivi', Icon: IconWave },
+/**
+ * Catégories d'entités par registre, une par onglet — reprises telles quelles
+ * des tableaux "Question 1 : Typologie des entités médicales à extraire"
+ * (Tableau 1 registre SEP, Tableau 2 registre EPR). Chaque `get` va chercher
+ * la portion de l'objet renvoyé par GET /api/dossiers/:pseudonyme (voir
+ * dossierController.js -> buildEntitesSEP / buildEntitesEPR) correspondant à
+ * cette catégorie précise, plutôt que de regrouper plusieurs catégories sous
+ * un seul onglet générique "Évolution clinique" / "Imagerie" / "Traitements".
+ */
+const TABS_SEP = [
+  { key: 'identification', label: 'Identification', Icon: IconUsers, group: 'Clinique', get: (d) => stripIdent(d.identification) },
+  { key: 'antecedents', label: 'Antécédents', Icon: IconHistory, group: 'Clinique', get: (d) => d.antecedents },
+  { key: 'presentation', label: 'Présentation initiale', Icon: IconActivity, group: 'Clinique', get: (d) => d.evolutionClinique?.presentationInitiale },
+  { key: 'poussees', label: 'Poussées', Icon: IconAlert, group: 'Clinique', get: (d) => ({ poussees: d.evolutionClinique?.poussees || [] }) },
+  { key: 'handicap', label: 'Handicap & évolution', Icon: IconChartIcon, group: 'Clinique', get: (d) => ({ evolution: d.evolutionClinique?.evolution, edssVisites: d.evolutionClinique?.edssVisites || [] }) },
+  { key: 'irm', label: 'Imagerie (IRM)', Icon: IconTarget, group: 'Paraclinique', get: (d) => ({ irm: d.imagerie?.irm || [] }) },
+  { key: 'biologie', label: 'Biologie / LCR', Icon: IconShield, group: 'Paraclinique', get: (d) => ({ biologieLcr: d.imagerie?.biologieLcr || [] }) },
+  { key: 'pe', label: 'Potentiels évoqués', Icon: IconWave, group: 'Paraclinique', get: (d) => ({ potentielsEvoques: d.imagerie?.potentielsEvoques || [] }) },
+  { key: 'traitement', label: 'Traitement de fond', Icon: IconHeart, group: 'Traitement', get: (d) => ({ traitementFond: d.traitements?.traitementFond || [] }) },
+  { key: 'suivi', label: 'Suivi', Icon: IconRefresh, group: 'Suivi', get: (d) => d.suivi },
 ];
 
-/** Barre d'onglets horizontale — même esprit que les sous-onglets d'une fiche patient. */
-function SubTabs({ active, onChange }) {
+const TABS_EPR = [
+  { key: 'identification', label: 'Identification', Icon: IconUsers, group: 'Clinique', get: (d) => stripIdent(d.identification) },
+  { key: 'antecedents', label: 'Antécédents', Icon: IconHistory, group: 'Clinique', get: (d) => d.antecedents },
+  { key: 'semiologie', label: 'Sémiologie critique', Icon: IconActivity, group: 'Clinique', get: (d) => ({ typeCrise: d.evolutionClinique?.typeCrise || [], frequenceCrises: d.evolutionClinique?.frequenceCrises || [] }) },
+  { key: 'examen', label: 'Examen', Icon: IconEye, group: 'Clinique', get: (d) => ({ examen: d.evolutionClinique?.examen || [] }) },
+  { key: 'etiologie', label: 'Étiologie (ILAE)', Icon: IconKey, group: 'Clinique', get: (d) => ({ etiologie: d.evolutionClinique?.etiologie || [] }) },
+  { key: 'regression', label: 'Régression développementale', Icon: IconAlert, group: 'Clinique', get: (d) => d.evolutionClinique?.regressionDeveloppementale },
+  { key: 'eeg', label: 'EEG', Icon: IconWave, group: 'Paraclinique', get: (d) => ({ eeg: d.imagerie?.eeg || [] }) },
+  { key: 'imagerie', label: 'Imagerie cérébrale', Icon: IconTarget, group: 'Paraclinique', get: (d) => ({ imagerie: d.imagerie?.imagerie || [] }) },
+  { key: 'genetique', label: 'Génétique', Icon: IconGlobe, group: 'Paraclinique', get: (d) => ({ genetique: d.imagerie?.genetique || [] }) },
+  { key: 'pharmacoresistance', label: 'Pharmacorésistance', Icon: IconShield, group: 'Traitement', get: (d) => ({ listeAe: d.traitements?.listeAe || [] }) },
+  { key: 'chirurgie', label: 'Bilan pré-chir. & chirurgie', Icon: IconChartIcon, group: 'Traitement', get: (d) => ({ bilanPrechirurgical: d.traitements?.bilanPrechirurgical || [], chirurgie: d.traitements?.chirurgie || [] }) },
+  { key: 'alternatives', label: 'Alternatives thérapeutiques', Icon: IconRefresh, group: 'Traitement', get: (d) => ({ alternatives: d.traitements?.alternatives || [] }) },
+  { key: 'multidisciplinaire', label: 'Bilan multidisciplinaire', Icon: IconHeart, group: 'Suivi', get: (d) => ({ bilanOrthophonique: d.suivi?.bilanOrthophonique || [], bilanNeuropsy: d.suivi?.bilanNeuropsy || [], bilanErgotherapique: d.suivi?.bilanErgotherapique || [] }) },
+  { key: 'suivi', label: 'Suivi', Icon: IconRefresh, group: 'Suivi', get: (d) => ({ statutDernierSuivi: d.suivi?.statut_dernier_suivi, dureeSuiviMois: d.suivi?.duree_suivi_mois }) },
+];
+
+// Ordre d'affichage des groupes dans la sidebar (accordéon).
+const GROUP_ORDER = ['Clinique', 'Paraclinique', 'Traitement', 'Suivi'];
+
+// IconChart n'est volontairement pas importé sous ce nom pour éviter tout
+// conflit avec un usage futur de IconActivity ; petit alias local.
+function IconChartIcon(props) { return <IconTarget {...props} />; }
+
+function stripIdent(ident) {
+  if (!ident) return ident;
+  const { pseudonyme: _p, registre: _r, ...rest } = ident;
+  return rest;
+}
+
+/** Barre d'onglets horizontale, groupée par famille clinique (séparateur discret entre groupes) — remplace la liste latérale, une seule source de navigation. */
+function HorizontalNav({ tabs, active, onChange }) {
+  const byGroup = GROUP_ORDER
+    .map((g) => ({ group: g, items: tabs.filter((t) => t.group === g) }))
+    .filter((g) => g.items.length > 0);
+
   return (
     <div style={{
-      display: 'flex', gap: 4, flexWrap: 'wrap', borderBottom: '1px solid var(--line)', marginBottom: 18,
+      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2,
+      borderBottom: '1.5px solid var(--line)', marginBottom: 18, paddingBottom: 2,
     }}>
-      {TABS.map(({ key, label, Icon }) => {
-        const isActive = active === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onChange(key)}
-            style={{
-              width: 'auto', margin: 0, padding: '9px 4px', marginRight: 16,
-              background: 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none',
-              borderBottom: isActive ? '2px solid var(--teal)' : '2px solid transparent',
-              color: isActive ? 'var(--teal-deep)' : 'var(--slate)',
-              fontSize: 13, fontWeight: isActive ? 700 : 600,
-              display: 'inline-flex', alignItems: 'center', gap: 7,
-            }}
-          >
-            <Icon size={14} />
-            {label}
-          </button>
-        );
-      })}
+      {byGroup.map(({ group, items }, gi) => (
+        <div key={group} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {gi > 0 && (
+            <span style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 8px' }} />
+          )}
+          {items.map(({ key, label, Icon }) => {
+            const isActive = active === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onChange(key)}
+                title={group}
+                style={{
+                  width: 'auto', margin: 0, padding: '9px 12px 11px',
+                  background: 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none',
+                  borderBottom: isActive ? '2.5px solid var(--teal)' : '2.5px solid transparent',
+                  color: isActive ? 'var(--teal-deep)' : 'var(--slate)',
+                  fontSize: 12.5, fontWeight: isActive ? 700 : 600, whiteSpace: 'nowrap',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Icon size={13} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
 
-/** Modale "Voir" — détail des entités médicales extraites, structurées par catégorie. */
-function DossierModal({ pseudonyme, onClose }) {
+/**
+ * Courbe de suivi, propre à chaque pathologie — affichée en tête de l'onglet
+ * "Suivi", là où le clinicien s'attend à voir la trajectoire du patient plutôt
+ * qu'un simple tableau de champs :
+ *
+ * - SEP : courbe EDSS dans le temps (une mesure par visite, sep_edss_visites).
+ *   Seuils repères EDSS 4 (limitation nette du périmètre de marche sans aide)
+ *   et EDSS 6 (aide à la marche unilatérale nécessaire) — les deux jalons
+ *   cliniques classiques utilisés pour discuter la trajectoire avec la famille.
+ *
+ * - EPR : courbe de fréquence des crises dans le temps (crises/mois normalisé,
+ *   epr_frequence_crises.frequence_normalisee_mois). Seuil "répondeur" à -50%
+ *   par rapport à la fréquence de base (1ère mesure disponible) — définition
+ *   standard utilisée en épileptologie pour juger l'efficacité d'un traitement.
+ */
+function SuiviChart({ registre, data }) {
+  if (registre === 'EPR') {
+    const rows = data.evolutionClinique?.frequenceCrises || [];
+    const points = rows
+      .filter((r) => r.frequence_normalisee_mois !== null && r.frequence_normalisee_mois !== undefined)
+      .map((r) => ({ date: r.date_rapport, value: Number(r.frequence_normalisee_mois) }));
+    const baseline = points.length > 0 ? points[0].value : null;
+    const yMax = Math.max(4, ...points.map((p) => p.value), baseline ? baseline * 1.1 : 0);
+
+    return (
+      <div style={{ marginBottom: 22 }}>
+        <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+          Fréquence des crises dans le temps (crises / mois, normalisée)
+        </p>
+        <p className="hint" style={{ margin: '0 0 10px' }}>
+          Indicateur de suivi standard en épileptologie — comparaison à la fréquence de base pour juger la réponse thérapeutique (seuil « répondeur » : réduction ≥ 50 %).
+        </p>
+        <LineChartSVG
+          points={points}
+          yMin={0}
+          yMax={Math.ceil(yMax)}
+          unit="/mois"
+          color="var(--amber, #c8790f)"
+          referenceLines={baseline ? [
+            { y: baseline, label: `Fréquence de base (${baseline}/mois)`, color: 'var(--slate)' },
+            { y: baseline / 2, label: 'Seuil répondeur (-50 %)', color: 'var(--error, #c23b4e)' },
+          ] : []}
+          emptyLabel="Aucune fréquence de crises rapportée pour ce patient."
+        />
+      </div>
+    );
+  }
+
+  const rows = data.evolutionClinique?.edssVisites || [];
+  const points = rows
+    .filter((r) => r.score_edss !== null && r.score_edss !== undefined)
+    .map((r) => ({ date: r.date_visite, value: Number(r.score_edss) }));
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+        Score EDSS dans le temps (échelle de handicap, 0–10)
+      </p>
+      <p className="hint" style={{ margin: '0 0 10px' }}>
+        Indicateur de suivi standard en neurologie de la SEP — un score par visite, avec les jalons cliniques repères EDSS 4 et EDSS 6.
+      </p>
+      <LineChartSVG
+        points={points}
+        yMin={0}
+        yMax={10}
+        yTicks={[0, 2, 4, 6, 8, 10]}
+        unit=""
+        color="var(--teal-deep, #145aa3)"
+        referenceLines={[
+          { y: 4, label: 'EDSS 4 — périmètre de marche limité', color: 'var(--amber, #c8790f)' },
+          { y: 6, label: 'EDSS 6 — aide à la marche nécessaire', color: 'var(--error, #c23b4e)' },
+        ]}
+        emptyLabel="Aucun score EDSS enregistré pour ce patient."
+      />
+    </div>
+  );
+}
+
+/**
+ * Vue "Dossier" pleine page — remplace l'ancienne modale, trop étroite pour
+ * accueillir un onglet par catégorie clinique. Reprend l'esprit de la maquette
+ * fiche patient (bandeau patient à gauche, onglets + contenu à droite, sur
+ * toute la largeur disponible) plutôt qu'un panneau centré à largeur fixe.
+ */
+/**
+ * Nom & prénom en clair dans la fiche dossier — pour que le médecin identifie
+ * son patient sans quitter cette page pour l'onglet "Identités patients".
+ * Réutilise EXACTEMENT le même mécanisme que cet onglet (POST
+ * /api/coordonnees/reveal, re-confirmation du mot de passe du clinicien
+ * connecté, accès journalisé côté serveur) : le nom reste flouté/masqué tant
+ * que ce n'est pas confirmé, il n'est jamais renvoyé "en clair" par défaut
+ * avec le reste du dossier.
+ */
+function IdentityReveal({ pseudonyme }) {
+  const [nom, setNom] = useState(null); // null = pas encore déverrouillé
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function confirm() {
+    if (!password) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const res = await client.post('/api/coordonnees/reveal', { pseudonyme, password });
+      setNom(res.data.nom_prenom || 'Non renseigné');
+      setOpen(false);
+      setPassword('');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Mot de passe incorrect.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (nom) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{nom}</p>
+        <button
+          type="button"
+          onClick={() => setNom(null)}
+          title="Masquer le nom"
+          style={{ width: 'auto', margin: 0, padding: 4, background: 'transparent', border: 'none', boxShadow: 'none', color: 'var(--slate-soft)' }}
+        >
+          <IconEyeOff size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => { setOpen(true); setError(''); }}
+        style={{
+          width: 'auto', margin: 0, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 6,
+          borderRadius: 8, border: '1.5px dashed var(--line)', background: 'var(--paper)',
+          color: 'var(--slate)', fontSize: 11.5, fontWeight: 600,
+        }}
+      >
+        <IconLock size={12} />
+        Afficher nom &amp; prénom
+      </button>
+
+      {open && (
+        <div style={{
+          marginTop: 8, padding: 10, borderRadius: 10, border: '1px solid var(--line)', background: 'var(--paper)',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          <p className="hint" style={{ margin: 0, fontSize: 11 }}>
+            Confirmez votre mot de passe pour déverrouiller l'identité — accès journalisé.
+          </p>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && confirm()}
+            placeholder="Mot de passe"
+            autoComplete="current-password"
+            style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid var(--line)', fontSize: 12.5, background: 'var(--card)' }}
+          />
+          {error && <p className="error" style={{ margin: 0, fontSize: 11 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={submitting || !password}
+              style={{ width: 'auto', margin: 0, padding: '6px 12px', fontSize: 11.5 }}
+            >
+              {submitting ? 'Vérification…' : 'Confirmer'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => { setOpen(false); setPassword(''); setError(''); }}
+              style={{ width: 'auto', margin: 0, padding: '6px 12px', fontSize: 11.5 }}
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Résumé rapide affiché sous l'identité du patient dans la sidebar : les 1-2
+ * chiffres qu'un clinicien regarde en premier avant même d'ouvrir un onglet
+ * (dernier EDSS pour la SEP, dernière fréquence de crises pour l'EPR). Évite
+ * que la sidebar ne soit qu'une redite de la navigation.
+ */
+function QuickStats({ registre, data }) {
+  if (registre === 'EPR') {
+    const rows = data.evolutionClinique?.frequenceCrises || [];
+    const last = rows[rows.length - 1];
+    const statut = data.suivi?.statut_dernier_suivi;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+          <span>Dernière fréquence</span>
+          <span style={{ color: 'var(--ink)', fontWeight: 600 }}>
+            {last ? `${formatValue(last.frequence_normalisee_mois)}/mois` : '—'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+          <span>Statut au dernier suivi</span>
+          <span style={{ color: 'var(--ink)', fontWeight: 600, textAlign: 'right' }}>{formatValue(statut)}</span>
+        </div>
+      </div>
+    );
+  }
+  const edss = data.evolutionClinique?.edssVisites || [];
+  const lastEdss = edss[edss.length - 1];
+  const statut = data.suivi?.statut_dernier_suivi;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+        <span>Dernier EDSS</span>
+        <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{lastEdss ? formatValue(lastEdss.score_edss) : '—'}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+        <span>Statut au dernier suivi</span>
+        <span style={{ color: 'var(--ink)', fontWeight: 600, textAlign: 'right' }}>{formatValue(statut)}</span>
+      </div>
+    </div>
+  );
+}
+
+function DossierView({ pseudonyme, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,7 +468,7 @@ function DossierModal({ pseudonyme, onClose }) {
     let cancelled = false;
     setLoading(true);
     setError('');
-    setActiveTab('identification'); // repart sur "Identification" à chaque nouveau dossier ouvert
+    setActiveTab('identification');
     client.get(`/api/dossiers/${pseudonyme}`)
       .then((res) => { if (!cancelled) setData(res.data); })
       .catch(() => { if (!cancelled) setError('Impossible de charger ce dossier.'); })
@@ -177,51 +476,74 @@ function DossierModal({ pseudonyme, onClose }) {
     return () => { cancelled = true; };
   }, [pseudonyme]);
 
-  const ident = data?.identification || {};
-  // pseudonyme / registre déjà affichés dans l'en-tête de la modale.
-  const { pseudonyme: _p, registre: _r, ...identRest } = ident;
+  const registre = data?.identification?.registre;
+  const tabs = useMemo(() => (registre === 'EPR' ? TABS_EPR : TABS_SEP), [registre]);
+  const activeDef = tabs.find((t) => t.key === activeTab) || tabs[0];
 
   return (
-    <div onClick={onClose} className="modal-overlay">
-      <div onClick={(e) => e.stopPropagation()} className="modal-panel" style={{ maxWidth: 820 }}>
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: 11, background: 'var(--teal-tint)', color: 'var(--teal-deep)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <IconFolder size={18} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <button
+        type="button"
+        className="secondary"
+        style={{ width: 'auto', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 12.5 }}
+        onClick={onBack}
+      >
+        <IconArrowLeft size={14} />
+        Retour aux dossiers
+      </button>
+
+      {loading && <p className="hint">Chargement du dossier…</p>}
+      {error && <p className="error">{error}</p>}
+
+      {!loading && !error && data && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 260px) 1fr', gap: 20, alignItems: 'start' }}>
+          {/* Bandeau patient, à gauche — identité + chiffres clés uniquement (la navigation par catégories est passée en horizontal, plus de doublon ici) */}
+          <div className="card" style={{ position: 'sticky', top: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 42, height: 42, borderRadius: 11, background: 'var(--teal-tint)', color: 'var(--teal-deep)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <IconFolder size={19} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', wordBreak: 'break-all' }}>
+                  {pseudonyme}
+                </p>
+                {registre && <RegistreBadge registre={registre} />}
+              </div>
             </div>
-            <div>
-              <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>
-                {pseudonyme}
+
+            <IdentityReveal pseudonyme={pseudonyme} />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+                <span>Date d'inclusion</span>
+                <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtDate(data.identification?.date_inclusion)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
+                <span>Âge</span>
+                <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{formatValue(data.identification?.age)}</span>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                Suivi en un coup d'œil
               </p>
-              {ident.registre && <RegistreBadge registre={ident.registre} />}
+              <QuickStats registre={registre} data={data} />
             </div>
           </div>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">
-            <IconX size={16} />
-          </button>
+
+          {/* Contenu — pleine largeur restante : onglets horizontaux (seule navigation par catégories) + contenu de la catégorie active */}
+          <div className="card" style={{ minHeight: 420 }}>
+            <HorizontalNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
+            <h3 style={{ margin: '0 0 14px', fontSize: 15, fontFamily: 'var(--font-display)' }}>{activeDef.label}</h3>
+            {activeTab === 'suivi' && <SuiviChart registre={registre} data={data} />}
+            <SectionContent data={activeDef.get(data)} />
+          </div>
         </div>
-
-        <div style={{ marginTop: 18 }}>
-          {loading && <p className="hint">Chargement du dossier…</p>}
-          {error && <p className="error">{error}</p>}
-
-          {!loading && !error && data && (
-            <>
-              <SubTabs active={activeTab} onChange={setActiveTab} />
-
-              <div style={{ minHeight: 160 }}>
-                {activeTab === 'identification' && <FieldsGrid entries={Object.entries(identRest)} />}
-                {activeTab !== 'identification' && (
-                  <SectionContent data={data[activeTab]} />
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -343,6 +665,12 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   const bySearch = rows.filter((r) => r.pseudonyme.toLowerCase().includes(search.toLowerCase()));
   const filtered = alertFilter ? bySearch.filter((r) => alertFilter.has(r.pseudonyme)) : bySearch;
 
+  // Dossier ouvert -> vue pleine page (plus de modale étroite), le reste
+  // (liste + recherche + alertes) reste monté en arrière-plan.
+  if (viewPseudo) {
+    return <DossierView pseudonyme={viewPseudo} onBack={() => setViewPseudo(null)} />;
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <SectionHeading Icon={IconFolder} title="Entités Médicales" subtitle="Dossiers et entités extraites par le NER" />
@@ -415,6 +743,8 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                   <th style={{ padding: '11px 10px' }}>Pseudonyme</th>
                   <th style={{ padding: '11px 10px' }}>Registre</th>
                   <th style={{ padding: '11px 10px' }}>Date d'inclusion</th>
+                  <th style={{ padding: '11px 10px' }}>Dernière visite</th>
+                  <th style={{ padding: '11px 10px' }}>Complétude</th>
                   <th style={{ padding: '11px 10px' }}></th>
                 </tr>
               </thead>
@@ -424,6 +754,8 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                     <td style={{ padding: '11px 10px', fontFamily: 'var(--font-mono)' }}>{r.pseudonyme}</td>
                     <td style={{ padding: '11px 10px' }}><RegistreBadge registre={r.registre} /></td>
                     <td style={{ padding: '11px 10px' }}>{fmtDate(r.date_inclusion)}</td>
+                    <td style={{ padding: '11px 10px' }}>{fmtDate(r.derniere_visite)}</td>
+                    <td style={{ padding: '11px 10px' }}><CompletudeCell value={r.completude} /></td>
                     <td style={{ padding: '11px 10px' }}>
                       <button
                         onClick={() => setViewPseudo(r.pseudonyme)}
@@ -445,9 +777,6 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
         )}
       </div>
 
-      {viewPseudo && (
-        <DossierModal pseudonyme={viewPseudo} onClose={() => setViewPseudo(null)} />
-      )}
       {showAdd && <AddDossierModal onClose={() => setShowAdd(false)} />}
     </div>
   );

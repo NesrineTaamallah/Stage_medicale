@@ -1,19 +1,115 @@
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
 
+// Colonnes techniques à exclure du calcul de complétude (clé, FK, métadonnées,
+// colonnes générées côté SQL — pas des données saisies par le clinicien).
+const COMPLETUDE_EXCLUDE = new Set([
+  'pseudonyme', 'id', 'created_at', 'registre',
+  'delai_diagnostic_mois', // GENERATED ALWAYS AS (sep_identification_clinique)
+]);
+
+/**
+ * Tables "singleton" (une ligne par patient) utilisées pour le calcul de
+ * complétude — volontairement les tables répétées (visites, IRM, poussées...)
+ * en sont exclues : leur nombre de lignes est légitimement variable d'un
+ * patient à l'autre et ne reflète pas un dossier "incomplet".
+ */
+const COMPLETUDE_TABLES = {
+  SEP: [
+    'sep_identification_clinique', 'sep_antecedents',
+    'sep_presentation_initiale', 'sep_evolution', 'sep_suivi',
+  ],
+  EPR: [
+    'epr_identification_clinique', 'epr_antecedents',
+    'epr_regression_developpementale', 'epr_pharmacoresistance', 'epr_suivi',
+  ],
+};
+
+// Tables + colonne date utilisées pour déterminer la date de dernière visite
+// (dernière donnée horodatée disponible, tous types d'examens/évènements
+// confondus — le registre ne modélise pas de table "visites" générique).
+const DATE_SOURCES = [
+  ['sep_edss_visites', 'date_visite'],
+  ['sep_poussees', 'date_poussee'],
+  ['sep_irm', 'date_examen'],
+  ['sep_biologie_lcr', 'date_prelevement'],
+  ['sep_potentiels_evoques', 'date_examen'],
+  ['sep_traitement_fond', 'date_debut'],
+  ['sep_suivi', 'date_dernier_suivi'],
+  ['epr_type_crise', 'date_observation'],
+  ['epr_frequence_crises', 'date_rapport'],
+  ['epr_examen', 'date_examen'],
+  ['epr_eeg', 'date_eeg'],
+  ['epr_imagerie', 'date_examen'],
+  ['epr_bilan_prechirurgical', 'date_bilan'],
+  ['epr_chirurgie', 'date_chirurgie'],
+  ['epr_bilan_orthophonique', 'date_bilan'],
+  ['epr_bilan_neuropsy', 'date_bilan'],
+  ['epr_bilan_ergotherapique', 'date_bilan'],
+];
+
+/** % de champs renseignés (non NULL) sur l'ensemble des tables singleton du registre, pour un pseudonyme donné. */
+function computeCompletude(rowsByTable, tables) {
+  let filled = 0;
+  let total = 0;
+  for (const t of tables) {
+    const row = rowsByTable[t];
+    if (!row) continue; // table pas encore créée pour ce patient -> aucun champ compté
+    for (const [col, val] of Object.entries(row)) {
+      if (COMPLETUDE_EXCLUDE.has(col)) continue;
+      total += 1;
+      if (val !== null && val !== undefined && val !== '') filled += 1;
+    }
+  }
+  return total === 0 ? 0 : Math.round((filled / total) * 100);
+}
+
 /**
  * GET /api/dossiers
  * Liste légère des dossiers (pas de données identifiantes ici — celles-ci
- * restent dans coordonnee_patient / le flux de la partie "Patients").
+ * restent dans coordonnee_patient / le flux de la partie "Patients"), avec
+ * en plus la date de dernière visite et un indicateur de complétude du
+ * dossier, utiles pour prioriser le suivi clinique d'un coup d'œil.
  */
 async function listDossiers(req, res) {
   try {
-    const result = await pool.query(
+    const patientsResult = await pool.query(
       `SELECT pseudonyme, registre, date_inclusion, age, created_at
        FROM patients
        ORDER BY date_inclusion DESC NULLS LAST, created_at DESC`
     );
-    res.json(result.rows);
+
+    const dateUnion = DATE_SOURCES
+      .map(([table, col]) => `SELECT pseudonyme, ${col} AS d FROM ${table}`)
+      .join(' UNION ALL ');
+    const dateResult = await pool.query(
+      `SELECT pseudonyme, MAX(d) AS derniere_visite FROM (${dateUnion}) x WHERE d IS NOT NULL GROUP BY pseudonyme`
+    );
+    const derniereVisiteByPseudo = new Map(dateResult.rows.map((r) => [r.pseudonyme, r.derniere_visite]));
+
+    // Une requête par table singleton (SEP + EPR confondues), indexée par pseudonyme.
+    const allTables = [...COMPLETUDE_TABLES.SEP, ...COMPLETUDE_TABLES.EPR];
+    const tableResults = await Promise.all(
+      allTables.map((t) => pool.query(`SELECT * FROM ${t}`))
+    );
+    const rowsByTableByPseudo = {}; // { pseudonyme: { table: row } }
+    allTables.forEach((table, i) => {
+      for (const row of tableResults[i].rows) {
+        rowsByTableByPseudo[row.pseudonyme] = rowsByTableByPseudo[row.pseudonyme] || {};
+        rowsByTableByPseudo[row.pseudonyme][table] = row;
+      }
+    });
+
+    const rows = patientsResult.rows.map((p) => ({
+      ...p,
+      derniere_visite: derniereVisiteByPseudo.get(p.pseudonyme) || null,
+      completude: computeCompletude(
+        rowsByTableByPseudo[p.pseudonyme] || {},
+        COMPLETUDE_TABLES[p.registre] || []
+      ),
+    }));
+
+    res.json(rows);
   } catch (err) {
     console.error('Erreur listDossiers :', err);
     res.status(500).json({ error: 'Erreur serveur.' });
