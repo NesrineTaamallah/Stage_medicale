@@ -3,6 +3,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
+const { genererPseudonyme } = require('../utils/pseudonymUtils');
 
 const TYPES_DOCUMENT = ['visite', 'admission', 'prelevement_sang', 'eeg', 'emg', 'irm', 'autre'];
 const TYPES_ENTREE = ['audio', 'scan'];
@@ -252,11 +253,27 @@ async function creerDossier(req, res) {
       ]
     );
 
+    // Pseudonymisation immédiate : le pseudonyme est déterministe (HMAC sur
+    // registre + numéro de dossier), donc calculable dès l'upload sans
+    // attendre l'extraction d'entités. On crée une ligne "stub" dans
+    // `patients` pour que le dossier apparaisse tout de suite dans la liste
+    // côté clinicien — les colonnes d'identité (nom, prénom, ...) restent
+    // vides tant que `coordonnee_patient` n'a pas été renseignée par l'étape
+    // d'extraction ultérieure.
+    const pseudonyme = genererPseudonyme(pathologie, numero_dossier);
+    await pool.query(
+      `INSERT INTO patients (pseudonyme, registre, date_inclusion)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (pseudonyme) DO NOTHING`,
+      [pseudonyme, pathologie, date_diagnostic]
+    );
+
     await logAccess({ userId: req.user.sub, action: 'dossier_document_creer', success: true, req });
 
     res.status(201).json({
       document_id: docResult.rows[0].id,
       numero_dossier,
+      pseudonyme,
       statut,
       texte_transcrit,
     });
@@ -303,4 +320,91 @@ async function corrigerTexteTranscrit(req, res) {
   }
 }
 
-module.exports = { creerDossier, corrigerTexteTranscrit };
+/**
+ * GET /api/dossiers/:pseudonyme/documents
+ *
+ * Liste les documents bruts (audio transcrit / scan) rattachés à un
+ * pseudonyme. `documents_bruts` ne connaît que le numero_dossier en clair
+ * (voir schema_documents.sql) : on retrouve les lignes correspondantes en
+ * recalculant le pseudonyme de chaque document (même fonction déterministe
+ * qu'à l'upload) et en le comparant à celui demandé, plutôt que de stocker
+ * le numéro de dossier en clair côté `patients`.
+ */
+async function getDocumentsByPseudonyme(req, res) {
+  const { pseudonyme } = req.params;
+
+  try {
+    const patientResult = await pool.query(
+      `SELECT pseudonyme, registre FROM patients WHERE pseudonyme = $1`,
+      [pseudonyme]
+    );
+    const patient = patientResult.rows[0];
+    if (!patient) {
+      return res.status(404).json({ error: 'Dossier introuvable.' });
+    }
+
+    const docsResult = await pool.query(
+      `SELECT id, numero_dossier, type_document, type_entree, nom_fichier_original,
+              texte_transcrit, statut, created_at
+         FROM documents_bruts
+        WHERE pathologie = $1
+        ORDER BY created_at DESC`,
+      [patient.registre]
+    );
+
+    const documents = docsResult.rows
+      .filter((d) => genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme)
+      .map((d) => ({
+        id: d.id,
+        type_document: d.type_document,
+        type_entree: d.type_entree,
+        nom_fichier_original: d.nom_fichier_original,
+        texte_transcrit: d.texte_transcrit,
+        statut: d.statut,
+        created_at: d.created_at,
+      }));
+
+    await logAccess({ userId: req.user.sub, action: 'dossier_documents_bruts_view', success: true, req });
+
+    res.json({ pseudonyme, documents });
+  } catch (err) {
+    console.error('Erreur getDocumentsByPseudonyme :', err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
+}
+
+/**
+ * GET /api/dossiers/documents/:id/fichier
+ * Télécharge le fichier original (audio ou scan) d'un document brut.
+ * Pas de re-vérification de pseudonyme ici : l'accès est déjà restreint au
+ * rôle clinicien par le middleware de route, comme pour les autres endpoints
+ * de ce contrôleur.
+ */
+async function telechargerFichier(req, res) {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT chemin_fichier, nom_fichier_original FROM documents_bruts WHERE id = $1`,
+      [id]
+    );
+    const doc = result.rows[0];
+    if (!doc || !fs.existsSync(doc.chemin_fichier)) {
+      return res.status(404).json({ error: 'Fichier introuvable.' });
+    }
+
+    await logAccess({ userId: req.user.sub, action: 'dossier_document_telecharger', success: true, req });
+
+    res.download(doc.chemin_fichier, doc.nom_fichier_original || path.basename(doc.chemin_fichier));
+  } catch (err) {
+    console.error('Erreur telechargerFichier :', err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
+}
+
+module.exports = {
+  creerDossier,
+  corrigerTexteTranscrit,
+  getDocumentsByPseudonyme,
+  telechargerFichier,
+};

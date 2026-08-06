@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import client from '../api/client';
-import { IconLock, IconEye, IconSearch, IconAlert } from '../components/Icons';
+import { IconLock, IconEye, IconSearch, IconAlert, IconFolder, IconDownload } from '../components/Icons';
+
+const TYPE_DOCUMENT_LABELS = {
+  visite: 'Visite', admission: 'Admission', prelevement_sang: 'Prélèvement sanguin',
+  eeg: 'EEG', emg: 'EMG', irm: 'IRM', autre: 'Autre',
+};
 
 const COLUMNS = [
   { key: 'numero_dossier', label: 'N° dossier' },
@@ -45,6 +50,14 @@ export default function PatientsTab() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ---- Modale "Détail" : textes/audios/scans associés à un pseudonyme,
+  // disponibles dès l'upload même si l'extraction d'entités n'a pas
+  // encore été faite (auquel cas les autres colonnes restent vides).
+  const [detailPseudonyme, setDetailPseudonyme] = useState(null);
+  const [detailDocuments, setDetailDocuments] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+
   useEffect(() => {
     client.get('/api/coordonnees')
       .then((res) => setRows(res.data.map((r) => ({ ...r, data: null }))))
@@ -76,6 +89,23 @@ export default function PatientsTab() {
 
   function maskAll() {
     setRows((prev) => prev.map((r) => ({ ...r, data: null })));
+  }
+
+  function openDetail(pseudonyme) {
+    setDetailPseudonyme(pseudonyme);
+    setDetailDocuments([]);
+    setDetailError('');
+    setDetailLoading(true);
+    client.get(`/api/dossiers/${pseudonyme}/documents`)
+      .then((res) => setDetailDocuments(res.data.documents))
+      .catch(() => setDetailError('Impossible de charger les documents associés.'))
+      .finally(() => setDetailLoading(false));
+  }
+
+  function closeDetail() {
+    setDetailPseudonyme(null);
+    setDetailDocuments([]);
+    setDetailError('');
   }
 
   async function confirmReveal() {
@@ -162,6 +192,7 @@ export default function PatientsTab() {
                 <tr style={{ textAlign: 'left', color: 'var(--slate)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: '1px solid var(--line)' }}>
                   <th style={{ padding: '11px 10px', position: 'sticky', left: 0, background: 'var(--card)' }}>Pseudonyme</th>
                   {COLUMNS.map((c) => <th key={c.key} style={{ padding: '11px 10px', whiteSpace: 'nowrap' }}>{c.label}</th>)}
+                  <th style={{ padding: '11px 10px' }}>Détail</th>
                   <th style={{ padding: '11px 10px' }}></th>
                 </tr>
               </thead>
@@ -176,6 +207,20 @@ export default function PatientsTab() {
                       {COLUMNS.map((c) => (
                         <BlurCell key={c.key} value={r.data?.[c.key]} revealed={revealed} />
                       ))}
+                      <td style={{ padding: '11px 10px' }}>
+                        <button
+                          onClick={() => openDetail(r.pseudonyme)}
+                          title="Voir les textes et fichiers (audio/scan) associés"
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                            borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
+                            color: 'var(--teal-deep)', fontSize: 11.5, fontWeight: 600,
+                          }}
+                        >
+                          <IconFolder size={13} />
+                          Détail
+                        </button>
+                      </td>
                       <td style={{ padding: '11px 10px' }}>
                         <button
                           onClick={() => (revealed ? maskRow(r.pseudonyme) : openReveal(r.pseudonyme))}
@@ -258,6 +303,89 @@ export default function PatientsTab() {
                 opacity: submitting ? 0.7 : 1,
               }}>
                 {submitting ? 'Vérification…' : 'Déverrouiller'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Modale "Détail" : documents bruts associés au pseudonyme ---- */}
+      {detailPseudonyme && (
+        <div
+          onClick={closeDetail}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(18,42,48,.55)', backdropFilter: 'blur(2px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--card)', borderRadius: 16, width: 560, maxWidth: '100%', maxHeight: '80vh',
+            overflowY: 'auto', padding: '26px 26px 22px', boxShadow: '0 20px 50px -10px rgba(18,42,48,.35)',
+          }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontFamily: 'var(--font-display)' }}>
+              Documents associés
+            </h3>
+            <p style={{
+              margin: '0 0 16px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--teal-deep)',
+            }}>
+              Pseudonyme : {detailPseudonyme}
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--slate-soft)', lineHeight: 1.5 }}>
+              Nom, prénom et autres coordonnées restent vides tant que l'extraction d'entités
+              n'a pas encore été effectuée pour ce dossier.
+            </p>
+
+            {detailLoading && <p style={{ fontSize: 13, color: 'var(--slate)' }}>Chargement…</p>}
+            {detailError && (
+              <p style={{ fontSize: 11.8, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <IconAlert size={13} /> {detailError}
+              </p>
+            )}
+            {!detailLoading && !detailError && detailDocuments.length === 0 && (
+              <p style={{ fontSize: 13, color: 'var(--slate)' }}>Aucun document associé pour l'instant.</p>
+            )}
+
+            {!detailLoading && detailDocuments.map((d) => (
+              <div key={d.id} style={{
+                border: '1px solid var(--line)', borderRadius: 12, padding: 14, marginBottom: 10,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    {TYPE_DOCUMENT_LABELS[d.type_document] || d.type_document}
+                    {' · '}
+                    {d.type_entree === 'audio' ? 'Audio' : 'Scan'}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--slate-soft)' }}>{d.statut}</span>
+                </div>
+                {d.texte_transcrit && (
+                  <p style={{
+                    margin: '0 0 8px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5,
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {d.texte_transcrit}
+                  </p>
+                )}
+                <a
+                  href={`${client.defaults.baseURL || ''}/api/dossiers/documents/${d.id}/fichier`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5,
+                    color: 'var(--teal-deep)', fontWeight: 600, textDecoration: 'none',
+                  }}
+                >
+                  <IconDownload size={13} />
+                  Télécharger le fichier original {d.nom_fichier_original ? `(${d.nom_fichier_original})` : ''}
+                </a>
+              </div>
+            ))}
+
+            <div style={{ display: 'flex', marginTop: 6 }}>
+              <button onClick={closeDetail} style={{
+                flex: 1, padding: '9px 14px', borderRadius: 10, border: '1.5px solid var(--line)',
+                background: 'var(--card)', color: 'var(--teal-deep)', fontWeight: 600, fontSize: 13,
+              }}>
+                Fermer
               </button>
             </div>
           </div>

@@ -46,7 +46,7 @@ if _HF_TOKEN:
 MODEL_NAME = "nesrine56/whisper-large-v3-ct2"
 ALIGN_MODEL_NAME = "jonatasgrosman/wav2vec2-large-xlsr-53-french"
 LANGUAGE = "fr"
-BATCH_SIZE = 16
+BATCH_SIZE = 4
 
 DOMAIN_PROMPT = (
     "Compte-rendu médical dicté en français. Antécédents personnels et familiaux, "

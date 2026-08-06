@@ -3,7 +3,12 @@ const multer = require('multer');
 const path = require('path');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { creerDossier, corrigerTexteTranscrit } = require('../controllers/dossierUploadController');
+const {
+  creerDossier,
+  corrigerTexteTranscrit,
+  getDocumentsByPseudonyme,
+  telechargerFichier,
+} = require('../controllers/dossierUploadController');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 
@@ -40,6 +45,11 @@ router.post('/creer', requireAuth, requireRole('clinicien'), upload.single('fich
 // Correction du texte transcrit (audio ou OCR) avant validation finale,
 // depuis l'étape de confirmation du wizard.
 router.patch('/documents/:id/texte', requireAuth, requireRole('clinicien'), corrigerTexteTranscrit);
+
+// Colonne "Détail" du tableau Patients : textes (audio/scan) associés à un
+// pseudonyme, tant que l'extraction d'entités n'a pas encore été faite.
+router.get('/:pseudonyme/documents', requireAuth, requireRole('clinicien'), getDocumentsByPseudonyme);
+router.get('/documents/:id/fichier', requireAuth, requireRole('clinicien'), telechargerFichier);
 
 module.exports = router;
 
