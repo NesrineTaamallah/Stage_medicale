@@ -1,4 +1,3 @@
-
 import argparse
 import gc
 import json
@@ -7,6 +6,20 @@ import re
 import sys
 from collections import Counter
 from difflib import SequenceMatcher
+
+from dotenv import load_dotenv
+
+# Charge les variables du fichier .env (doit contenir HF_TOKEN=hf_xxx) situé
+# dans le même dossier que ce script, ou dans backend/ selon l'endroit d'où
+# le script est lancé.
+load_dotenv()
+
+_HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+if _HF_TOKEN:
+    # huggingface_hub lit cette variable pour s'authentifier automatiquement,
+    # sans passer par `huggingface-cli login`.
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = _HF_TOKEN
+    os.environ["HF_TOKEN"] = _HF_TOKEN
 
 # ---------------------------------------------------------------------------
 # Configuration
