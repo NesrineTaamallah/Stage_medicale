@@ -13,23 +13,15 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads
 const WHISPER_SCRIPT = path.join(__dirname, '..', 'scripts', 'whisper_transcribe.py');
 const PADDLEOCR_SCRIPT = path.join(__dirname, '..', 'scripts', 'paddleocr_transcribe.py');
 const PYTHON_BIN = process.env.PYTHON_BIN || 'python3';
-// Binaire Python dédié à l'OCR si un venv séparé est utilisé (deps paddle
-// différentes de celles de whisper) ; retombe sur PYTHON_BIN sinon.
 const PADDLEOCR_PYTHON_BIN = process.env.PADDLEOCR_PYTHON_BIN || PYTHON_BIN;
 
-// Services FastAPI persistants (modèle/pipeline chargé une seule fois au
-// démarrage, au lieu d'être rechargé à chaque appel comme avec spawn()).
-// Voir scripts/whisper_service.py et scripts/paddleocr_service.py.
+
 const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://127.0.0.1:8001';
 const PADDLEOCR_SERVICE_URL = process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8002';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-/**
- * Appelle le service whisper_service.py (modèle déjà chargé) pour
- * transcrire le fichier audio. Nettement plus rapide que transcribeAudioSpawn
- * car il n'y a plus de rechargement du modèle à chaque requête.
- */
+
 async function transcribeAudioViaService(audioPath) {
   const absolutePath = path.resolve(audioPath);
   const res = await fetch(`${WHISPER_SERVICE_URL}/transcribe`, {
@@ -48,11 +40,7 @@ async function transcribeAudioViaService(audioPath) {
   return data.text;
 }
 
-/**
- * Ancien mode : lance whisper_transcribe.py en sous-processus à chaque
- * appel (recharge le modèle à chaque fois, donc lent). Conservé comme
- * repli si le service HTTP n'est pas démarré, pour ne rien casser.
- */
+
 function transcribeAudioSpawn(audioPath) {
   return new Promise((resolve, reject) => {
     const proc = spawn(PYTHON_BIN, [WHISPER_SCRIPT, '--audio', audioPath, '--json'], {
@@ -303,7 +291,15 @@ async function verifierDossier(req, res) {
  * est fait par une étape ultérieure du pipeline, pas par ce endpoint.
  */
 async function creerDossier(req, res) {
-  const { numero_dossier, pathologie, date_diagnostic, date_inclusion, type_document, type_entree } = req.body;
+  const {
+    numero_dossier, pathologie, date_diagnostic, date_inclusion, type_document, type_entree,
+    // Fourni uniquement par le wizard en mode "ajout de document à un
+    // dossier existant" (existingPatient) : le pseudonyme réel du patient
+    // déjà connu côté client, à utiliser TEL QUEL au lieu de le recalculer
+    // par hash — indispensable pour les pseudonymes "legacy" attribués à la
+    // main (ex. SEP_MJ_001), qui ne sont pas dérivables depuis numero_dossier.
+    pseudonyme_existant,
+  } = req.body;
   const fichier = req.file;
 
   if (!numero_dossier || !pathologie || !date_diagnostic || !date_inclusion || !type_document || !type_entree) {
@@ -320,6 +316,28 @@ async function creerDossier(req, res) {
   }
   if (!fichier) {
     return res.status(400).json({ error: 'Fichier manquant.' });
+  }
+
+  // Si un pseudonyme existant est annoncé, on vérifie qu'il correspond bien
+  // à un patient réel de la bonne pathologie avant de lui faire confiance
+  // (le champ vient du client) — sinon on retombe sur le calcul par hash,
+  // comme pour une création normale.
+  let pseudonyme = null;
+  if (pseudonyme_existant) {
+    const check = await pool.query(
+      `SELECT pseudonyme FROM patients WHERE pseudonyme = $1 AND registre = $2`,
+      [pseudonyme_existant, pathologie]
+    );
+    if (check.rows[0]) {
+      pseudonyme = check.rows[0].pseudonyme;
+    }
+  }
+  if (!pseudonyme) {
+    // Pseudonymisation par défaut : déterministe (HMAC sur registre + numéro
+    // de dossier), donc calculable dès l'upload sans attendre l'extraction
+    // d'entités — cas d'une création de dossier normale (pas d'ajout à un
+    // patient déjà existant).
+    pseudonyme = genererPseudonyme(pathologie, numero_dossier);
   }
 
   let texte_transcrit = null;
@@ -347,26 +365,23 @@ async function creerDossier(req, res) {
     const docResult = await pool.query(
       `INSERT INTO documents_bruts
          (numero_dossier, pathologie, date_diagnostic, type_document, type_entree,
-          chemin_fichier, nom_fichier_original, texte_transcrit, statut)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          chemin_fichier, nom_fichier_original, texte_transcrit, statut, pseudonyme)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         numero_dossier, pathologie, date_diagnostic, type_document, type_entree,
-        fichier.path, fichier.originalname, texte_transcrit, statut,
+        fichier.path, fichier.originalname, texte_transcrit, statut, pseudonyme,
       ]
     );
 
-    // Pseudonymisation immédiate : le pseudonyme est déterministe (HMAC sur
-    // registre + numéro de dossier), donc calculable dès l'upload sans
-    // attendre l'extraction d'entités. On crée une ligne "stub" dans
-    // `patients` pour que le dossier apparaisse tout de suite dans la liste
-    // côté clinicien — les colonnes d'identité (nom, prénom, ...) restent
-    // vides tant que `coordonnee_patient` n'a pas été renseignée par l'étape
-    // d'extraction ultérieure. Un seul et même patient (même pseudonyme)
-    // peut recevoir plusieurs documents au fil du temps : ON CONFLICT DO
-    // NOTHING garantit qu'il reste toujours une seule ligne dans `patients`,
-    // quel que soit le nombre de documents ajoutés.
-    const pseudonyme = genererPseudonyme(pathologie, numero_dossier);
+    // On crée une ligne "stub" dans `patients` pour que le dossier apparaisse
+    // tout de suite dans la liste côté clinicien — les colonnes d'identité
+    // (nom, prénom, ...) restent vides tant que `coordonnee_patient` n'a pas
+    // été renseignée par l'étape d'extraction ultérieure. Un seul et même
+    // patient (même pseudonyme) peut recevoir plusieurs documents au fil du
+    // temps : ON CONFLICT DO NOTHING garantit qu'il reste toujours une seule
+    // ligne dans `patients`, quel que soit le nombre de documents ajoutés —
+    // y compris quand `pseudonyme` est un pseudonyme "legacy" déjà existant.
     await pool.query(
       `INSERT INTO patients (pseudonyme, registre, date_inclusion)
        VALUES ($1, $2, $3)
@@ -433,7 +448,7 @@ async function corrigerTexteTranscrit(req, res) {
       `UPDATE documents_bruts
          SET texte_transcrit = $1, statut = 'valide'
        WHERE id = $2
-       RETURNING id, numero_dossier, pathologie, type_document, texte_transcrit, statut`,
+       RETURNING id, numero_dossier, pathologie, pseudonyme, type_document, texte_transcrit, statut`,
       [texte_transcrit, id]
     );
 
@@ -442,7 +457,10 @@ async function corrigerTexteTranscrit(req, res) {
     }
 
     const doc = result.rows[0];
-    const pseudonyme = genererPseudonyme(doc.pathologie, doc.numero_dossier);
+    // Priorité à la colonne `pseudonyme` (fixée à la création par
+    // creerDossier) ; repli par hash uniquement pour les documents créés
+    // avant l'ajout de cette colonne.
+    const pseudonyme = doc.pseudonyme || genererPseudonyme(doc.pathologie, doc.numero_dossier);
 
     if (texte_transcrit.trim()) {
       const entete = `--- ${doc.type_document || 'document'} · ${new Date().toLocaleDateString('fr-FR')} ---`;
@@ -475,6 +493,14 @@ async function corrigerTexteTranscrit(req, res) {
  * recalculant le pseudonyme de chaque document (même fonction déterministe
  * qu'à l'upload) et en le comparant à celui demandé, plutôt que de stocker
  * le numéro de dossier en clair côté `patients`.
+ *
+ * Renvoie aussi `numero_dossier` au niveau racine (nécessaire pour rouvrir
+ * le wizard "Ajouter un document") : pris sur le premier document trouvé
+ * ci-dessus si possible, sinon déchiffré depuis `coordonnee_patient` — seule
+ * source restante pour les pseudonymes "legacy" attribués à la main (ex.
+ * SEP_MJ_001), qui ne sont pas dérivés par hash du numero_dossier et n'ont
+ * donc jamais de ligne `documents_bruts` correspondante tant qu'aucun
+ * document n'a encore été uploadé via ce pipeline pour eux.
  */
 async function getDocumentsByPseudonyme(req, res) {
   const { pseudonyme } = req.params;
@@ -490,7 +516,7 @@ async function getDocumentsByPseudonyme(req, res) {
     }
 
     const docsResult = await pool.query(
-      `SELECT id, numero_dossier, type_document, type_entree, nom_fichier_original,
+      `SELECT id, numero_dossier, pseudonyme, type_document, type_entree, nom_fichier_original,
               texte_transcrit, statut, created_at
          FROM documents_bruts
         WHERE pathologie = $1
@@ -499,9 +525,15 @@ async function getDocumentsByPseudonyme(req, res) {
     );
 
     const documents = docsResult.rows
-      .filter((d) => genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme)
+      // Priorité à la colonne `pseudonyme` (fixée à la création, fiable
+      // pour tous les cas y compris legacy) ; repli par hash uniquement
+      // pour les lignes créées avant l'ajout de cette colonne.
+      .filter((d) => (d.pseudonyme
+        ? d.pseudonyme === pseudonyme
+        : genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme))
       .map((d) => ({
         id: d.id,
+        numero_dossier: d.numero_dossier,
         type_document: d.type_document,
         type_entree: d.type_entree,
         nom_fichier_original: d.nom_fichier_original,
@@ -510,9 +542,25 @@ async function getDocumentsByPseudonyme(req, res) {
         created_at: d.created_at,
       }));
 
+    let numero_dossier = documents[0]?.numero_dossier || null;
+    if (!numero_dossier) {
+      const coordResult = await pool.query(
+        `SELECT numero_dossier FROM coordonnee_patient WHERE pseudonyme = $1`,
+        [pseudonyme]
+      );
+      const chiffre = coordResult.rows[0]?.numero_dossier;
+      if (chiffre) {
+        try {
+          numero_dossier = decrypt(chiffre).trim();
+        } catch (e) {
+          console.error('Erreur déchiffrement numero_dossier (coordonnee_patient) :', e);
+        }
+      }
+    }
+
     await logAccess({ userId: req.user.sub, action: 'dossier_documents_bruts_view', success: true, req });
 
-    res.json({ pseudonyme, documents });
+    res.json({ pseudonyme, numero_dossier, documents });
   } catch (err) {
     console.error('Erreur getDocumentsByPseudonyme :', err);
     res.status(500).json({ error: 'Erreur serveur.' });

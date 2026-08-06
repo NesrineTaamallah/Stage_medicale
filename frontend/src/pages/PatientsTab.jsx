@@ -54,6 +54,7 @@ export default function PatientsTab() {
   // disponibles dès l'upload même si l'extraction d'entités n'a pas
   // encore été faite (auquel cas les autres colonnes restent vides).
   const [detailPseudonyme, setDetailPseudonyme] = useState(null);
+  const [detailRegistre, setDetailRegistre] = useState(null);
   const [detailDocuments, setDetailDocuments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
@@ -98,8 +99,9 @@ export default function PatientsTab() {
     setRows((prev) => prev.map((r) => ({ ...r, data: null })));
   }
 
-  function openDetail(pseudonyme) {
+  function openDetail(pseudonyme, registre) {
     setDetailPseudonyme(pseudonyme);
+    setDetailRegistre(registre || null);
     setDetailDocuments([]);
     setDetailError('');
     setDetailLoading(true);
@@ -111,6 +113,7 @@ export default function PatientsTab() {
 
   function closeDetail() {
     setDetailPseudonyme(null);
+    setDetailRegistre(null);
     setDetailDocuments([]);
     setDetailError('');
   }
@@ -233,7 +236,7 @@ export default function PatientsTab() {
                       ))}
                       <td style={{ padding: '11px 10px' }}>
                         <button
-                          onClick={() => openDetail(r.pseudonyme)}
+                          onClick={() => openDetail(r.pseudonyme, r.registre)}
                           title="Voir les textes et fichiers (audio/scan) associés"
                           style={{
                             display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',

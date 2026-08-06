@@ -599,18 +599,18 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
     setAjoutLoading(row.pseudonyme);
     try {
       const res = await client.get(`/api/dossiers/${row.pseudonyme}/documents`);
-      const premier = res.data.documents?.[0];
-      if (!premier?.numero_dossier) {
+      const numeroDossier = res.data.numero_dossier;
+      if (!numeroDossier) {
         setAjoutError("Impossible de retrouver le numéro de dossier pour ce patient.");
         return;
       }
       const verif = await client.get('/api/dossiers/verifier', {
-        params: { pathologie: row.registre, numero_dossier: premier.numero_dossier },
+        params: { pathologie: row.registre, numero_dossier: numeroDossier },
       });
       setAjoutPatient({
         pseudonyme: row.pseudonyme,
         pathologie: row.registre,
-        numero_dossier: premier.numero_dossier,
+        numero_dossier: numeroDossier,
         date_diagnostic: verif.data.date_diagnostic,
         date_inclusion: verif.data.date_inclusion,
       });
@@ -789,6 +789,13 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
 
       {showAdd && (
         <AjouterPatientWizard
+          // La `key` force React à démonter/remonter le composant dès que
+          // `ajoutPatient` change (ex. clic sur "Ajouter un document à ce
+          // dossier" depuis l'alerte doublon) : sans elle, c'est la même
+          // instance qui reste montée et son état interne (form, étape)
+          // ne se réinitialise jamais avec les infos du doublon — le
+          // wizard semblait alors "ne rien faire" au clic sur ce bouton.
+          key={ajoutPatient ? `ajout-${ajoutPatient.pseudonyme}` : 'nouveau'}
           existingPatient={ajoutPatient}
           onSwitchToAjout={(doublon) => setAjoutPatient({
             pseudonyme: doublon.pseudonyme,

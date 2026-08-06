@@ -170,6 +170,15 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const body = new FormData();
       Object.entries(form).forEach(([k, v]) => body.append(k, v));
       body.append('fichier', file);
+      // En mode "ajout de document à un dossier existant", on transmet le
+      // pseudonyme déjà connu du patient (y compris pseudonymes legacy type
+      // SEP_MJ_001, non dérivables par hash) : le serveur le réutilise tel
+      // quel au lieu de recalculer un pseudonyme différent, ce qui créerait
+      // sinon un dossier fantôme dupliqué et empêcherait le texte extrait
+      // d'atterrir dans le bon dossier "détaillé".
+      if (isAjoutDocument) {
+        body.append('pseudonyme_existant', existingPatient.pseudonyme);
+      }
 
       const res = await client.post('/api/dossiers/creer', body, {
         headers: { 'Content-Type': 'multipart/form-data' },
