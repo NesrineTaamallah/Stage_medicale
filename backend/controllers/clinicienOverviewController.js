@@ -74,22 +74,25 @@ async function getClinicienOverview(req, res) {
         FROM patients
       `),
 
-      // --- Répartition par sexe ---
-      // CORRECTION v2 : la colonne 'sexe' n'existe que côté SEP
-      // (sep_identification_clinique) ; epr_identification_clinique ne l'a
-      // pas. Mélanger les deux dans un seul donut avec un segment "Non
-      // applicable (EPR)" créait un artefact de schéma trompeur (jusqu'à
-      // 44% du donut sur cette cohorte) que le clinicien lisait à tort
-      // comme une vraie catégorie démographique. On restreint donc ce
-      // donut au registre SEP uniquement, avec un intitulé explicite ;
-      // le hint côté frontend précise le périmètre.
+      // --- Répartition par sexe (SEP + EPR) ---
+      // Depuis migration_epr_sexe.sql, epr_identification_clinique porte
+      // aussi la colonne 'sexe' (symétrique de sep_identification_clinique) :
+      // le donut peut donc couvrir les deux registres sans artefact de
+      // schéma. UNION ALL plutôt qu'un JOIN unique car les deux tables ne
+      // partagent pas le même nom de PK de table source.
       pool.query(`
         SELECT
-          COALESCE(NULLIF(TRIM(ic.sexe), ''), 'Non renseigné') AS sexe,
+          COALESCE(NULLIF(TRIM(sexe), ''), 'Non renseigné') AS sexe,
           COUNT(*)::int AS count
-        FROM patients p
-        JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
-        WHERE p.registre = 'SEP'
+        FROM (
+          SELECT ic.sexe FROM patients p
+          JOIN sep_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
+          WHERE p.registre = 'SEP'
+          UNION ALL
+          SELECT ic.sexe FROM patients p
+          JOIN epr_identification_clinique ic ON ic.pseudonyme = p.pseudonyme
+          WHERE p.registre = 'EPR'
+        ) both_registres
         GROUP BY 1
       `),
 
@@ -107,8 +110,8 @@ async function getClinicienOverview(req, res) {
       pool.query(`
         SELECT
           COUNT(DISTINCT p.pseudonyme)::int AS total_patients,
-          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NULL)::int AS fiches_renseignees,
-          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NOT NULL)::int AS fiches_manquantes
+          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NULL)::int AS patients_sans_extraction_en_attente,
+          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NOT NULL)::int AS patients_avec_extraction_en_attente
         FROM patients p
         LEFT JOIN documents_bruts d
           ON d.pseudonyme = p.pseudonyme

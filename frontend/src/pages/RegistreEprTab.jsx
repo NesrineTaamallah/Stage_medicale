@@ -55,7 +55,6 @@ export default function RegistreEprTab() {
         <HeroStatCard
           label="Pharmacorésistance confirmée"
           value={pctLabel(data.pharmacoresistance?.confirmes, data.pharmacoresistance?.total)}
-          hint={smallSampleHint(data.pharmacoresistance?.total)}
         />
         <HeroStatCard label="Fréquence de crises moyenne" value={data.frequenceCrisesMoyenne != null ? `${data.frequenceCrisesMoyenne} /mois` : '—'} />
         <HeroStatCard label="Âge moyen au début des crises" value={data.ageDebutCrisesMoyenMois != null ? `${data.ageDebutCrisesMoyenMois} mois` : '—'} />

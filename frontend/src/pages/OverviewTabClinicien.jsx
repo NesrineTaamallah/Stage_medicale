@@ -268,9 +268,8 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <DonutCard
           title="Répartition par sexe"
-          hint="Registre SEP uniquement — le champ 'sexe' n'existe pas dans le schéma du registre EPR."
           segments={data.sexeRepartition.map((s, i) => ({ label: s.sexe, value: s.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
-          centerLabel="patients SEP"
+          centerLabel="patients"
         />
         <DonutCard
           title="Répartition par tranche d'âge"
@@ -279,10 +278,9 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
           centerLabel="patients"
         />
         <HeroStatCard
-          label="Fiches sans extraction des données"
-          value={data.fichesIdentite.fiches_manquantes}
-          hint={`${data.fichesIdentite.fiches_renseignees} / ${data.fichesIdentite.total_patients} patients n'ont aucun document validé en attente d'extraction.`}
-          onClick={data.fichesIdentite.fiches_manquantes > 0 ? () => onAlerteClick?.('identiteManquante') : undefined}
+          label="Patients avec document en attente d'extraction"
+          value={data.fichesIdentite.patients_avec_extraction_en_attente}
+          onClick={data.fichesIdentite.patients_avec_extraction_en_attente > 0 ? () => onAlerteClick?.('identiteManquante') : undefined}
         />
       </div>
 
@@ -339,12 +337,12 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
         <HeroStatCard
           label="SEP — patients à jour (EDSS + IRM < 12 mois)"
           value={pctLabel(data.suiviQualite?.sep?.aJour, data.suiviQualite?.sep?.total)}
-          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+          hint={`${data.suiviQualite?.sep?.total ?? 0} patient(s) en suivi actif sur ${t.total_sep} au total dans le registre SEP (hors perdus de vue / décédés).`}
         />
         <HeroStatCard
           label="EPR — patients à jour (EEG + fréquence crises < 12 mois)"
           value={pctLabel(data.suiviQualite?.epr?.aJour, data.suiviQualite?.epr?.total)}
-          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+          hint={`${data.suiviQualite?.epr?.total ?? 0} patient(s) en suivi actif sur ${t.total_epr} au total dans le registre EPR (hors perdus de vue / décédés).`}
         />
       </div>
 

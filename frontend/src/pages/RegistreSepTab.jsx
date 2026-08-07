@@ -72,7 +72,6 @@ export default function RegistreSepTab() {
         </div>
         <DonutCard
           title="Répartition par gouvernorat"
-          hint="Registre SEP uniquement — seul registre où ce champ est saisi actuellement."
           segments={gouvernoratSegments}
           centerLabel="patients SEP"
         />
@@ -81,7 +80,6 @@ export default function RegistreSepTab() {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <DonutCard
           title="Sérologie différentielle (dernier prélèvement)"
-          hint="NMO-IgG/MOG, AQP4 vs négatif — distinction déterminante SEP vs NMOSD/MOGAD (prise en charge opposée selon sous-type)."
           segments={(data.serologieDifferentielle || []).map((s, i) => ({ label: s.type, value: s.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
           centerLabel="patients testés"
         />
@@ -98,9 +96,27 @@ export default function RegistreSepTab() {
           </div>
         </div>
         <div className="card" style={{ flex: '1 1 400px' }}>
-          <CardTitle hint={`Score EDSS moyen de la cohorte, par trimestre (24 derniers mois). Dernière valeur : ${data.edssMoyen != null ? `${data.edssMoyen} (sur ${data.edssNbPatients} patient(s))` : '—'}.`}>
-            Tendance EDSS (cohorte) — dernier : {data.edssMoyen != null ? data.edssMoyen : '—'}
-          </CardTitle>
+          {(() => {
+            // CORRECTION : le "dernier" affiché dans le titre doit être le
+            // dernier point réellement tracé sur CE graphique (dernier
+            // trimestre avec au moins 1 patient), et non un autre agrégat
+            // (moyenne du dernier EDSS connu par patient, tous trimestres
+            // confondus) qui ne correspondait pas visuellement au dernier
+            // point de la courbe et créait une confusion.
+            const tendance = data.edssTendance || [];
+            const dernierPointValide = [...tendance].reverse().find((e) => e.nb_patients > 0);
+            return (
+              <CardTitle
+                hint={
+                  dernierPointValide
+                    ? `Score EDSS moyen de la cohorte, par trimestre (24 derniers mois). Dernière valeur : ${Number(dernierPointValide.edss_moyen)} (${dernierPointValide.periode}, sur ${dernierPointValide.nb_patients} patient(s)).`
+                    : 'Score EDSS moyen de la cohorte, par trimestre (24 derniers mois). Aucune donnée sur la période.'
+                }
+              >
+                Tendance EDSS (cohorte) — dernier : {dernierPointValide ? Number(dernierPointValide.edss_moyen) : '—'}
+              </CardTitle>
+            );
+          })()}
           <div style={{ marginTop: 14 }}>
             <MultiLineChart
               data={(data.edssTendance || []).map((e) => ({ label: e.periode, edss: e.edss_moyen != null ? Number(e.edss_moyen) : null, n: e.nb_patients }))}
