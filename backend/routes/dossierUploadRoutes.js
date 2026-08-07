@@ -8,6 +8,7 @@ const {
   creerDossier,
   corrigerTexteTranscrit,
   getDocumentsByPseudonyme,
+  getDocumentsNonExtraits,
   telechargerFichier,
 } = require('../controllers/dossierUploadController');
 
@@ -55,6 +56,11 @@ router.patch('/documents/:id/texte', requireAuth, requireRole('clinicien'), corr
 // Colonne "Détail" du tableau Patients : textes (audio/scan) associés à un
 // pseudonyme, tant que l'extraction d'entités n'a pas encore été faite.
 router.get('/:pseudonyme/documents', requireAuth, requireRole('clinicien'), getDocumentsByPseudonyme);
+// Panneau "Extraire" de la fenêtre Entités Médicales : uniquement les
+// documents dont les coordonnées n'ont pas encore été extraites (doit être
+// déclarée avant '/:pseudonyme/documents' n'aurait pas suffi vu le suffixe
+// différent, mais on la garde group ée ici pour la lisibilité).
+router.get('/:pseudonyme/documents-non-extraits', requireAuth, requireRole('clinicien'), getDocumentsNonExtraits);
 router.get('/documents/:id/fichier', requireAuth, requireRole('clinicien'), telechargerFichier);
 
 module.exports = router;

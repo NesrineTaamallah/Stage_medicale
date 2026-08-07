@@ -588,6 +588,63 @@ async function getDocumentsByPseudonyme(req, res) {
 }
 
 /**
+ * GET /api/dossiers/:pseudonyme/documents-non-extraits
+ * Sous-ensemble de getDocumentsByPseudonyme ci-dessus : uniquement les
+ * documents qui ont un texte transcrit ET n'ont pas encore servi à extraire
+ * les coordonnées du patient (coordonnees_extraites = false). Alimente le
+ * panneau "Extraire" de la fenêtre Entités Médicales : un patient peut avoir
+ * 3-4 documents (visite, EEG, courrier...), chacun traité séparément plutôt
+ * qu'un seul bloc de texte concaténé.
+ */
+async function getDocumentsNonExtraits(req, res) {
+  const { pseudonyme } = req.params;
+
+  try {
+    const patientResult = await pool.query(
+      `SELECT pseudonyme, registre FROM patients WHERE pseudonyme = $1`,
+      [pseudonyme]
+    );
+    const patient = patientResult.rows[0];
+    if (!patient) {
+      return res.status(404).json({ error: 'Dossier introuvable.' });
+    }
+
+    const docsResult = await pool.query(
+      `SELECT id, numero_dossier, pseudonyme, type_document, type_entree, nom_fichier_original,
+              texte_transcrit, statut, created_at
+         FROM documents_bruts
+        WHERE pathologie = $1
+          AND texte_transcrit IS NOT NULL
+          AND coordonnees_extraites = false
+        ORDER BY created_at ASC`,
+      [patient.registre]
+    );
+
+    const documents = docsResult.rows
+      .filter((d) => (d.pseudonyme
+        ? d.pseudonyme === pseudonyme
+        : genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme))
+      .map((d) => ({
+        id: d.id,
+        type_document: d.type_document,
+        type_entree: d.type_entree,
+        nom_fichier_original: d.nom_fichier_original,
+        // Texte brut affiché tel quel dans le panneau "Extraire" (comme
+        // dans "Documents associés") — pas seulement le lien du fichier
+        // audio/scan, pour que le clinicien puisse relire avant d'extraire.
+        texte_transcrit: d.texte_transcrit,
+        statut: d.statut,
+        created_at: d.created_at,
+      }));
+
+    res.json({ pseudonyme, documents });
+  } catch (err) {
+    console.error('Erreur getDocumentsNonExtraits :', err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
+}
+
+/**
  * GET /api/dossiers/documents/:id/fichier
  * Télécharge le fichier original (audio ou scan) d'un document brut.
  * Pas de re-vérification de pseudonyme ici : l'accès est déjà restreint au
@@ -621,5 +678,6 @@ module.exports = {
   creerDossier,
   corrigerTexteTranscrit,
   getDocumentsByPseudonyme,
+  getDocumentsNonExtraits,
   telechargerFichier,
 };

@@ -4,6 +4,7 @@ import {
   IconX, IconArrowLeft, IconArrowRight, IconUpload, IconCheckCircle,
   IconAlert, IconFolder, IconHeart, IconActivity,
 } from '../components/Icons';
+import ExtractionCoordonneesPanel from '../components/ExtractionCoordonneesPanel';
 
 const TYPES_DOCUMENT = [
   { value: 'visite', label: 'Visite' },
@@ -69,6 +70,10 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
   const [texteCorrige, setTexteCorrige] = useState('');
   const [validating, setValidating] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  // Devient vrai une fois le texte transcrit validé (bouton "Valider" du
+  // pied de page) — c'est seulement à partir de ce moment que le bouton
+  // "Extraire données patient" doit apparaître, pas avant.
+  const [texteValide, setTexteValide] = useState(false);
 
   // URL locale (blob:) pour prévisualiser/réécouter l'audio choisi, avant
   // même l'envoi au serveur — recréée à chaque nouveau fichier, et toujours
@@ -221,16 +226,17 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const res = await client.patch(`/api/dossiers/documents/${result.document_id}/texte`, {
         texte_transcrit: texteCorrige,
       });
-      // Le wizard se fermait auparavant instantanément après "Valider", sans
-      // aucun signe visible de succès — un petit toast le temps d'un aller-
-      // retour visuel avant de fermer, plutôt qu'une fermeture silencieuse.
+      // Le wizard ne se ferme plus automatiquement ici : on affiche un petit
+      // toast de confirmation, puis on laisse place au bouton "Extraire
+      // données patient" — le clinicien ferme lui-même une fois l'identité
+      // vérifiée (ou directement, s'il n'en a pas besoin).
       setShowToast(true);
-      setTimeout(() => {
-        onCreated?.({ ...result, ...res.data });
-        onClose();
-      }, 1200);
+      setTimeout(() => setShowToast(false), 1600);
+      setTexteValide(true);
+      onCreated?.({ ...result, ...res.data });
     } catch (err) {
       setError(err.response?.data?.error || 'Échec de la validation.');
+    } finally {
       setValidating(false);
     }
   }
@@ -590,6 +596,24 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                   <IconAlert size={13} /> La transcription automatique a échoué ; le fichier a bien été enregistré.
                 </p>
               )}
+
+              {result.pseudonyme && texteValide && (
+                <div style={{ width: '100%', textAlign: 'left', marginTop: 4 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate-soft)' }}>
+                    Identité du patient
+                  </p>
+                  <ExtractionCoordonneesPanel
+                    // Le texte peut avoir été corrigé juste au-dessus (relecture
+                    // médecin) avant même que le clinicien clique sur "Valider"
+                    // plus bas : on extrait depuis ce texte corrigé plutôt que
+                    // de repartir chercher le dossier en base, potentiellement
+                    // encore non à jour.
+                    texte={texteCorrige}
+                    pseudonymeCible={result.pseudonyme}
+                    label="Extraire données patient"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -607,9 +631,15 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
         borderTop: '1px solid var(--line)', background: 'var(--card)',
       }}>
         {result ? (
-          <button onClick={handleValider} disabled={validating || showToast} style={{ ...primaryBtn, marginLeft: 'auto', opacity: (validating || showToast) ? 0.7 : 1 }}>
-            {validating ? <><Spinner /> Validation…</> : showToast ? 'Enregistré' : 'Valider'}
-          </button>
+          texteValide ? (
+            <button onClick={onClose} style={{ ...primaryBtn, marginLeft: 'auto' }}>
+              Terminer
+            </button>
+          ) : (
+            <button onClick={handleValider} disabled={validating} style={{ ...primaryBtn, marginLeft: 'auto', opacity: validating ? 0.7 : 1 }}>
+              {validating ? <><Spinner /> Validation…</> : 'Valider'}
+            </button>
+          )
         ) : (
           <>
             <button

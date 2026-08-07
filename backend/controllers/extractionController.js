@@ -111,7 +111,10 @@ async function _coordonneeExistante(pseudonyme) {
  * body: { pseudonyme } — dossier déjà existant (concatène tous ses
  *       documents transcrits), OU { texte } — texte fourni directement
  *       (ex. juste après transcription, avant même que le dossier existe
- *       en base, cas "nouveau dossier" du wizard).
+ *       en base, cas "nouveau dossier" du wizard), OU { document_id } —
+ *       UN SEUL document précis (cas "extraction document par document"
+ *       de la fenêtre Entités Médicales, quand un patient a plusieurs
+ *       fichiers non encore traités).
  *
  * Ne SAUVEGARDE rien : renvoie les champs extraits + fusionnés avec
  * l'existant (s'il y en a un), pour affichage structuré et modifiable
@@ -119,23 +122,38 @@ async function _coordonneeExistante(pseudonyme) {
  * POST /api/coordonnees (coordonneePatientController.js), déjà en
  * upsert une-ligne-par-pseudonyme.
  *
- * Point d'entrée commun aux deux boutons décrits par la cliniciennne :
- * "Extraire données patient" (wizard Ajouter, dossier neuf ou existant)
- * et "Extraire coordonnées" (fenêtre Entités Médicales, dossier dont la
- * transcription a déjà été validée sans que l'identité ait été saisie).
+ * Point d'entrée commun aux trois façons de déclencher l'extraction :
+ * "Extraire données patient" (wizard Ajouter, dossier neuf ou existant),
+ * "Extraire coordonnées" (fenêtre Entités Médicales, dossier entier), et
+ * "Extraire" document par document (liste des documents non extraits).
  */
 async function extraireCoordonneesPatient(req, res) {
-  const { pseudonyme, texte } = req.body;
+  const { pseudonyme, texte, document_id } = req.body;
 
-  if (!pseudonyme && !texte) {
-    return res.status(400).json({ error: "Fournir soit 'pseudonyme' (dossier existant), soit 'texte' directement." });
+  if (!pseudonyme && !texte && !document_id) {
+    return res.status(400).json({ error: "Fournir 'pseudonyme', 'document_id' ou 'texte'." });
   }
 
   try {
     let texteAAnalyser = texte;
     let existant = null;
+    let pseudonymeEffectif = pseudonyme || null;
 
-    if (pseudonyme) {
+    if (document_id) {
+      const docResult = await pool.query(
+        `SELECT texte_transcrit, pseudonyme FROM documents_bruts WHERE id = $1`,
+        [document_id]
+      );
+      const doc = docResult.rows[0];
+      if (!doc) {
+        return res.status(404).json({ error: 'Document introuvable.' });
+      }
+      texteAAnalyser = doc.texte_transcrit;
+      pseudonymeEffectif = doc.pseudonyme;
+      if (pseudonymeEffectif) {
+        existant = await _coordonneeExistante(pseudonymeEffectif);
+      }
+    } else if (pseudonyme) {
       texteAAnalyser = await _texteConcatenePourPseudonyme(pseudonyme);
       if (texteAAnalyser === null) {
         return res.status(404).json({ error: 'Dossier introuvable.' });
@@ -144,7 +162,7 @@ async function extraireCoordonneesPatient(req, res) {
     }
 
     if (!texteAAnalyser || !texteAAnalyser.trim()) {
-      return res.status(422).json({ error: 'Aucun texte transcrit disponible pour ce dossier — impossible d\'extraire.' });
+      return res.status(422).json({ error: 'Aucun texte transcrit disponible — impossible d\'extraire.' });
     }
 
     const extraction = await extraireDonneesPatient(texteAAnalyser);
@@ -157,7 +175,7 @@ async function extraireCoordonneesPatient(req, res) {
       req,
     });
 
-    res.json({ pseudonyme: pseudonyme || null, ...fusion });
+    res.json({ pseudonyme: pseudonymeEffectif, document_id: document_id || null, ...fusion });
   } catch (err) {
     console.error('Erreur extraireCoordonneesPatient :', err);
     res.status(502).json({ error: err.message || "Échec de l'extraction." });

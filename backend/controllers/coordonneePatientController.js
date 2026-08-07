@@ -109,11 +109,15 @@ async function revealCoordonnee(req, res) {
 
 /**
  * POST /api/coordonnees
- * body: { pseudonyme, ...champs en clair }
+ * body: { pseudonyme, document_id?, ...champs en clair }
  * Chiffre chaque champ sensible avant stockage (fenêtre 3 / pseudonymisation).
+ * `document_id`, s'il est fourni (validation depuis le panneau "Extraire"
+ * document par document), marque ce document précis comme
+ * coordonnees_extraites = true, pour qu'il disparaisse de la liste des
+ * documents non extraits de ce patient.
  */
 async function createCoordonnee(req, res) {
-  const { pseudonyme, ...fields } = req.body;
+  const { pseudonyme, document_id, ...fields } = req.body;
   if (!pseudonyme) {
     return res.status(400).json({ error: 'Pseudonyme requis.' });
   }
@@ -133,6 +137,13 @@ async function createCoordonnee(req, res) {
        ${SENSITIVE_FIELDS.map((f) => `${f} = EXCLUDED.${f}`).join(', ')}`,
       values
     );
+
+    if (document_id) {
+      await pool.query(
+        `UPDATE documents_bruts SET coordonnees_extraites = true WHERE id = $1`,
+        [document_id]
+      );
+    }
 
     await logAccess({ userId: req.user.sub, action: 'coordonnee_patient_create', success: true, req });
     res.status(201).json({ pseudonyme });
