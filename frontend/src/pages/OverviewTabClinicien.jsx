@@ -289,7 +289,7 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
              la vue globale, pour que ce soit la première chose visible
              après les chiffres clés — avant les graphiques et comparatifs).
       ===================================================================== */}
-      <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Cliquez une carte pour voir la liste des patients concernés (fenêtre Entités Médicales)" />
+      <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Cliquez une carte pour voir la liste des patients concernés " />
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <HeroStatCard
           label="Suivi actif mais point de suivi > 6 mois"
