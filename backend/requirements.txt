@@ -5,6 +5,14 @@ text2num
 fastapi
 uvicorn[standard]
 
+# Extraction NER (Qwen3-8B 4-bit) — voir scripts/extraction_service.py et
+# scripts/extraction_patient.py. bitsandbytes permet la quantization 4-bit
+# NF4, indispensable pour faire tenir Qwen3-8B sur 6 Go de VRAM (RTX 3050).
+transformers>=4.51.0
+accelerate
+bitsandbytes
+sentencepiece
+
 # OCR documents scannés (PaddleOCR-VL) — voir scripts/paddleocr_service.py.
 # Peut être installé dans un venv séparé (venv-paddleocr) si conflit de
 # versions torch/paddle avec le venv whisper.

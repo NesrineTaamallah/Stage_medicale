@@ -550,7 +550,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
               <p style={{ fontSize: 12, color: 'var(--slate-soft)', marginTop: 6 }}>
                 {form.type_entree === 'audio'
                   ? "L'audio sera transcrit automatiquement (WhisperX) à la création du dossier."
-                  : "Le document sera stocké ; son traitement (OCR) sera ajouté dans une prochaine étape."}
+                  : "Le document sera traité automatiquement (OCR) à la création du dossier."}
               </p>
             </div>
           )}
