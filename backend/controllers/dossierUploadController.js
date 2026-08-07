@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { Agent } = require('undici');
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
 const { genererPseudonyme } = require('../utils/pseudonymUtils');
@@ -19,6 +20,19 @@ const PADDLEOCR_PYTHON_BIN = process.env.PADDLEOCR_PYTHON_BIN || PYTHON_BIN;
 const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://127.0.0.1:8001';
 const PADDLEOCR_SERVICE_URL = process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8002';
 
+// undici (moteur de fetch() natif de Node) applique par défaut un timeout
+// de ~5 min en attente des headers de réponse (UND_ERR_HEADERS_TIMEOUT).
+// L'inférence PaddleOCR-VL en CPU pur peut dépasser ce délai sur certains
+// documents (page dense, upscaling important...) — sans ce dispatcher
+// dédié, Node abandonnait la requête AVANT que le service ait fini de
+// répondre, et basculait à tort sur le mode spawn (pourtant plus lent).
+const LONG_INFERENCE_DISPATCHER = new Agent({
+  headersTimeout: 20 * 60 * 1000, // 20 min
+  bodyTimeout: 20 * 60 * 1000,
+  connectTimeout: 20 * 60 * 1000,
+  keepAliveTimeout: 20 * 60 * 1000,
+});
+
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 
@@ -28,6 +42,7 @@ async function transcribeAudioViaService(audioPath) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ audio_path: absolutePath }),
+    dispatcher: LONG_INFERENCE_DISPATCHER,
   });
 
   const data = await res.json().catch(() => null);
@@ -104,6 +119,7 @@ async function ocrScanViaService(filePath) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input_path: absolutePath }),
+    dispatcher: LONG_INFERENCE_DISPATCHER,
   });
 
   const data = await res.json().catch(() => null);
@@ -161,6 +177,13 @@ async function ocrScan(filePath) {
   try {
     return await ocrScanViaService(filePath);
   } catch (err) {
+    // Log complet de la cause réelle avant de basculer sur spawn() : le
+    // message générique masquait le vrai type d'erreur (ECONNREFUSED,
+    // timeout, DNS, proxy...) — sans ça, impossible de savoir pourquoi
+    // fetch() échoue alors que le service répond bien à curl.
+    console.warn('[paddleocr] Erreur fetch réelle :', err);
+    if (err.cause) console.warn('[paddleocr] err.cause :', err.cause);
+
     if (err.cause?.code === 'ECONNREFUSED' || err.message.includes('fetch failed')) {
       console.warn(
         `[paddleocr] Service HTTP injoignable sur ${PADDLEOCR_SERVICE_URL} ` +

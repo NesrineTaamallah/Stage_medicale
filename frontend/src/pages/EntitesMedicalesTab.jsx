@@ -9,6 +9,7 @@ import {
   IconEye, IconPlus, IconSearch, IconFolder, IconAlert,
   IconUsers, IconHistory, IconActivity, IconTarget, IconHeart, IconWave,
   IconArrowLeft, IconShield, IconGlobe, IconKey, IconRefresh, IconLock, IconEyeOff,
+  IconUpload, IconDownload,
 } from '../components/Icons';
 
 const REGISTRE_STYLE = {
@@ -277,8 +278,108 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
  * Même parcours à friction volontaire que l'original : lecture seule par
  * défaut -> crayon -> input local -> confirmation native avant tout PATCH.
  */
+/**
+ * Case "Document" d'une ligne d'examen (IRM, EEG, LCR, potentiels évoqués,
+ * génétique) : permet d'uploader le fichier associé (image ou PDF de
+ * l'examen) et, une fois présent, propose son téléchargement. Le chemin est
+ * géré uniquement côté serveur (chemin_fichier) — le clinicien ne
+ * manipule jamais le chemin lui-même, seulement le fichier.
+ */
+function FichierField({ table, rowId, pseudonyme, cheminFichier, nomFichierOriginal, onUploaded }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const inputId = `fichier-${table}-${rowId}`;
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permet de re-sélectionner le même fichier ensuite
+    if (!file) return;
+
+    setUploading(true);
+    setError('');
+    try {
+      const body = new FormData();
+      body.append('table', table);
+      body.append('id', rowId);
+      body.append('fichier', file);
+      const res = await client.post(`/api/dossiers/${pseudonyme}/entite-fichier`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onUploaded?.(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || "Échec de l'envoi du document.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleDownload() {
+    window.open(`http://localhost:4000/api/dossiers/entite-fichier/${table}/${rowId}/telecharger`, '_blank');
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+        Document
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {cheminFichier ? (
+          <button
+            type="button"
+            onClick={handleDownload}
+            title={nomFichierOriginal || 'Voir le document'}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px',
+              border: '1.5px solid var(--line)', borderRadius: 9, background: 'var(--paper)',
+              fontSize: 13, color: 'var(--teal-deep)', cursor: 'pointer', overflow: 'hidden',
+            }}
+          >
+            <IconDownload size={14} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {nomFichierOriginal || 'Voir le document'}
+            </span>
+          </button>
+        ) : (
+          <span style={{
+            flex: 1, padding: '9px 11px', border: '1.5px solid var(--line)', borderRadius: 9,
+            background: 'var(--paper)', fontSize: 13.5, color: 'var(--slate-soft)',
+          }}>
+            Aucun document
+          </span>
+        )}
+
+        <label
+          htmlFor={inputId}
+          title={cheminFichier ? 'Remplacer le document' : 'Ajouter un document'}
+          style={{
+            width: 34, height: 34, minWidth: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: 'none', borderRadius: 9, background: 'var(--teal-tint)', color: 'var(--teal-deep)',
+            cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1,
+          }}
+        >
+          <IconUpload size={15} />
+        </label>
+        <input
+          id={inputId}
+          type="file"
+          accept="application/pdf,image/png,image/jpeg,image/tiff,image/webp"
+          onChange={handleFileChange}
+          disabled={uploading}
+          style={{ display: 'none' }}
+        />
+      </div>
+      {uploading && <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>Envoi en cours…</p>}
+      {error && <p style={{ margin: 0, fontSize: 11, color: 'var(--error, #c23b4e)' }}>{error}</p>}
+    </div>
+  );
+}
+
 function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldSaved }) {
-  const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre', 'created_at'].includes(k));
+  // nom_fichier_original s'affiche à l'intérieur de la case "Document"
+  // (chemin_fichier) plutôt que comme un champ texte séparé et éditable —
+  // il est renseigné automatiquement à l'upload, jamais saisi à la main.
+  const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre', 'created_at', 'nom_fichier_original'].includes(k));
+  const nomFichierOriginal = entries.find(([k]) => k === 'nom_fichier_original')?.[1];
   const [editingKey, setEditingKey] = useState(null);
   const [draft, setDraft] = useState('');
   const [savingKey, setSavingKey] = useState(null);
@@ -323,6 +424,27 @@ function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldS
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '14px 18px' }}>
       {filtered.map(([k, v]) => {
         const isEditing = editingKey === k;
+
+        // Case "Document" (chemin_fichier) : au lieu d'un champ texte, un
+        // bouton d'upload + un lien de téléchargement une fois le fichier
+        // présent — le clinicien choisit le fichier, jamais le chemin.
+        if (k === 'chemin_fichier') {
+          return (
+            <FichierField
+              key={k}
+              table={table}
+              rowId={rowId}
+              pseudonyme={pseudonyme}
+              cheminFichier={v}
+              nomFichierOriginal={nomFichierOriginal}
+              onUploaded={(payload) => {
+                onFieldSaved?.('chemin_fichier', payload.chemin_fichier);
+                onFieldSaved?.('nom_fichier_original', payload.nom_fichier_original);
+              }}
+            />
+          );
+        }
+
         return (
           <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
