@@ -1,19 +1,4 @@
-"""
-Transcrit un document scanné (image ou PDF) en texte structuré Markdown,
-via PaddleOCR-VL. Reprend telle quelle la logique du notebook
-`paddle-ocr-extraction_finale.ipynb` (prétraitement, upscaling, OCR,
-nettoyage du markdown), adaptée pour traiter un seul fichier passé en
-argument (au lieu d'un dossier de dataset Kaggle), sur le même modèle
-d'appel que whisper_transcribe.py :
 
-    python paddleocr_transcribe.py --input chemin/vers/scan.pdf --json
-
-Sortie :
-  - texte Markdown nettoyé, écrit sur stdout (ou en JSON {"markdown": ...})
-    pour être affiché à l'écran côté plateforme,
-  - copie sauvegardée en fichier .md à côté du fichier d'entrée (ou dans
-    --out-dir si fourni).
-"""
 
 import argparse
 import gc

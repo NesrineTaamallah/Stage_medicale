@@ -13,6 +13,7 @@ const coordonneePatientRoutes = require('./routes/coordonneePatientRoutes');
 const clinicienOverviewRoutes = require('./routes/clinicienOverviewRoutes');
 const dossierRoutes = require('./routes/dossierRoutes');
 const dossierUploadRoutes = require('./routes/dossierUploadRoutes'); // AJOUT : création dossier + upload audio/scan
+const extractionRoutes = require('./routes/extractionRoutes'); // AJOUT : étape 1 extraction (identité patient)
 const app = express();
 
 // Ces 4 middlewares doivent être montés AVANT toute route : sans cookieParser
@@ -40,6 +41,7 @@ app.use('/api/clinicien', clinicienOverviewRoutes);
 // la vérification de doublon échouait donc systématiquement.
 app.use('/api/dossiers', dossierUploadRoutes);
 app.use('/api/dossiers', dossierRoutes);
+app.use('/api/extraction', extractionRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Serveur démarré sur le port ${PORT}`));

@@ -765,6 +765,51 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   );
 }
 
+/* ---------------------------------------------------------------------- */
+/* Historique des derniers lancements (par test), en localStorage          */
+/* ---------------------------------------------------------------------- */
+/* Le formulaire de paramètres repartait de zéro à chaque ouverture d'un    */
+/* test, même si le clinicien relance le même test avec les mêmes réglages */
+/* d'une session à l'autre. On garde ici, par test (clé = id du test), les  */
+/* 3 dernières configurations lancées avec succès — juste dans le          */
+/* navigateur (pas de backend, pas de compte à gérer), pour préremplir le  */
+/* formulaire et proposer un retour rapide à un essai précédent. */
+
+const HISTORIQUE_MAX = 3;
+const historiqueKey = (testId) => `analyse_stat_historique_${testId}`;
+
+function chargerHistorique(testId) {
+  try {
+    const brut = localStorage.getItem(historiqueKey(testId));
+    return brut ? JSON.parse(brut) : [];
+  } catch {
+    return [];
+  }
+}
+
+function enregistrerHistorique(testId, config) {
+  try {
+    const precedent = chargerHistorique(testId).filter(
+      (h) => JSON.stringify(h.config) !== JSON.stringify(config)
+    );
+    const nouveau = [{ config, date: new Date().toISOString() }, ...precedent].slice(0, HISTORIQUE_MAX);
+    localStorage.setItem(historiqueKey(testId), JSON.stringify(nouveau));
+  } catch {
+    // localStorage indisponible (navigation privée, quota...) : best-effort,
+    // le formulaire fonctionne quand même, juste sans préremplissage.
+  }
+}
+
+/** Résumé court d'une configuration pour l'étiquette d'un chip d'historique
+ * (ex. "type_regression: linear · horizon_annees: 1"), tronqué si trop long. */
+function resumeConfig(config) {
+  const parts = Object.entries(config)
+    .filter(([, v]) => v !== '' && v !== undefined && !(Array.isArray(v) && v.length === 0))
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+  const texte = parts.join(' · ');
+  return texte.length > 60 ? texte.slice(0, 57) + '…' : (texte || 'Paramètres par défaut');
+}
+
 export default function AnalyseStatistiqueTab() {
   const [analyses, setAnalyses] = useState([]);
   const [registreActif, setRegistreActif] = useState(null); // null = écran de choix SEP/EPR
@@ -786,7 +831,10 @@ export default function AnalyseStatistiqueTab() {
 
   const choisirAnalyse = useCallback((a) => {
     setAnalyseSelectionnee(a);
-    setConfig({});
+    // Préremplit avec le dernier lancement réussi de CE test, s'il en existe
+    // un — sinon formulaire vide comme avant.
+    const historique = chargerHistorique(a.id);
+    setConfig(historique[0]?.config || {});
     setResultat(null);
     setErreur(null);
   }, []);
@@ -799,6 +847,10 @@ export default function AnalyseStatistiqueTab() {
     try {
       const res = await client.post(`/api/analyses/${analyseSelectionnee.id}/run`, config);
       setResultat(res.data);
+      // On ne garde que les configurations qui ont effectivement abouti à
+      // un résultat exploitable — pas la peine de proposer de "relancer"
+      // une combinaison qui a échoué.
+      enregistrerHistorique(analyseSelectionnee.id, config);
     } catch (err) {
       setErreur(err.response?.data?.detail || err.response?.data?.error || "Échec de l'analyse.");
     } finally {
@@ -1009,6 +1061,35 @@ export default function AnalyseStatistiqueTab() {
             )}
           </button>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+          {(() => {
+            const historique = chargerHistorique(analyseSelectionnee.id);
+            if (historique.length === 0) return null;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--slate-soft)' }}>
+                  Essais récents
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {historique.map((h, i) => (
+                    <button
+                      key={h.date}
+                      onClick={() => setConfig(h.config)}
+                      title={resumeConfig(h.config)}
+                      style={{
+                        margin: 0, padding: '5px 10px', borderRadius: 999, cursor: 'pointer',
+                        fontSize: 11.5, fontWeight: 600, border: `1px solid ${registre.accent}`,
+                        background: registre.accentTint, color: registre.accentDeep,
+                        maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {i === 0 ? 'Dernier essai' : `Il y a ${i + 1} essais`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{
             display: 'flex', flexDirection: 'column', gap: 14,

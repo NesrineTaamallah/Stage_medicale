@@ -11,7 +11,8 @@ const { normalizedSql } = require('../utils/clinicienSql');
  *
  * :type ∈ {
  *   suiviEnRetard, irmAncienne, traitementsEcheance,
- *   eegAncien, bilanMultidisciplinaireAbsent, transitionAdulte
+ *   eegAncien, bilanMultidisciplinaireAbsent, transitionAdulte,
+ *   identiteManquante
  * }
  */
 
@@ -130,6 +131,20 @@ const REQUETES = {
       AND ${normalizedSql('e.statut')} NOT IN ('perdu de vue', 'decede')
     ORDER BY e.pseudonyme
   `),
+
+  // --- Fiches identité (coordonnee_patient) manquantes ---
+  // Reprend EXACTEMENT la même condition que la carte de comptage
+  // correspondante dans clinicienOverviewController.js (jointure LEFT JOIN
+  // + cp.pseudonyme IS NULL), pour que le nombre affiché sur la carte de la
+  // Vue d'Ensemble corresponde exactement à la longueur de cette liste.
+  identiteManquante: async () => pool.query(`
+    SELECT p.pseudonyme, p.registre, NULL::date AS derniere_info,
+           NULL::text AS statut
+    FROM patients p
+    LEFT JOIN coordonnee_patient cp ON cp.pseudonyme = p.pseudonyme
+    WHERE cp.pseudonyme IS NULL
+    ORDER BY p.pseudonyme
+  `),
 };
 
 const LABELS = {
@@ -139,6 +154,7 @@ const LABELS = {
   eegAncien: 'EPR sans EEG depuis > 12 mois',
   bilanMultidisciplinaireAbsent: 'EPR sans aucun bilan multidisciplinaire',
   transitionAdulte: 'Transition ado → adulte (16-18 ans)',
+  identiteManquante: 'Fiches identité manquantes',
 };
 
 async function getListePatientsAlerte(req, res) {

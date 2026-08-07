@@ -69,6 +69,40 @@ export default function PatientsTab() {
   const [detailAuthError, setDetailAuthError] = useState('');
   const [detailAuthSubmitting, setDetailAuthSubmitting] = useState(false);
 
+  // Correction en ligne du texte transcrit d'un document, directement dans
+  // la modale — réutilise le même endpoint que la relecture après création
+  // dans le wizard (PATCH /api/dossiers/documents/:id/texte), pour ne pas
+  // avoir à rouvrir tout le wizard juste pour corriger une coquille.
+  const [correctionId, setCorrectionId] = useState(null); // id du document en cours d'édition, ou null
+  const [correctionTexte, setCorrectionTexte] = useState('');
+  const [correctionSaving, setCorrectionSaving] = useState(false);
+  const [correctionError, setCorrectionError] = useState('');
+
+  function ouvrirCorrection(doc) {
+    setCorrectionId(doc.id);
+    setCorrectionTexte(doc.texte_transcrit || '');
+    setCorrectionError('');
+  }
+
+  function annulerCorrection() {
+    setCorrectionId(null);
+    setCorrectionError('');
+  }
+
+  async function enregistrerCorrection(docId) {
+    setCorrectionSaving(true);
+    setCorrectionError('');
+    try {
+      await client.patch(`/api/dossiers/documents/${docId}/texte`, { texte_transcrit: correctionTexte });
+      setDetailDocuments((docs) => docs.map((d) => (d.id === docId ? { ...d, texte_transcrit: correctionTexte } : d)));
+      setCorrectionId(null);
+    } catch (err) {
+      setCorrectionError(err.response?.data?.error || 'Échec de l\'enregistrement.');
+    } finally {
+      setCorrectionSaving(false);
+    }
+  }
+
   useEffect(() => {
     // On liste depuis /api/dossiers (table `patients`) et non /api/coordonnees
     // (table `coordonnee_patient`) : un dossier créé par le wizard "Ajouter
@@ -126,6 +160,8 @@ export default function PatientsTab() {
     setDetailRegistre(null);
     setDetailDocuments([]);
     setDetailError('');
+    setCorrectionId(null);
+    setCorrectionError('');
   }
 
   // Étape 1 : au clic sur "Détail", on ouvre la modale mot de passe au lieu
@@ -514,26 +550,79 @@ export default function PatientsTab() {
                       })
                     : '—'}
                 </p>
-                {d.texte_transcrit && (
-                  <p style={{
-                    margin: '0 0 8px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5,
-                    whiteSpace: 'pre-wrap',
-                  }}>
-                    {d.texte_transcrit}
-                  </p>
+                {correctionId === d.id ? (
+                  <div style={{ marginBottom: 8 }}>
+                    <textarea
+                      value={correctionTexte}
+                      onChange={(e) => setCorrectionTexte(e.target.value)}
+                      rows={5}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid var(--line)',
+                        fontSize: 12.5, fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box',
+                        resize: 'vertical', background: 'var(--paper)',
+                      }}
+                    />
+                    {correctionError && (
+                      <p style={{ fontSize: 11.5, color: 'var(--error)', margin: '6px 0 0' }}>{correctionError}</p>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button
+                        onClick={() => enregistrerCorrection(d.id)}
+                        disabled={correctionSaving}
+                        style={{
+                          padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--teal)',
+                          color: '#fff', fontWeight: 600, fontSize: 12, opacity: correctionSaving ? 0.7 : 1,
+                        }}
+                      >
+                        {correctionSaving ? 'Enregistrement…' : 'Enregistrer'}
+                      </button>
+                      <button
+                        onClick={annulerCorrection}
+                        disabled={correctionSaving}
+                        style={{
+                          padding: '6px 12px', borderRadius: 8, border: '1.5px solid var(--line)',
+                          background: 'var(--card)', color: 'var(--teal-deep)', fontWeight: 600, fontSize: 12,
+                        }}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {d.texte_transcrit && (
+                      <p style={{
+                        margin: '0 0 8px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                      }}>
+                        {d.texte_transcrit}
+                      </p>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                      <a
+                        href={`${client.defaults.baseURL || ''}/api/dossiers/documents/${d.id}/fichier`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5,
+                          color: 'var(--teal-deep)', fontWeight: 600, textDecoration: 'none',
+                        }}
+                      >
+                        <IconDownload size={13} />
+                        Télécharger le fichier original {d.nom_fichier_original ? `(${d.nom_fichier_original})` : ''}
+                      </a>
+                      <button
+                        onClick={() => ouvrirCorrection(d)}
+                        style={{
+                          border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+                          fontSize: 11.5, color: 'var(--teal-deep)', fontWeight: 600, textDecoration: 'underline',
+                        }}
+                      >
+                        Corriger
+                      </button>
+                    </div>
+                  </>
                 )}
-                <a
-                  href={`${client.defaults.baseURL || ''}/api/dossiers/documents/${d.id}/fichier`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5,
-                    color: 'var(--teal-deep)', fontWeight: 600, textDecoration: 'none',
-                  }}
-                >
-                  <IconDownload size={13} />
-                  Télécharger le fichier original {d.nom_fichier_original ? `(${d.nom_fichier_original})` : ''}
-                </a>
               </div>
             ))}
 

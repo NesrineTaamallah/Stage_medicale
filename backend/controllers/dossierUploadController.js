@@ -462,18 +462,38 @@ async function corrigerTexteTranscrit(req, res) {
     // avant l'ajout de cette colonne.
     const pseudonyme = doc.pseudonyme || genererPseudonyme(doc.pathologie, doc.numero_dossier);
 
-    if (texte_transcrit.trim()) {
-      const entete = `--- ${doc.type_document || 'document'} · ${new Date().toLocaleDateString('fr-FR')} ---`;
-      await pool.query(
-        `UPDATE patients
-            SET detaille = CASE
-                              WHEN detaille IS NULL OR detaille = '' THEN $1
-                              ELSE detaille || E'\n\n' || $1
-                            END
-          WHERE pseudonyme = $2`,
-        [`${entete}\n${texte_transcrit}`, pseudonyme]
-      );
+    // Chaque bloc ajouté à `patients.detaille` porte un marqueur "doc#<id>"
+    // dans son en-tête, pour pouvoir le RETROUVER et le REMPLACER lors d'une
+    // correction ultérieure du même document (bouton "Corriger" côté
+    // Patients), au lieu de toujours ajouter un nouveau bloc à la suite —
+    // ce qui dupliquait le texte à chaque relecture/correction. Ce PATCH
+    // n'était appelé auparavant qu'une seule fois (juste après création,
+    // dans le wizard), donc le bug ne se voyait pas ; il est maintenant
+    // rappelable depuis la modale "Documents associés".
+    const marqueur = `doc#${doc.id}`;
+    const entete = `--- ${doc.type_document || 'document'} · ${marqueur} · ${new Date().toLocaleDateString('fr-FR')} ---`;
+    const nouveauBloc = `${entete}\n${texte_transcrit}`;
+
+    const patientResult = await pool.query(`SELECT detaille FROM patients WHERE pseudonyme = $1`, [pseudonyme]);
+    const detailleActuel = patientResult.rows[0]?.detaille || '';
+    const blocs = detailleActuel ? detailleActuel.split('\n\n') : [];
+    const indexExistant = blocs.findIndex((b) => b.startsWith('---') && b.split('\n')[0].includes(marqueur));
+
+    let nouveauDetaille;
+    if (!texte_transcrit.trim()) {
+      // Texte vidé volontairement : on retire le bloc s'il existait déjà,
+      // on n'ajoute rien de nouveau.
+      nouveauDetaille = indexExistant >= 0
+        ? blocs.filter((_, i) => i !== indexExistant).join('\n\n')
+        : detailleActuel;
+    } else if (indexExistant >= 0) {
+      blocs[indexExistant] = nouveauBloc;
+      nouveauDetaille = blocs.join('\n\n');
+    } else {
+      nouveauDetaille = detailleActuel ? `${detailleActuel}\n\n${nouveauBloc}` : nouveauBloc;
     }
+
+    await pool.query(`UPDATE patients SET detaille = $1 WHERE pseudonyme = $2`, [nouveauDetaille, pseudonyme]);
 
     await logAccess({ userId: req.user.sub, action: 'dossier_document_corriger', success: true, req });
 

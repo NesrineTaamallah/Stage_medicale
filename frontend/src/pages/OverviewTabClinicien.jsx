@@ -278,18 +278,12 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
           segments={data.ageRepartition.map((a, i) => ({ label: a.tranche, value: a.count, color: GOUVERNORAT_PALETTE[i % GOUVERNORAT_PALETTE.length] }))}
           centerLabel="patients"
         />
-        <div
-          className="card"
-          style={{ flex: '1 1 260px', borderLeft: data.fichesIdentite.fiches_manquantes > 0 ? '3px solid var(--amber)' : '3px solid transparent' }}
-        >
-          <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Fiches identité manquantes</p>
-          <p style={{ fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 800, margin: '8px 0 0', color: 'var(--ink)' }}>
-            {data.fichesIdentite.fiches_manquantes}
-          </p>
-          <p className="hint" style={{ marginTop: 6 }}>
-            {data.fichesIdentite.fiches_renseignees} / {data.fichesIdentite.total_patients} patients ont une fiche de coordonnées saisie.
-          </p>
-        </div>
+        <HeroStatCard
+          label="Fiches identité manquantes"
+          value={data.fichesIdentite.fiches_manquantes}
+          hint={`${data.fichesIdentite.fiches_renseignees} / ${data.fichesIdentite.total_patients} patients ont une fiche de coordonnées saisie.`}
+          onClick={data.fichesIdentite.fiches_manquantes > 0 ? () => onAlerteClick?.('identiteManquante') : undefined}
+        />
       </div>
 
       {/* =====================================================================

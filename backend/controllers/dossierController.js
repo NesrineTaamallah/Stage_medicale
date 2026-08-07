@@ -10,9 +10,7 @@ const COMPLETUDE_EXCLUDE = new Set([
 
 /**
  * Tables "singleton" (une ligne par patient) utilisées pour le calcul de
- * complétude — volontairement les tables répétées (visites, IRM, poussées...)
- * en sont exclues : leur nombre de lignes est légitimement variable d'un
- * patient à l'autre et ne reflète pas un dossier "incomplet".
+ * complétude — leur absence de ligne compte comme 0% (voir plus bas).
  */
 const COMPLETUDE_TABLES = {
   SEP: [
@@ -22,6 +20,29 @@ const COMPLETUDE_TABLES = {
   EPR: [
     'epr_identification_clinique', 'epr_antecedents',
     'epr_regression_developpementale', 'epr_pharmacoresistance', 'epr_suivi',
+  ],
+};
+
+/**
+ * Tables "répétées" (0..N lignes par patient : visites, IRM, poussées...).
+ * Leur NOMBRE de lignes est légitimement variable d'un patient à l'autre
+ * (un patient sans poussée n'a simplement aucune ligne dans sep_poussees —
+ * ce n'est pas un dossier incomplet), donc contrairement aux tables
+ * singleton, une table répétée SANS AUCUNE ligne n'est PAS comptée dans le
+ * calcul (ni au numérateur ni au dénominateur).
+ * En revanche, pour chaque ligne qui EXISTE, ses champs vides comptent bien
+ * comme "non renseignés" — un examen enregistré à moitié doit faire baisser
+ * la complétude au même titre qu'un champ vide dans les tables singleton.
+ */
+const COMPLETUDE_TABLES_REPETEES = {
+  SEP: [
+    'sep_edss_visites', 'sep_poussees', 'sep_irm',
+    'sep_biologie_lcr', 'sep_potentiels_evoques', 'sep_traitement_fond',
+  ],
+  EPR: [
+    'epr_type_crise', 'epr_frequence_crises', 'epr_examen', 'epr_eeg',
+    'epr_imagerie', 'epr_bilan_prechirurgical', 'epr_chirurgie',
+    'epr_bilan_orthophonique', 'epr_bilan_neuropsy', 'epr_bilan_ergotherapique',
   ],
 };
 
@@ -60,7 +81,8 @@ function isMissingValue(val) {
 
 /**
  * % de champs renseignés (non NULL / non 'NA') sur l'ensemble des tables
- * singleton du registre, pour un pseudonyme donné.
+ * du registre, pour un pseudonyme donné — tables singleton + tables
+ * répétées combinées.
  *
  * `columnsByTable` fournit, pour chaque table, la liste complète de ses
  * colonnes (hors exclusions) — utile quand la ligne n'existe pas encore
@@ -68,12 +90,18 @@ function isMissingValue(val) {
  * comme "non renseignées" au lieu de les ignorer, sinon un dossier dont
  * aucune table n'est créée obtient artificiellement 100% (division par 0
  * -> 0, ou pire, un total réduit qui gonfle le taux des tables restantes).
+ * Cette règle "absence = 0%" ne s'applique qu'aux tables singleton
+ * (`singletonRowsByTable`) : pour les tables répétées
+ * (`repeatedRowsByTable`, tableau de lignes), l'ABSENCE de ligne n'est pas
+ * comptée (ce n'est pas un défaut de saisie), mais chaque ligne existante
+ * est passée au crible champ par champ comme les autres.
  */
-function computeCompletude(rowsByTable, tables, columnsByTable) {
+function computeCompletude(singletonRowsByTable, singletonTables, repeatedRowsByTable, repeatedTables, columnsByTable) {
   let filled = 0;
   let total = 0;
-  for (const t of tables) {
-    const row = rowsByTable[t];
+
+  for (const t of singletonTables) {
+    const row = singletonRowsByTable[t];
     const cols = (columnsByTable && columnsByTable[t]) || (row ? Object.keys(row) : []);
     for (const col of cols) {
       if (COMPLETUDE_EXCLUDE.has(col)) continue;
@@ -82,8 +110,23 @@ function computeCompletude(rowsByTable, tables, columnsByTable) {
       if (row && !isMissingValue(val)) filled += 1;
     }
   }
+
+  for (const t of repeatedTables || []) {
+    const rows = (repeatedRowsByTable && repeatedRowsByTable[t]) || [];
+    if (rows.length === 0) continue; // absence de ligne = non comptée, pas 0%
+    const cols = (columnsByTable && columnsByTable[t]) || Object.keys(rows[0]);
+    for (const row of rows) {
+      for (const col of cols) {
+        if (COMPLETUDE_EXCLUDE.has(col)) continue;
+        total += 1;
+        if (!isMissingValue(row[col])) filled += 1;
+      }
+    }
+  }
+
   return total === 0 ? 0 : Math.round((filled / total) * 100);
 }
+
 
 /**
  * GET /api/dossiers
@@ -108,15 +151,21 @@ async function listDossiers(req, res) {
     );
     const derniereVisiteByPseudo = new Map(dateResult.rows.map((r) => [r.pseudonyme, r.derniere_visite]));
 
-    // Une requête par table singleton (SEP + EPR confondues), indexée par pseudonyme.
+    // Tables singleton (une ligne par patient) : indexées par pseudonyme -> ligne unique.
     const allTables = [...COMPLETUDE_TABLES.SEP, ...COMPLETUDE_TABLES.EPR];
-    const [tableResults, columnResult] = await Promise.all([
+    // Tables répétées (0..N lignes par patient) : mêmes colonnes à charger,
+    // mais regroupées en tableaux plutôt qu'écrasées par pseudonyme.
+    const allRepeatedTables = [...COMPLETUDE_TABLES_REPETEES.SEP, ...COMPLETUDE_TABLES_REPETEES.EPR];
+    const allTablesForColumns = [...allTables, ...allRepeatedTables];
+
+    const [tableResults, repeatedTableResults, columnResult] = await Promise.all([
       Promise.all(allTables.map((t) => pool.query(`SELECT * FROM ${t}`))),
+      Promise.all(allRepeatedTables.map((t) => pool.query(`SELECT * FROM ${t}`))),
       pool.query(
         `SELECT table_name, column_name
          FROM information_schema.columns
          WHERE table_name = ANY($1::text[])`,
-        [allTables]
+        [allTablesForColumns]
       ),
     ]);
     const rowsByTableByPseudo = {}; // { pseudonyme: { table: row } }
@@ -124,6 +173,14 @@ async function listDossiers(req, res) {
       for (const row of tableResults[i].rows) {
         rowsByTableByPseudo[row.pseudonyme] = rowsByTableByPseudo[row.pseudonyme] || {};
         rowsByTableByPseudo[row.pseudonyme][table] = row;
+      }
+    });
+    const repeatedRowsByTableByPseudo = {}; // { pseudonyme: { table: [row, ...] } }
+    allRepeatedTables.forEach((table, i) => {
+      for (const row of repeatedTableResults[i].rows) {
+        repeatedRowsByTableByPseudo[row.pseudonyme] = repeatedRowsByTableByPseudo[row.pseudonyme] || {};
+        repeatedRowsByTableByPseudo[row.pseudonyme][table] = repeatedRowsByTableByPseudo[row.pseudonyme][table] || [];
+        repeatedRowsByTableByPseudo[row.pseudonyme][table].push(row);
       }
     });
     const columnsByTable = {}; // { table: [col, ...] } — toutes colonnes, y compris pour les lignes absentes
@@ -138,6 +195,8 @@ async function listDossiers(req, res) {
       completude: computeCompletude(
         rowsByTableByPseudo[p.pseudonyme] || {},
         COMPLETUDE_TABLES[p.registre] || [],
+        repeatedRowsByTableByPseudo[p.pseudonyme] || {},
+        COMPLETUDE_TABLES_REPETEES[p.registre] || [],
         columnsByTable
       ),
     }));
