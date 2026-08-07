@@ -5,7 +5,7 @@ import { IconRefresh, IconCheckCircle, IconAlert } from './Icons';
 // Mêmes champs / ordre que CHAMPS_COORDONNEE côté backend
 // (extractionController.js / coordonneePatientController.js) — uniquement
 // des champs de la table coordonnee_patient, jamais de nom de médecin.
-const CHAMPS = [
+export const CHAMPS = [
   { key: 'numero_dossier', label: 'Numéro de dossier' },
   { key: 'nom_prenom', label: 'Nom et prénom' },
   { key: 'date_naissance', label: 'Date de naissance' },

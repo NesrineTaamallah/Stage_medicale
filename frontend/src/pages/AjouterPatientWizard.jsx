@@ -593,7 +593,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
               )}
               {result.statut === 'erreur_transcription' && (
                 <p style={{ fontSize: 12.5, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <IconAlert size={13} /> La transcription automatique a échoué ; le fichier a bien été enregistré.
+                  <IconAlert size={13} /> La transcription automatique a échoué ; le fichier a bien été enregistré. Vous pouvez quitter sans valider — le document restera signalé comme non transcrit plutôt que d'apparaître à tort comme "en attente d'extraction".
                 </p>
               )}
 
@@ -634,6 +634,16 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
           texteValide ? (
             <button onClick={onClose} style={{ ...primaryBtn, marginLeft: 'auto' }}>
               Terminer
+            </button>
+          ) : result.statut === 'erreur_transcription' ? (
+            // La transcription a échoué : il n'y a rien à valider (le texte
+            // serait vide). On laisse le clinicien sortir directement, sans
+            // passer par "Valider" — sinon un texte vide serait enregistré
+            // avec statut 'valide', et ce document apparaîtrait à tort dans
+            // les alertes "Fiches sans extraction des données" alors qu'il
+            // n'y a aucun contenu à en extraire.
+            <button onClick={onClose} style={{ ...secondaryBtn, marginLeft: 'auto' }}>
+              Quitter sans valider
             </button>
           ) : (
             <button onClick={handleValider} disabled={validating} style={{ ...primaryBtn, marginLeft: 'auto', opacity: validating ? 0.7 : 1 }}>

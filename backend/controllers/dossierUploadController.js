@@ -615,6 +615,7 @@ async function getDocumentsNonExtraits(req, res) {
          FROM documents_bruts
         WHERE pathologie = $1
           AND texte_transcrit IS NOT NULL
+          AND TRIM(texte_transcrit) <> ''
           AND coordonnees_extraites = false
         ORDER BY created_at ASC`,
       [patient.registre]

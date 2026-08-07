@@ -132,17 +132,23 @@ const REQUETES = {
     ORDER BY e.pseudonyme
   `),
 
-  // --- Fiches identité (coordonnee_patient) manquantes ---
+  // --- Fiches sans extraction des données patient ---
   // Reprend EXACTEMENT la même condition que la carte de comptage
-  // correspondante dans clinicienOverviewController.js (jointure LEFT JOIN
-  // + cp.pseudonyme IS NULL), pour que le nombre affiché sur la carte de la
-  // Vue d'Ensemble corresponde exactement à la longueur de cette liste.
+  // correspondante dans clinicienOverviewController.js : un patient est
+  // listé s'il a au moins un document dont le texte est validé
+  // (texte_transcrit renseigné) mais pas encore extrait
+  // (coordonnees_extraites = false). Dès que l'extraction est faite et
+  // enregistrée, ce document ne compte plus et le patient sort de la liste
+  // s'il n'a plus aucun autre document en attente.
   identiteManquante: async () => pool.query(`
-    SELECT p.pseudonyme, p.registre, NULL::date AS derniere_info,
+    SELECT DISTINCT p.pseudonyme, p.registre, NULL::date AS derniere_info,
            NULL::text AS statut
     FROM patients p
-    LEFT JOIN coordonnee_patient cp ON cp.pseudonyme = p.pseudonyme
-    WHERE cp.pseudonyme IS NULL
+    JOIN documents_bruts d
+      ON d.pseudonyme = p.pseudonyme
+     AND d.texte_transcrit IS NOT NULL
+     AND TRIM(d.texte_transcrit) <> ''
+     AND d.coordonnees_extraites = false
     ORDER BY p.pseudonyme
   `),
 };
@@ -154,7 +160,7 @@ const LABELS = {
   eegAncien: 'EPR sans EEG depuis > 12 mois',
   bilanMultidisciplinaireAbsent: 'EPR sans aucun bilan multidisciplinaire',
   transitionAdulte: 'Transition ado → adulte (16-18 ans)',
-  identiteManquante: 'Fiches identité manquantes',
+  identiteManquante: 'Fiches sans extraction des données',
 };
 
 async function getListePatientsAlerte(req, res) {

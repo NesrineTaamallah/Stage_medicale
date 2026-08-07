@@ -93,14 +93,28 @@ async function getClinicienOverview(req, res) {
         GROUP BY 1
       `),
 
-      // --- Fiches identité (coordonnee_patient) manquantes ---
+      // --- Fiches sans extraction des données patient ---
+      // Un patient compte comme "en attente d'extraction" s'il a au moins un
+      // document dont le texte a été validé (texte_transcrit renseigné) mais
+      // qui n'a pas encore servi à extraire les coordonnées
+      // (coordonnees_extraites = false, cf. documents_bruts). Un document
+      // simplement "valide" n'a pas encore d'extraction ; dès que
+      // l'extraction est faite et enregistrée (coordonnees_extraites =
+      // true), il ne compte plus. Remplace l'ancienne définition basée sur
+      // la seule présence d'une ligne dans coordonnee_patient, qui ne
+      // reflétait pas les documents ajoutés après coup à un dossier déjà
+      // renseigné.
       pool.query(`
         SELECT
-          COUNT(p.pseudonyme)::int AS total_patients,
-          COUNT(cp.pseudonyme)::int AS fiches_renseignees,
-          (COUNT(p.pseudonyme) - COUNT(cp.pseudonyme))::int AS fiches_manquantes
+          COUNT(DISTINCT p.pseudonyme)::int AS total_patients,
+          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NULL)::int AS fiches_renseignees,
+          COUNT(DISTINCT p.pseudonyme) FILTER (WHERE d.id IS NOT NULL)::int AS fiches_manquantes
         FROM patients p
-        LEFT JOIN coordonnee_patient cp ON cp.pseudonyme = p.pseudonyme
+        LEFT JOIN documents_bruts d
+          ON d.pseudonyme = p.pseudonyme
+         AND d.texte_transcrit IS NOT NULL
+         AND TRIM(d.texte_transcrit) <> ''
+         AND d.coordonnees_extraites = false
       `),
 
       // --- Courbe des inclusions par mois (12 derniers mois, SEP vs EPR) ---

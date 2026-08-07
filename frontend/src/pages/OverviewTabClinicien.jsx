@@ -279,9 +279,9 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
           centerLabel="patients"
         />
         <HeroStatCard
-          label="Fiches identité manquantes"
+          label="Fiches sans extraction des données"
           value={data.fichesIdentite.fiches_manquantes}
-          hint={`${data.fichesIdentite.fiches_renseignees} / ${data.fichesIdentite.total_patients} patients ont une fiche de coordonnées saisie.`}
+          hint={`${data.fichesIdentite.fiches_renseignees} / ${data.fichesIdentite.total_patients} patients n'ont aucun document validé en attente d'extraction.`}
           onClick={data.fichesIdentite.fiches_manquantes > 0 ? () => onAlerteClick?.('identiteManquante') : undefined}
         />
       </div>

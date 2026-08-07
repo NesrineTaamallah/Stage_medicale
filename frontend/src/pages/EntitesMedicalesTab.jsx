@@ -4,7 +4,7 @@ import useDragScroll from '../hooks/useDragScroll';
 import { SectionHeading } from '../components/DashboardWidgets';
 import LineChartSVG from '../components/ClinicalChart';
 import AjouterPatientWizard from './AjouterPatientWizard';
-import ExtractionCoordonneesPanel from '../components/ExtractionCoordonneesPanel';
+import ExtractionModal from '../components/ExtractionModal';
 import {
   IconEye, IconPlus, IconSearch, IconFolder, IconAlert,
   IconUsers, IconHistory, IconActivity, IconTarget, IconHeart, IconWave,
@@ -868,125 +868,13 @@ function QuickStats({ registre, data }) {
   );
 }
 
-const TYPE_DOCUMENT_LABELS = {
-  visite: 'Visite',
-  admission: 'Admission',
-  prelevement_sang: 'Prélèvement sanguin',
-  eeg: 'EEG',
-  emg: 'EMG',
-  irm: 'IRM',
-  autre: 'Autre',
-};
-
 /**
- * Panneau "Extraire" déplié inline sous une ligne du tableau Entités
- * Médicales. Un patient peut avoir plusieurs documents (visite, EEG,
- * courrier...) non encore utilisés pour extraire ses coordonnées : on liste
- * ces documents un par un (GET /api/dossiers/:pseudonyme/documents-non-extraits),
- * chacun affiché comme une petite carte avec son texte brut (pas seulement
- * un lien vers le fichier audio) et un bouton "Extraire" en bas — un clic
- * lance directement l'extraction pour CE texte précis (autoStart, pas de
- * second clic), remplace le texte par les champs modifiables, et à la
- * validation le document disparaît de la liste (marqué côté serveur comme
- * extrait).
+ * L'extraction "en masse" pour un patient (tous ses documents non extraits
+ * d'un coup) se fait désormais via la fenêtre modale ExtractionModal
+ * (composants/ExtractionModal.jsx) : un seul bouton "Extraire" en haut de
+ * la fenêtre lance l'extraction de tous les textes bruts listés, et le
+ * résultat structuré/modifiable apparaît sous chacun.
  */
-function DocumentsNonExtraitsPanel({ pseudonyme, onAllDone }) {
-  const [documents, setDocuments] = useState(null); // null = chargement
-  const [error, setError] = useState('');
-  const [extractingId, setExtractingId] = useState(null); // doc en cours d'extraction
-
-  function charger() {
-    setError('');
-    client.get(`/api/dossiers/${pseudonyme}/documents-non-extraits`)
-      .then((res) => setDocuments(res.data.documents || []))
-      .catch(() => setError('Impossible de charger les documents de ce patient.'));
-  }
-
-  useEffect(() => { charger(); }, [pseudonyme]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function retirerDocument(id) {
-    setDocuments((docs) => {
-      const reste = docs.filter((d) => d.id !== id);
-      if (reste.length === 0) onAllDone?.();
-      return reste;
-    });
-    setExtractingId(null);
-  }
-
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: 10, padding: 14,
-      border: '1px solid var(--line)', borderRadius: 12, background: 'var(--paper)',
-    }}>
-      <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-        Documents non extraits
-      </p>
-
-      {error && <p className="error" style={{ margin: 0, fontSize: 11.5 }}>{error}</p>}
-      {documents === null && !error && (
-        <p className="hint" style={{ margin: 0, fontSize: 11.5 }}>Chargement…</p>
-      )}
-      {documents && documents.length === 0 && (
-        <p className="hint" style={{ margin: 0, fontSize: 11.5 }}>
-          Tous les documents de ce patient ont déjà été extraits.
-        </p>
-      )}
-
-      {documents && documents.map((doc) => (
-        <div key={doc.id} style={{
-          borderRadius: 12, border: '1.5px solid var(--line)', background: 'var(--card)', overflow: 'hidden',
-        }}>
-          <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
-                {TYPE_DOCUMENT_LABELS[doc.type_document] || doc.type_document}
-                <span style={{ fontWeight: 400, color: 'var(--slate-soft)' }}> · {doc.type_entree === 'audio' ? 'Audio' : 'Scan'}</span>
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--slate-soft)' }}>Ajouté le {fmtDate(doc.created_at)}</span>
-            </div>
-
-            {doc.texte_transcrit && (
-              <p style={{
-                margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--slate)',
-                background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 8, padding: 10,
-                maxHeight: 160, overflowY: 'auto', whiteSpace: 'pre-wrap',
-              }}>
-                {doc.texte_transcrit}
-              </p>
-            )}
-
-            {extractingId !== doc.id && (
-              <button
-                type="button"
-                onClick={() => setExtractingId(doc.id)}
-                style={{
-                  width: 'auto', margin: 0, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px',
-                  borderRadius: 8, border: 'none', background: 'var(--teal)', color: '#fff',
-                  fontSize: 11.5, fontWeight: 600,
-                }}
-              >
-                <IconRefresh size={12} />
-                Extraire
-              </button>
-            )}
-          </div>
-
-          {extractingId === doc.id && (
-            <div style={{ borderTop: '1px solid var(--line)', padding: '12px 14px' }}>
-              <ExtractionCoordonneesPanel
-                documentId={doc.id}
-                pseudonymeCible={pseudonyme}
-                autoStart
-                onValidated={() => retirerDocument(doc.id)}
-                onCancel={() => setExtractingId(null)}
-              />
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function DossierView({ pseudonyme, onBack }) {
   const [data, setData] = useState(null);
@@ -1054,11 +942,6 @@ function DossierView({ pseudonyme, onBack }) {
             </div>
 
             <IdentityReveal pseudonyme={pseudonyme} />
-
-            <ExtractionCoordonneesPanel
-              pseudonyme={pseudonyme}
-              label="Extraire coordonnées"
-            />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
@@ -1154,7 +1037,7 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   // tableau — sans passer par la fenêtre détail du dossier (DossierView).
   // C'est le raccourci demandé pour le cas "le médecin a validé la
   // transcription et quitté sans saisir l'identité" : depuis l'alerte
-  // "Fiches identité manquantes", extraire directement depuis la liste.
+  // "Fiches sans extraction des données", extraire directement depuis la liste.
   const [extractRow, setExtractRow] = useState(null); // pseudonyme | null
 
   async function ouvrirAjoutDocument(row) {
@@ -1339,7 +1222,7 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                             {ajoutLoading === r.pseudonyme ? '…' : 'Ajouter'}
                           </button>
                           <button
-                            onClick={() => setExtractRow(extractRow === r.pseudonyme ? null : r.pseudonyme)}
+                            onClick={() => setExtractRow(r.pseudonyme)}
                             title="Extraire les coordonnées de ce patient depuis les documents transcrits"
                             style={{
                               width: 'auto', margin: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
@@ -1355,21 +1238,18 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
                         </div>
                       </td>
                     </tr>
-                    {extractRow === r.pseudonyme && (
-                      <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                        <td colSpan={6} style={{ padding: '0 10px 16px' }}>
-                          <DocumentsNonExtraitsPanel
-                            pseudonyme={r.pseudonyme}
-                            onAllDone={() => setExtractRow(null)}
-                          />
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+        {extractRow && (
+          <ExtractionModal
+            pseudonyme={extractRow}
+            onClose={() => setExtractRow(null)}
+            onAllDone={() => setExtractRow(null)}
+          />
         )}
         {ajoutError && (
           <p style={{ fontSize: 12, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
