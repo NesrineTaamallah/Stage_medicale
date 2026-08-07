@@ -287,49 +287,9 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
       </div>
 
       {/* =====================================================================
-          1bis. QUALITÉ DE SUIVI — indicateur agrégé "% patients à jour"
-          Inspiré des indicateurs standard des registres SEP de référence
-          (EDSS/IRM tous les 6-12 mois) : complète les alertes individuelles
-          plus bas par un baromètre de cohorte, en un coup d'œil.
-      ===================================================================== */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <HeroStatCard
-          label="SEP — patients à jour (EDSS + IRM < 12 mois)"
-          value={pctLabel(data.suiviQualite?.sep?.aJour, data.suiviQualite?.sep?.total)}
-          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
-        />
-        <HeroStatCard
-          label="EPR — patients à jour (EEG + fréquence crises < 12 mois)"
-          value={pctLabel(data.suiviQualite?.epr?.aJour, data.suiviQualite?.epr?.total)}
-          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
-        />
-      </div>
-
-      <div className="card">
-        <CardTitle>Inclusions mensuelles (12 derniers mois)</CardTitle>
-        <div style={{ marginTop: 14 }}>
-          <InclusionsLineChart months={data.inclusionsByMonth} />
-        </div>
-      </div>
-
-      {/* =====================================================================
-          2. COMPARATIF SEP vs EPR — pour situer les deux registres l'un
-             par rapport à l'autre sans se plonger dans le détail de chacun
-      ===================================================================== */}
-      <SectionHeading Icon={IconChart} title="Comparatif SEP / EPR" subtitle="Statut de suivi de chaque registre, côte à côte" />
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle>Statut de suivi — SEP</CardTitle>
-          <div style={{ marginTop: 16 }}><StackedBar segments={statutSepSegments} /></div>
-        </div>
-        <div className="card" style={{ flex: '1 1 320px' }}>
-          <CardTitle>Statut de suivi — EPR</CardTitle>
-          <div style={{ marginTop: 16 }}><StackedBar segments={statutEprSegments} /></div>
-        </div>
-      </div>
-
-      {/* =====================================================================
-          3. ALERTES — patients à revoir en priorité
+          2. ALERTES — patients à revoir en priorité (remonté juste après
+             la vue globale, pour que ce soit la première chose visible
+             après les chiffres clés — avant les graphiques et comparatifs).
       ===================================================================== */}
       <SectionHeading Icon={IconAlert} title="Alertes de suivi" subtitle="Cliquez une carte pour voir la liste des patients concernés (fenêtre Entités Médicales)" />
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -367,6 +327,48 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
           hint={data.alertes.transitionAdulte > 0 ? "Patients en suivi actif à préparer au relais médecine adulte." : undefined}
           onClick={() => onAlerteClick?.('transitionAdulte')}
         />
+      </div>
+
+      {/* =====================================================================
+          1bis. QUALITÉ DE SUIVI — indicateur agrégé "% patients à jour"
+          Inspiré des indicateurs standard des registres SEP de référence
+          (EDSS/IRM tous les 6-12 mois) : complète les alertes individuelles
+          plus haut par un baromètre de cohorte, en un coup d'œil.
+      ===================================================================== */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="SEP — patients à jour (EDSS + IRM < 12 mois)"
+          value={pctLabel(data.suiviQualite?.sep?.aJour, data.suiviQualite?.sep?.total)}
+          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+        />
+        <HeroStatCard
+          label="EPR — patients à jour (EEG + fréquence crises < 12 mois)"
+          value={pctLabel(data.suiviQualite?.epr?.aJour, data.suiviQualite?.epr?.total)}
+          hint="Parmi les patients en suivi actif (hors perdus de vue / décédés)."
+        />
+      </div>
+
+      <div className="card">
+        <CardTitle>Inclusions mensuelles (12 derniers mois)</CardTitle>
+        <div style={{ marginTop: 14 }}>
+          <InclusionsLineChart months={data.inclusionsByMonth} />
+        </div>
+      </div>
+
+      {/* =====================================================================
+          3. COMPARATIF SEP vs EPR — pour situer les deux registres l'un
+             par rapport à l'autre sans se plonger dans le détail de chacun
+      ===================================================================== */}
+      <SectionHeading Icon={IconChart} title="Comparatif SEP / EPR" subtitle="Statut de suivi de chaque registre, côte à côte" />
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div className="card" style={{ flex: '1 1 320px' }}>
+          <CardTitle>Statut de suivi — SEP</CardTitle>
+          <div style={{ marginTop: 16 }}><StackedBar segments={statutSepSegments} /></div>
+        </div>
+        <div className="card" style={{ flex: '1 1 320px' }}>
+          <CardTitle>Statut de suivi — EPR</CardTitle>
+          <div style={{ marginTop: 16 }}><StackedBar segments={statutEprSegments} /></div>
+        </div>
       </div>
 
       {/* =====================================================================
