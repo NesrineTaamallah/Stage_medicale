@@ -8,13 +8,6 @@ import sys
 from collections import Counter
 from difflib import SequenceMatcher
 
-# Force stdout/stderr en UTF-8 : sur Windows, quand ce script est lancé via
-# spawn() (sortie redirigée vers un pipe, pas une vraie console), Python
-# retombe sur l'encodage de la page de code Windows (souvent cp1252) au
-# lieu d'UTF-8. Les caractères accentués (é, è, à...) sont alors remplacés
-# par le caractère de substitution "�" au moment même de l'impression —
-# la transcription elle-même est correcte, seule la sortie stdout est
-# corrompue. C'est ce texte déjà corrompu qui finit stocké en base.
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 if hasattr(sys.stderr, "buffer"):
@@ -22,33 +15,22 @@ if hasattr(sys.stderr, "buffer"):
 
 from dotenv import load_dotenv
 
-# Charge les variables du fichier .env (doit contenir HF_TOKEN=hf_xxx).
-# On résout explicitement le chemin par rapport à ce script (dossier parent
-# = backend/), car load_dotenv() sans argument cherche depuis le cwd du
-# process appelant — quand ce script est lancé via spawn() depuis Node,
-# ce cwd n'est pas forcément backend/, et le .env ne serait alors jamais
-# trouvé (d'où un 401/404 Hugging Face qui n'apparaît qu'en lancement Node,
-# jamais en terminal où le cwd est déjà backend/).
+
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
 load_dotenv(dotenv_path=_ENV_PATH)
 
 _HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 if _HF_TOKEN:
-    # huggingface_hub lit cette variable pour s'authentifier automatiquement,
-    # sans passer par `huggingface-cli login`.
+    
     os.environ["HUGGINGFACE_HUB_TOKEN"] = _HF_TOKEN
     os.environ["HF_TOKEN"] = _HF_TOKEN
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+
 
 MODEL_NAME = "nesrine56/whisper-large-v3-ct2"
 ALIGN_MODEL_NAME = "jonatasgrosman/wav2vec2-large-xlsr-53-french"
 LANGUAGE = "fr"
-# Réduit de 4 à 2 : sur un GPU 6 Go (ex. RTX 3050), un batch_size=4 laisse
-# trop peu de marge une fois le modèle d'alignement chargé en plus du
-# modèle ASR, provoquant des CUDA OOM sur les fichiers audio un peu longs.
+
 BATCH_SIZE = 2
 
 DOMAIN_PROMPT = (
@@ -77,9 +59,7 @@ VAD_OPTIONS = {
     "vad_offset": 0.363,
 }
 
-# Règles de correction lexicale (regex, remplacement) — vide par défaut,
-# à compléter au besoin (ex. homophones Whisper récurrents identifiés en
-# pratique : "Sousse" -> "poussée", "gadoline" -> "gadolinium", etc.)
+
 CORRECTION_RULES = []
 
 FR_NUM_WORDS_FOIS = {
@@ -88,12 +68,8 @@ FR_NUM_WORDS_FOIS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Post-traitement (repris tel quel du notebook)
-# ---------------------------------------------------------------------------
 
 def detect_ngram_repetition(text, n=5, max_repeat=3):
-    """Détecte les boucles d'hallucination (n-gramme répété trop souvent)."""
     words = re.findall(r"\w+", text.lower())
     if len(words) < n * 2:
         return False, None
@@ -106,7 +82,6 @@ def detect_ngram_repetition(text, n=5, max_repeat=3):
 
 
 def dedup_consecutive_segments(segments, similarity_threshold=0.9):
-    """Supprime les segments consécutifs quasi identiques et les boucles."""
     cleaned = []
     for seg in segments:
         text = seg["text"].strip()
@@ -134,7 +109,6 @@ def apply_corrections(text, rules=CORRECTION_RULES):
 
 
 def normalize_medical(text):
-    """Normalise les nombres écrits en toutes lettres et les unités médicales."""
     from text_to_num import alpha2digit
 
     text = re.sub(r"\bune\b", "ZZZARTFEMZZZ", text, flags=re.IGNORECASE)
@@ -165,25 +139,19 @@ def normalize_medical(text):
     return text
 
 
-# ---------------------------------------------------------------------------
-# Chargement du modèle (singleton — coûteux, à ne faire qu'une fois par process)
-# ---------------------------------------------------------------------------
+
 
 _MODEL_CACHE = {}
 
 
 def _load_models():
-    """Charge (une seule fois) le modèle ASR WhisperX + le modèle d'alignement FR."""
     if _MODEL_CACHE:
         return _MODEL_CACHE["model"], _MODEL_CACHE["model_a"], _MODEL_CACHE["metadata_a"], _MODEL_CACHE["device"]
 
     import torch
     import whisperx
 
-    # Fixe explicitement l'index de device CUDA AVANT tout appel torch.cuda.* :
-    # sur certaines machines (GPU hybride iGPU/dGPU, ou contexte CUDA laissé
-    # dans un état incohérent par un process précédent), l'index 0 par défaut
-    # peut ne plus correspondre au bon GPU -> "invalid device ordinal".
+    
     device = "cpu"
     if torch.cuda.is_available():
         try:
@@ -193,9 +161,7 @@ def _load_models():
             print(f"[WARN] GPU CUDA indisponible ({e}), bascule sur CPU.", file=sys.stderr)
             device = "cpu"
 
-    # int8 (au lieu de int8_float16) réduit encore l'empreinte VRAM — utile
-    # sur les GPU 6 Go (ex. RTX 3050) où le modèle d'alignement + les buffers
-    # d'inférence peuvent facilement dépasser la mémoire disponible.
+    
     compute_type = "int8" if device == "cuda" else "int8"
 
     print(f"[INFO] Chargement du modèle {MODEL_NAME} ({device}, {compute_type})...", file=sys.stderr)
@@ -209,8 +175,7 @@ def _load_models():
             vad_options=VAD_OPTIONS,
         )
     except RuntimeError as e:
-        # OOM ou erreur CUDA au chargement -> on retombe sur CPU plutôt que
-        # de planter tout le service (plus lent, mais fonctionnel).
+        
         if device == "cuda" and ("CUDA" in str(e) or "cuda" in str(e).lower()):
             print(f"[WARN] Échec chargement GPU ({e}). Repli sur CPU.", file=sys.stderr)
             torch.cuda.empty_cache()
@@ -240,34 +205,25 @@ def _load_models():
     return model, model_a, metadata_a, device
 
 
-# ---------------------------------------------------------------------------
-# Fonction principale
-# ---------------------------------------------------------------------------
+
 
 def _segment_asr_confidence(seg: dict) -> float:
-    """Convertit avg_logprob (log-proba, négatif) + no_speech_prob d'un
-    segment ASR en une confiance unique dans [0, 1].
-
-    exp(avg_logprob) approxime la probabilité moyenne des tokens du
-    segment ; on la pénalise par (1 - no_speech_prob) pour refléter le
-    doute du modèle sur la présence même de parole à cet endroit.
-    """
+    
     import math
 
     avg_logprob = seg.get("avg_logprob")
     no_speech_prob = seg.get("no_speech_prob", 0.0) or 0.0
 
     if avg_logprob is None:
-        base = 0.75  # valeur neutre si l'info n'est pas dispo (ex. après align)
+        base = 0.75  
     else:
-        base = math.exp(avg_logprob)  # avg_logprob <= 0 -> base in (0, 1]
+        base = math.exp(avg_logprob)  
 
     conf = base * (1 - no_speech_prob)
     return max(0.0, min(1.0, conf))
 
 
 def _confidence_level(score: float) -> str:
-    """Palier de confiance utilisé par le frontend pour la coloration."""
     if score >= 0.85:
         return "high"
     if score >= 0.60:
@@ -276,36 +232,7 @@ def _confidence_level(score: float) -> str:
 
 
 def transcribe_audio(audio_path: str) -> dict:
-    """
-    Transcrit un fichier audio en texte français nettoyé, avec un score de
-    confiance par mot destiné à la coloration côté frontend (rouge/jaune
-    pour les mots peu fiables).
-
-    Étapes : ASR WhisperX -> alignement wav2vec2 FR (best effort, donne les
-    timestamps + score par mot) -> dédoublonnage des segments -> corrections
-    lexicales -> normalisation médicale (nombres, unités).
-
-    Args:
-        audio_path: chemin vers le fichier audio (wav, mp3, m4a, flac...).
-
-    Returns:
-        dict {
-            "text": str,               # texte complet nettoyé
-            "words": [                 # confiance par mot, pour coloration frontend
-                {
-                    "word": str,
-                    "start": float | None,
-                    "end": float | None,
-                    "score": float,         # 0..1
-                    "confidence": "high" | "medium" | "low",
-                },
-                ...
-            ],
-        }
-
-    Raises:
-        FileNotFoundError: si audio_path n'existe pas.
-    """
+    
     if not os.path.isfile(audio_path):
         raise FileNotFoundError(f"Fichier audio introuvable : {audio_path}")
 
@@ -316,8 +243,7 @@ def transcribe_audio(audio_path: str) -> dict:
     audio = whisperx.load_audio(audio_path)
     result = model.transcribe(audio, batch_size=BATCH_SIZE, language=LANGUAGE)
 
-    # Capture la confiance ASR (avg_logprob/no_speech_prob) AVANT l'alignement :
-    # whisperx.align() reconstruit les segments et ne conserve pas ces champs.
+    
     asr_conf_by_index = [_segment_asr_confidence(seg) for seg in result["segments"]]
 
     try:
@@ -326,8 +252,7 @@ def transcribe_audio(audio_path: str) -> dict:
             return_char_alignments=False,
         )
         segments = aligned["segments"]
-        # whisperx.align() garde le même nombre de segments, dans le même
-        # ordre -> on peut réattacher la confiance ASR capturée plus haut.
+        
         for i, seg in enumerate(segments):
             seg["_asr_conf"] = asr_conf_by_index[i] if i < len(asr_conf_by_index) else 0.75
         alignment_ok = True
@@ -340,9 +265,7 @@ def transcribe_audio(audio_path: str) -> dict:
 
     cleaned_segments = dedup_consecutive_segments(segments)
 
-    # Construit la liste des mots avec score de confiance combiné
-    # (50% confiance ASR du segment, 50% confiance d'alignement du mot
-    # quand disponible ; sinon 100% confiance ASR du segment).
+    
     words_out = []
     for seg in cleaned_segments:
         asr_conf = seg.get("_asr_conf", 0.75)
@@ -363,8 +286,7 @@ def transcribe_audio(audio_path: str) -> dict:
                     "confidence": _confidence_level(combined),
                 })
         else:
-            # Pas d'alignement mot-à-mot dispo -> on retombe sur un score
-            # par mot égal à la confiance ASR du segment entier.
+            
             for w in seg.get("text", "").strip().split():
                 words_out.append({
                     "word": w,
@@ -382,10 +304,7 @@ def transcribe_audio(audio_path: str) -> dict:
     if device == "cuda":
         try:
             import torch
-            # Libère les blocs mémoire mis en cache par PyTorch (buffers
-            # d'inférence de la requête précédente) : sans ça, dans le
-            # service persistant (whisper_service.py), la VRAM libre tend
-            # à diminuer requête après requête jusqu'au CUDA OOM.
+            
             torch.cuda.empty_cache()
         except Exception:
             pass
@@ -393,9 +312,6 @@ def transcribe_audio(audio_path: str) -> dict:
     return {"text": full_text.strip(), "words": words_out}
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Transcrit un fichier audio en texte (WhisperX, français médical).")

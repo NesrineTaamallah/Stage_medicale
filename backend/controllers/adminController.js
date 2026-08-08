@@ -4,10 +4,9 @@ const { sendTempPasswordEmail, sendDormantReminderEmail, sendCustomEmail, sendMf
 const { logAccess } = require('../utils/accessLog');
 
 async function createUser(req, res) {
-  const { email, role, adminPassword } = req.body; // déjà validé (email + rôle) par le middleware validate
+  const { email, role, adminPassword } = req.body; 
   const adminId = req.user.sub;
 
-  // Rattachement organisationnel : obligatoire pour clinicien/chercheur, absent pour admin.
   let organizationName = req.body.organizationName ? String(req.body.organizationName).trim() : null;
   if (role === 'admin') {
     organizationName = null;
@@ -17,10 +16,7 @@ async function createUser(req, res) {
   }
 
   try {
-    // Step-up auth : la création d'un compte admin est une action sensible.
-    // On exige que l'admin re-saisisse son propre mot de passe pour la confirmer,
-    // au-delà de la simple checkbox (qui ne protège que contre les mis-clics,
-    // pas contre une session laissée ouverte / un compte compromis).
+    
     if (role === 'admin') {
       if (!adminPassword) {
         return res.status(400).json({ error: 'Confirmez votre mot de passe pour créer un compte admin.' });
@@ -50,15 +46,12 @@ async function createUser(req, res) {
     );
     const newUser = result.rows[0];
 
-    // Envoi de l'email isolé dans son propre try/catch : si ça échoue,
-    // on annule la création du compte pour ne jamais laisser un utilisateur
-    // "fantôme" (créé en base mais jamais informé de son mot de passe).
+    
     try {
       await sendTempPasswordEmail(email, tempPassword, role);
     } catch (emailErr) {
       console.error('Échec envoi email pour', email, '-', emailErr.message);
 
-      // Rollback : on supprime le compte tout juste créé
       await pool.query('DELETE FROM users WHERE id = $1', [newUser.id]);
 
       await logAccess({ userId: adminId, action: `CREATE_USER_EMAIL_FAILED:${email}`, success: false, req });
@@ -95,22 +88,12 @@ async function listUsers(req, res) {
   }
 }
 
-/**
- * POST /admin/users/:id/reset-2fa
- * Réservé à l'admin. Utilisé quand un utilisateur a perdu son téléphone
- * ou supprimé l'entrée dans son app d'authentification.
- * Remet le compte à l'état "2FA non configuré" -> l'utilisateur devra
- * re-scanner un nouveau QR code à sa prochaine connexion.
- */
+
 async function resetTotp(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
 
-  // Un admin ne peut pas réinitialiser sa propre 2FA : ça reviendrait à contourner
-  // sa propre sécurité en un clic si sa session/mot de passe était compromis.
-  // Cette action doit toujours passer par un AUTRE admin.
-  // (Cas "tous les admins perdus" : voir le script d'urgence backend/scripts/emergency-reset-2fa.js,
-  // volontairement non exposé via l'API pour ne pas créer de porte dérobée web.)
+  
   if (id === adminId) {
     return res.status(403).json({
       error: "Vous ne pouvez pas réinitialiser votre propre 2FA. Demandez à un autre admin de le faire pour vous.",
@@ -144,10 +127,7 @@ async function resetTotp(req, res) {
 
 const TEMP_PASSWORD_VALIDITY_HOURS = 48;
 
-/**
- * Liste enrichie pour l'onglet Utilisateurs : statut du mot de passe
- * temporaire (en attente / probablement expiré) en plus des infos de base.
- */
+
 async function listUsersDetailed(req, res) {
   try {
     const result = await pool.query(
@@ -175,12 +155,7 @@ async function listUsersDetailed(req, res) {
   }
 }
 
-/**
- * Régénère un mot de passe temporaire et le renvoie par email.
- * N'écrase le compte que si l'email part bien (même logique de rollback
- * "prudent" que createUser, mais ici on restaure l'ancien hash au lieu
- * de supprimer le compte).
- */
+
 async function resendTempPassword(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
@@ -208,8 +183,7 @@ async function resendTempPassword(req, res) {
     } catch (emailErr) {
       console.error('Échec renvoi email pour', user.email, '-', emailErr.message);
 
-      // On restaure l'ancien hash pour ne pas bloquer l'utilisateur avec
-      // un mot de passe qu'il n'a jamais reçu.
+      
       await pool.query(
         `UPDATE users SET password_hash = $1 WHERE id = $2`,
         [previousHash, id]
@@ -231,7 +205,6 @@ async function resendTempPassword(req, res) {
   }
 }
 
-/** Déverrouillage manuel d'un compte verrouillé après échecs de connexion. */
 async function unlockUser(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
@@ -256,7 +229,6 @@ async function unlockUser(req, res) {
   }
 }
 
-/** Active/désactive un compte (suspension). Un admin ne peut pas se désactiver lui-même. */
 async function toggleActive(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
@@ -295,12 +267,7 @@ async function toggleActive(req, res) {
   }
 }
 
-/**
- * POST /admin/users/notify-dormant
- * Envoie un email de rappel à tous les comptes actifs mais sans connexion
- * depuis plus de 60 jours (même définition que la carte "dormants" de la
- * Vue d'ensemble et le filtre rapide "dormant" de l'onglet Utilisateurs).
- */
+
 async function notifyDormantUsers(req, res) {
   const adminId = req.user.sub;
 
@@ -344,14 +311,7 @@ async function notifyDormantUsers(req, res) {
   }
 }
 
-/**
- * POST /admin/users/retry-failed-emails
- * Renvoie directement le mot de passe temporaire à tous les comptes dont
- * le dernier envoi (création ou renvoi) a échoué et qui attendent toujours
- * leur 1ère connexion — évite à l'admin de repasser par l'onglet Utilisateurs.
- * NB : un échec sur CREATE_USER annule déjà la création du compte (pas de
- * compte fantôme), donc seuls les échecs de RESEND_TEMP_PASSWORD sont concernés ici.
- */
+
 async function retryFailedEmails(req, res) {
   const adminId = req.user.sub;
 
@@ -410,12 +370,7 @@ async function retryFailedEmails(req, res) {
 
 const VALID_ROLES = ['admin', 'clinicien', 'chercheur', 'statisticien'];
 
-/**
- * POST /admin/communications/send
- * Envoie un email personnalisé (sujet + message libre) depuis la plateforme,
- * à un ou plusieurs destinataires choisis par l'admin — onglet "Communications".
- * body: { recipientMode: 'all' | 'role' | 'selected', role?, userIds?, subject, message }
- */
+
 async function sendCommunication(req, res) {
   const adminId = req.user.sub;
   const { recipientMode, role, userIds, subject, message } = req.body;
@@ -486,11 +441,7 @@ async function sendCommunication(req, res) {
   }
 }
 
-/**
- * POST /admin/users/notify-mfa-setup
- * Envoie le guide d'activation de la 2FA à tous les comptes actifs qui ne
- * l'ont pas encore activée — bouton direct depuis la carte "Adoption de la 2FA".
- */
+
 async function notifyMfaSetup(req, res) {
   const adminId = req.user.sub;
 
@@ -533,11 +484,7 @@ async function notifyMfaSetup(req, res) {
   }
 }
 
-/**
- * GET /admin/overview
- * Alimente l'onglet "Vue d'ensemble" : compteurs clés, alertes, activité
- * récente, statut email, et comptes en attente de 1ère connexion > 24h.
- */
+
 async function getOverview(req, res) {
   try {
     const [
@@ -581,12 +528,10 @@ async function getOverview(req, res) {
           AND COALESCE(temp_password_created_at, created_at) < now() - interval '24 hours'
         ORDER BY COALESCE(temp_password_created_at, created_at) ASC
       `),
-      // --- Adoption 2FA ---
       pool.query(`
         SELECT COUNT(*) FILTER (WHERE is_2fa_enabled)::int AS enabled, COUNT(*)::int AS total
         FROM users
       `),
-      // --- Tendance comptes actifs (connexions distinctes / jour, 30 derniers jours) ---
       pool.query(`
         SELECT to_char(d, 'YYYY-MM-DD') AS day,
                COALESCE(COUNT(DISTINCT al.user_id) FILTER (WHERE al.action = 'LOGIN_PASSWORD_OK' AND al.success = true), 0)::int AS count
@@ -599,10 +544,7 @@ async function getOverview(req, res) {
         GROUP BY d
         ORDER BY d
       `),
-      // --- Historique actions admin par jour/type (7 jours), pour l'aire empilée ---
-      // NB : on calcule "aujourd'hui" dans le fuseau Africa/Tunis (pas CURRENT_DATE,
-      // qui tourne en UTC côté session Postgres et faisait "retarder" le graphe
-      // d'un jour entre minuit et 1h du matin heure de Tunis).
+      
       pool.query(`
         SELECT to_char(d, 'YYYY-MM-DD') AS day,
                regexp_replace(al.action, ':.*$', '') AS action_type,
@@ -618,7 +560,6 @@ async function getOverview(req, res) {
         GROUP BY d, action_type
         ORDER BY d
       `),
-      // --- Taux de succès email, 24 dernières heures ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE success)::int AS ok,
@@ -627,7 +568,6 @@ async function getOverview(req, res) {
         WHERE action ~ '^(CREATE_USER|RESEND_TEMP_PASSWORD)'
           AND created_at > now() - interval '24 hours'
       `),
-      // --- Taux de succès email par jour, 7 derniers jours (mini-tendance) ---
       pool.query(`
         SELECT to_char(d, 'YYYY-MM-DD') AS day,
                COUNT(*) FILTER (WHERE al.success)::int AS ok,
@@ -643,13 +583,11 @@ async function getOverview(req, res) {
         GROUP BY d
         ORDER BY d
       `),
-      // --- Âge des mots de passe temporaires actifs (tous, pas seulement >24h) ---
       pool.query(`
         SELECT id, temp_password_created_at, created_at
         FROM users
         WHERE must_change_password = true
       `),
-      // --- Comptes actifs mais dormants (>60j sans connexion, jamais désactivés) ---
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM users
@@ -664,7 +602,6 @@ async function getOverview(req, res) {
 
     const emailLog = lastEmailLog.rows[0] || null;
 
-    // Buckets d'âge des mots de passe temporaires : 0-12h / 12-24h / 24-48h / expiré
     const nowTs = Date.now();
     const tempBuckets = { h0_12: 0, h12_24: 0, h24_48: 0, expired: 0 };
     tempPasswordAges.rows.forEach((u) => {
@@ -676,7 +613,6 @@ async function getOverview(req, res) {
       else tempBuckets.h0_12 += 1;
     });
 
-    // Reformatage de l'historique d'actions en séries par type, alignées sur les mêmes jours
     const days7 = [...new Set(actionHistory7d.rows.map((r) => r.day))];
     const actionTypes = ['CREATE_USER', 'RESEND_TEMP_PASSWORD', 'RESET_2FA', 'UNLOCK_ACCOUNT', 'DEACTIVATE_ACCOUNT', 'REACTIVATE_ACCOUNT'];
     const actionSeries = actionTypes.map((type) => ({
@@ -687,7 +623,7 @@ async function getOverview(req, res) {
         );
         return row ? row.count : 0;
       }),
-    })).filter((s) => s.values.some((v) => v > 0)); // n'affiche que les types réellement observés
+    })).filter((s) => s.values.some((v) => v > 0)); 
 
     return res.json({
       totalUsers: statusCounts.rows[0].total_users,
@@ -704,7 +640,6 @@ async function getOverview(req, res) {
         : null,
       pendingFirstLoginOver24h: pendingFirstLogin.rows,
 
-      // --- nouveau : enrichissement graphique de la vue d'ensemble ---
       mfaAdoption: { enabled: mfaAdoption.rows[0].enabled, total: mfaAdoption.rows[0].total },
       activeAccountsTrend: activeTrend.rows.map((r) => ({
         day: r.day,
@@ -739,11 +674,7 @@ const KNOWN_ACTIONS = [
   'NOTIFY_DORMANT_USERS', 'SEND_CUSTOM_EMAIL', 'NOTIFY_MFA_SETUP',
 ];
 
-/**
- * GET /admin/logs
- * Flux brut filtrable (onglet Logs & Sécurité, section A).
- * Query params : action, userId, ip, dateFrom, dateTo, page, pageSize
- */
+
 async function getLogs(req, res) {
   const { action, userId, ip, dateFrom, dateTo, emailFailed } = req.query;
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -753,9 +684,7 @@ async function getLogs(req, res) {
   const conditions = [];
   const params = [];
 
-  // Raccourci "emails échoués" utilisé par le bouton dédié de la Vue d'ensemble :
-  // regroupe les deux actions d'envoi d'email (création + renvoi) en échec,
-  // sans que l'admin ait à connaître les noms exacts des actions.
+
   if (emailFailed === 'true') {
     conditions.push(`(al.action LIKE 'CREATE_USER%' OR al.action LIKE 'RESEND_TEMP_PASSWORD%') AND al.success = false`);
   } else if (action) {
@@ -789,10 +718,7 @@ async function getLogs(req, res) {
 
     params.push(pageSize);
     params.push(offset);
-    // target_email : pour les actions du type "ACTION:<uuid>" (ex. DEACTIVATE_ACCOUNT,
-    // REACTIVATE_ACCOUNT, UNLOCK_ACCOUNT, VIEW_USER_TIMELINE, RESET_2FA...), on résout
-    // l'UUID cible vers l'email du compte concerné, pour affichage direct côté front
-    // (l'admin ne devrait jamais avoir à lire un UUID brut).
+    
     const result = await pool.query(
       `SELECT al.id, al.user_id, u.email AS user_email, al.action, al.success,
               al.ip_address, al.created_at, al.user_agent, al.session_id,
@@ -821,12 +747,7 @@ async function getLogs(req, res) {
   }
 }
 
-/**
- * GET /admin/logs/anomalies
- * Vue synthétique des patterns suspects (onglet Logs & Sécurité, section B).
- * Heuristiques simples sur une fenêtre glissante (calculées à la volée —
- * pas de table de score dédiée pour l'instant, cf. "idées à considérer plus tard").
- */
+
 async function getAnomalies(req, res) {
   try {
     const [bruteForce, credentialStuffing, totpBypass, freq2fa, massExport] = await Promise.all([
@@ -870,7 +791,6 @@ async function getAnomalies(req, res) {
         HAVING COUNT(*) >= 2
         ORDER BY resets DESC
       `),
-      // Exports CSV répétés en peu de temps — signal d'exfiltration possible.
       pool.query(`
         SELECT u.email, COUNT(*)::int AS exports, MAX(al.created_at) AS last_export
         FROM access_logs al
@@ -883,10 +803,7 @@ async function getAnomalies(req, res) {
       `),
     ]);
 
-    // Succès après plusieurs échecs : un LOGIN_PASSWORD_OK précédé, pour le
-    // même compte, d'au moins 3 échecs (LOGIN_ATTEMPT/LOGIN_ATTEMPT_LOCKED)
-    // dans les 30 minutes précédentes. Plus grave qu'un simple verrouillage,
-    // car ici l'attaquant (ou quelqu'un) a fini par trouver le bon mot de passe.
+    
     const bruteForceSuccess = await pool.query(`
       SELECT u.email, s.created_at AS success_at, s.ip_address, f.failed_count
       FROM access_logs s
@@ -905,10 +822,7 @@ async function getAnomalies(req, res) {
       LIMIT 20
     `);
 
-    // Réactivation puis usage immédiat : un compte désactivé (DEACTIVATE_ACCOUNT)
-    // puis réactivé (REACTIVATE_ACCOUNT) par un admin DIFFÉRENT de celui qui
-    // avait désactivé, suivi d'une connexion réussie du compte réactivé dans
-    // l'heure. Signal possible de collusion ou de compte détourné.
+    
     const reactivationImmediateUse = await pool.query(`
       SELECT
         target.email AS target_email,
@@ -934,8 +848,7 @@ async function getAnomalies(req, res) {
       LIMIT 20
     `);
 
-    // Connexions à horaires inhabituels : approximation simple —
-    // connexions réussies entre 00h et 05h.
+    
     const unusualHours = await pool.query(`
       SELECT u.email, al.created_at, al.ip_address
       FROM access_logs al
@@ -947,20 +860,16 @@ async function getAnomalies(req, res) {
       LIMIT 20
     `);
 
-    // --- Score de risque agrégé (par email et par IP) ---
-    // Pondération simple, volontairement lisible : chaque pattern détecté
-    // ajoute des points selon sa gravité. Pas de ML ici, juste une somme
-    // pondérée pour donner à l'admin une hiérarchisation immédiate plutôt
-    // que 6 listes séparées à parcourir une par une.
+    
     const WEIGHTS = {
-      bruteForce: 25,        // verrouillage réel = déjà confirmé comme grave
-      totpBypass: 15,        // tentative de contournement 2FA
-      freq2fa: 12,           // social engineering possible
-      unusualHour: 5,        // simple signal faible, pas une preuve
-      credentialStuffing: 20, // par IP
-      bruteForceSuccess: 35, // brute-force ABOUTI — plus grave qu'un simple verrouillage
-      reactivationImmediateUse: 30, // collusion / compte détourné possible
-      massExport: 22,        // exfiltration potentielle
+      bruteForce: 25,        
+      totpBypass: 15,        
+      freq2fa: 12,          
+      unusualHour: 5,        
+      credentialStuffing: 20, 
+      bruteForceSuccess: 35, 
+      reactivationImmediateUse: 30, 
+      massExport: 22,        
     };
 
     const scoresByEmail = new Map();
@@ -1011,10 +920,7 @@ async function getAnomalies(req, res) {
   }
 }
 
-/**
- * GET /admin/logs/user/:id
- * Timeline complète d'un compte (onglet Logs & Sécurité, section C).
- */
+
 async function getUserTimeline(req, res) {
   const { id } = req.params;
   const adminId = req.user.sub;
@@ -1037,9 +943,7 @@ async function getUserTimeline(req, res) {
       [id]
     );
 
-    // Traçabilité RGPD/santé : on journalise aussi la CONSULTATION d'une
-    // timeline, pas uniquement les actions correctives. Fire-and-forget :
-    // une erreur de log ne doit jamais bloquer l'affichage.
+    
     logAccess({ userId: adminId, action: `VIEW_USER_TIMELINE:${id}`, success: true, req })
       .catch((e) => console.error('Log VIEW_USER_TIMELINE échoué :', e.message));
 
@@ -1050,10 +954,7 @@ async function getUserTimeline(req, res) {
   }
 }
 
-/**
- * GET /admin/logs/export
- * Export CSV des logs pour une période donnée (onglet Logs & Sécurité, section D).
- */
+
 async function exportLogsCsv(req, res) {
   const { action, userId, ip, dateFrom, dateTo } = req.query;
   const conditions = [];
@@ -1111,7 +1012,7 @@ async function exportLogsCsv(req, res) {
     const adminId = req.user.sub;
     await logAccess({ userId: adminId, action: 'EXPORT_LOGS_CSV', success: true, req });
 
-    const csv = '\uFEFF' + [header, ...lines].join('\n'); // BOM pour Excel/accents FR
+    const csv = '\uFEFF' + [header, ...lines].join('\n'); 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="logs-export-${Date.now()}.csv"`);
     return res.send(csv);
@@ -1125,17 +1026,17 @@ module.exports = {
   createUser,
   listUsers,
   resetTotp,
-  listUsersDetailed, // nouveau
-  resendTempPassword, // nouveau
-  unlockUser, // nouveau
-  toggleActive, // nouveau
-  getOverview, // nouveau
-  getLogs, // nouveau
-  getAnomalies, // nouveau
-  getUserTimeline, // nouveau
-  exportLogsCsv, // nouveau
-  notifyDormantUsers, // nouveau
-  retryFailedEmails, // nouveau
-  sendCommunication, // nouveau
-  notifyMfaSetup, // nouveau
+  listUsersDetailed, 
+  resendTempPassword, 
+  unlockUser, 
+  toggleActive, 
+  getOverview, 
+  getLogs, 
+  getAnomalies,
+  getUserTimeline, 
+  exportLogsCsv, 
+  notifyDormantUsers, 
+  retryFailedEmails, 
+  sendCommunication, 
+  notifyMfaSetup, 
 };

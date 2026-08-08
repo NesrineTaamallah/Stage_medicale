@@ -1,23 +1,9 @@
 const pool = require('../config/db');
 const { normalizedSql } = require('../utils/clinicienSql');
 
-/**
- * GET /api/clinicien/entites/alerte/:type
- * Alimente la fenêtre "Entités Médicales" quand elle est ouverte depuis une
- * carte d'alerte de la Vue d'Ensemble. Reprend EXACTEMENT la même condition
- * SQL que la carte de comptage correspondante dans clinicienOverviewController.js
- * (même WHERE / HAVING), mais renvoie la liste des pseudonymes concernés au
- * lieu d'un simple COUNT(*).
- *
- * :type ∈ {
- *   suiviEnRetard, irmAncienne, traitementsEcheance,
- *   eegAncien, bilanMultidisciplinaireAbsent, transitionAdulte,
- *   identiteManquante
- * }
- */
+
 
 const REQUETES = {
-  // --- Suivi actif mais point de suivi > 6 mois (SEP + EPR) ---
   suiviEnRetard: async () => {
     const sql = `
       SELECT pseudonyme, 'SEP' AS registre, date_dernier_suivi AS derniere_info,
@@ -62,7 +48,6 @@ const REQUETES = {
     return pool.query(sql);
   },
 
-  // --- SEP sans IRM depuis > 12 mois (y compris jamais explorés) ---
   irmAncienne: async () => pool.query(`
     SELECT p.pseudonyme, 'SEP' AS registre, MAX(i.date_examen) AS derniere_info,
            NULL::text AS statut
@@ -75,7 +60,6 @@ const REQUETES = {
     ORDER BY derniere_info ASC NULLS FIRST
   `),
 
-  // --- SEP : traitement de fond arrivant à échéance sous 30 jours ---
   traitementsEcheance: async () => pool.query(`
     SELECT pseudonyme, 'SEP' AS registre, date_fin AS derniere_info,
            molecule AS statut
@@ -85,7 +69,6 @@ const REQUETES = {
     ORDER BY date_fin ASC
   `),
 
-  // --- EPR sans EEG depuis > 12 mois (y compris jamais explorés) ---
   eegAncien: async () => pool.query(`
     SELECT p.pseudonyme, 'EPR' AS registre, MAX(e.date_eeg) AS derniere_info,
            NULL::text AS statut
@@ -98,7 +81,6 @@ const REQUETES = {
     ORDER BY derniere_info ASC NULLS FIRST
   `),
 
-  // --- EPR sans aucun bilan multidisciplinaire (neuropsy / orthophonie / ergo) ---
   bilanMultidisciplinaireAbsent: async () => pool.query(`
     SELECT p.pseudonyme, 'EPR' AS registre, NULL::date AS derniere_info,
            NULL::text AS statut
@@ -110,9 +92,7 @@ const REQUETES = {
       AND bn.pseudonyme IS NULL AND bo.pseudonyme IS NULL AND be.pseudonyme IS NULL
   `),
 
-  // --- Transition ado → adulte (16-18 ans), en suivi actif ---
-  // Reprend EXACTEMENT la même condition que la carte de comptage
-  // correspondante dans clinicienOverviewController.js.
+  
   transitionAdulte: async () => pool.query(`
     SELECT e.pseudonyme, e.registre, NULL::date AS derniere_info,
            e.statut
@@ -132,16 +112,7 @@ const REQUETES = {
     ORDER BY e.pseudonyme
   `),
 
-  // --- SEP : évidence d'activité de la maladie (EDA), critère NEDA-3 inversé ---
-  // NEDA-3 ("No Evidence of Disease Activity") est le standard le plus utilisé
-  // en pratique clinique et en essais thérapeutiques SEP (Giovannoni et al. 2017 ;
-  // repris par ECTRIMS/EAN) : absence de poussée, absence de progression EDSS
-  // confirmée, absence de nouvelle lésion IRM. Un patient en suivi actif qui
-  // présente AU MOINS UN de ces trois signes sur les 12 derniers mois est en
-  // "évidence d'activité de la maladie" (EDA) et doit être réévalué en priorité
-  // (réévaluation du traitement de fond notamment).
-  // Progression EDSS confirmée = seuil standard Lublin et al. 2014 / essais
-  // pivots (delta >= 1.0 point si EDSS de référence <= 5.5, >= 0.5 point si > 5.5).
+  
   activiteMaladieSep: async () => pool.query(`
     WITH edss_ordered AS (
       SELECT pseudonyme, score_edss, date_visite,
@@ -192,17 +163,7 @@ const REQUETES = {
     ORDER BY derniere_info DESC NULLS LAST
   `),
 
-  // --- EPR : pharmacorésistance confirmée (ILAE 2010) mais jamais évaluée
-  //     pour la chirurgie ---
-  // Définition ILAE (Kwan et al. 2010, consensus repris par toutes les
-  // recommandations ultérieures) : pharmacorésistance = échec de 2 traitements
-  // antiépileptiques bien choisis, bien tolérés et bien conduits. La
-  // recommandation ILAE (2022, Surgical Therapies Commission) est de référer
-  // ces patients pour une évaluation chirurgicale SANS délai — la littérature
-  // documente un sous-référencement majeur (< 1% des patients éligibles
-  // référés chaque année). Cette alerte cible donc spécifiquement les patients
-  // qui remplissent le critère ILAE mais n'ont aucun bilan pré-chirurgical
-  // enregistré.
+  
   pharmacoresistanceSansEvaluationEpr: async () => pool.query(`
     SELECT p.pseudonyme, 'EPR' AS registre, NULL::date AS derniere_info,
            'Pharmacorésistance confirmée (ILAE), aucun bilan pré-chirurgical' AS statut
@@ -215,14 +176,7 @@ const REQUETES = {
     ORDER BY p.pseudonyme
   `),
 
-  // --- Fiches sans extraction des données patient ---
-  // Reprend EXACTEMENT la même condition que la carte de comptage
-  // correspondante dans clinicienOverviewController.js : un patient est
-  // listé s'il a au moins un document dont le texte est validé
-  // (texte_transcrit renseigné) mais pas encore extrait
-  // (coordonnees_extraites = false). Dès que l'extraction est faite et
-  // enregistrée, ce document ne compte plus et le patient sort de la liste
-  // s'il n'a plus aucun autre document en attente.
+  
   identiteManquante: async () => pool.query(`
     SELECT DISTINCT p.pseudonyme, p.registre, NULL::date AS derniere_info,
            NULL::text AS statut

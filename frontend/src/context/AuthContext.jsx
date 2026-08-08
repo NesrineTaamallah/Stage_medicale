@@ -4,15 +4,14 @@ import client from '../api/client';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [tempToken, setTempToken] = useState(null);   // scope: change_password_only (en mémoire uniquement)
-  const [totpToken, setTotpToken] = useState(null);    // scope: totp_pending (en mémoire uniquement)
-  const [pendingRole, setPendingRole] = useState(null); // rôle du compte en attente de validation 2FA — pour adapter le message d'aide
-  const [user, setUser] = useState(null);              // { sub, email, role }
+  const [tempToken, setTempToken] = useState(null);   
+  const [totpToken, setTotpToken] = useState(null);    
+  const [pendingRole, setPendingRole] = useState(null); 
+  const [user, setUser] = useState(null);              
   const [needsTotpSetup, setNeedsTotpSetup] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Au chargement de l'app : le token final vit dans un cookie httpOnly,
-  // donc invisible en JS. On demande au backend qui est connecté via /me.
+  
   useEffect(() => {
     async function checkSession() {
       try {
@@ -29,7 +28,6 @@ export function AuthProvider({ children }) {
 
   
 
-  // Le backend a déjà posé le cookie httpOnly ; on ne fait que mémoriser l'utilisateur côté React.
   function completeAuth(userData) {
     setUser(userData);
   }
@@ -38,7 +36,6 @@ export function AuthProvider({ children }) {
     try {
       await client.post('/logout');
     } catch {
-      // même en cas d'erreur réseau, on efface l'état local
     }
     setUser(null);
     setTempToken(null);

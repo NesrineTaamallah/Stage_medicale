@@ -3,27 +3,9 @@ const fs = require('fs');
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
 
-/**
- * Tables "répétées" correspondant à un examen pouvant avoir un document
- * joint (image/PDF de l'IRM, tracé EEG scanné, CR de LCR...). Whitelist
- * volontairement distincte et plus restreinte que REPEATED_TABLES de
- * dossierController.js : seules les tables ayant reçu la migration
- * migration_entites_fichier_joint.sql (colonnes chemin_fichier /
- * nom_fichier_original) apparaissent ici.
- */
-/**
- * Tables "répétées" correspondant à un résultat d'examen ou un
- * compte-rendu pouvant avoir un document joint (image/PDF de l'IRM, tracé
- * EEG scanné, CR de LCR, bilan multidisciplinaire...). Whitelist
- * volontairement distincte et plus restreinte que REPEATED_TABLES de
- * dossierController.js : seules les tables ayant reçu la migration
- * migration_entites_fichier_joint.sql (colonnes chemin_fichier /
- * nom_fichier_original) apparaissent ici.
- */
+
 const TABLES_AVEC_FICHIER = new Set([
-  // SEP
   'sep_edss_visites', 'sep_irm', 'sep_biologie_lcr', 'sep_potentiels_evoques',
-  // EPR
   'epr_examen', 'epr_eeg', 'epr_imagerie', 'epr_genetique',
   'epr_bilan_prechirurgical', 'epr_chirurgie',
   'epr_bilan_orthophonique', 'epr_bilan_neuropsy', 'epr_bilan_ergotherapique',
@@ -37,17 +19,7 @@ function checkTable(table) {
   return TABLES_AVEC_FICHIER.has(table);
 }
 
-/**
- * POST /api/dossiers/:pseudonyme/entite-fichier
- * multipart/form-data : table, id (id de la ligne), fichier
- *
- * Enregistre le fichier sur disque (backend/uploads/entites/), puis stocke
- * son chemin relatif dans la ligne ciblée (chemin_fichier +
- * nom_fichier_original), pour que le prochain affichage du dossier puisse
- * proposer le lien "Voir le document" à la place du champ vide.
- * Si un fichier existait déjà pour cette ligne, l'ancien est supprimé du
- * disque pour éviter d'accumuler des fichiers orphelins.
- */
+
 async function uploaderFichierEntite(req, res) {
   const { pseudonyme } = req.params;
   const { table, id } = req.body;
@@ -101,7 +73,7 @@ async function uploaderFichierEntite(req, res) {
     const ancienChemin = ancien.rows[0]?.chemin_fichier;
     if (ancienChemin) {
       const ancienAbsolu = path.join(UPLOAD_DIR, ancienChemin);
-      fs.unlink(ancienAbsolu, () => {}); // best-effort, non bloquant
+      fs.unlink(ancienAbsolu, () => {}); 
     }
 
     await logAccess({ userId: req.user.sub, action: 'dossier_entite_fichier_upload', success: true, req });
@@ -117,11 +89,7 @@ async function uploaderFichierEntite(req, res) {
   }
 }
 
-/**
- * GET /api/dossiers/entite-fichier/:table/:id/telecharger
- * Télécharge (ou affiche, selon le navigateur) le document joint à une
- * ligne d'examen.
- */
+
 async function telechargerFichierEntite(req, res) {
   const { table, id } = req.params;
 

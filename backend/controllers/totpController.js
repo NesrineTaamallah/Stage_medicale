@@ -35,7 +35,7 @@ async function setupTotp(req, res) {
 
 async function confirmTotp(req, res) {
   const userId = req.user.sub;
-  const { code } = req.body; // le middleware validate() ne conserve que les clés du schéma (totpCodeSchema -> "code")
+  const { code } = req.body; 
 
   try {
     const result = await pool.query('SELECT totp_secret FROM users WHERE id = $1', [userId]);
@@ -117,25 +117,7 @@ async function validateTotp(req, res) {
   }
 }
 
-/**
- * POST /2fa/self-reset-admin
- * Recours d'urgence : un admin qui a perdu son app d'authentification (donc
- * incapable de fournir un code TOTP) peut réinitialiser SA PROPRE 2FA depuis
- * cette route, en repartant directement de son totpToken (qui prouve déjà
- * qu'il a fourni le bon mot de passe lors du /login, il y a moins de 10 min).
- *
- * Réservé au rôle admin : si un admin ne peut plus se connecter, c'est
- * potentiellement toute la plateforme qui devient inaccessible (plus personne
- * pour gérer les comptes). Les autres rôles (clinicien, chercheur,
- * statisticien) continuent de devoir passer par un admin actif — un compte non-admin bloqué n'a pas
- * cet effet de blocage global.
- *
- * Ceci reste un contournement volontaire de la 2FA, donc :
- *   - le token doit être valide et non expiré (scope totp_pending, 10 min),
- *   - l'action est journalisée explicitement (SELF_RESET_2FA_ADMIN) pour audit,
- *   - l'admin devra reconfigurer un nouveau QR code dès sa prochaine connexion
- *     (is_2fa_enabled repasse à false), il ne récupère PAS de session ici.
- */
+
 async function selfResetAdminTotp(req, res) {
   const { totpToken } = req.body;
 

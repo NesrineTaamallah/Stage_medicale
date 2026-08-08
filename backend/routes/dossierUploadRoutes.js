@@ -41,31 +41,19 @@ const upload = multer({
   },
 });
 
-// Vérification "doublon" à l'étape 0 du wizard (numéro de dossier déjà
-// utilisé pour cette pathologie). Doit être déclarée avant toute route
-// dynamique de ce routeur pour ne jamais être capturée par erreur.
+
 router.get('/verifier', requireAuth, requireRole('clinicien'), verifierDossier);
 
-// Seul le clinicien saisit de nouveaux dossiers.
 router.post('/creer', requireAuth, requireRole('clinicien'), upload.single('fichier'), creerDossier);
 
-// Correction du texte transcrit (audio ou OCR) avant validation finale,
-// depuis l'étape de confirmation du wizard.
+
 router.patch('/documents/:id/texte', requireAuth, requireRole('clinicien'), corrigerTexteTranscrit);
 
-// Colonne "Détail" du tableau Patients : textes (audio/scan) associés à un
-// pseudonyme, tant que l'extraction d'entités n'a pas encore été faite.
+
 router.get('/:pseudonyme/documents', requireAuth, requireRole('clinicien'), getDocumentsByPseudonyme);
-// Panneau "Extraire" de la fenêtre Entités Médicales : uniquement les
-// documents dont les coordonnées n'ont pas encore été extraites (doit être
-// déclarée avant '/:pseudonyme/documents' n'aurait pas suffi vu le suffixe
-// différent, mais on la garde group ée ici pour la lisibilité).
+
 router.get('/:pseudonyme/documents-non-extraits', requireAuth, requireRole('clinicien'), getDocumentsNonExtraits);
 router.get('/documents/:id/fichier', requireAuth, requireRole('clinicien'), telechargerFichier);
 
 module.exports = router;
 
-// Dans app.js, ajouter :
-//   const dossierUploadRoutes = require('./routes/dossierUploadRoutes');
-//   app.use('/api/dossiers', dossierUploadRoutes);
-// (peut cohabiter avec dossierRoutes existant, qui monte déjà /api/dossiers)

@@ -1,13 +1,7 @@
 const pool = require('../config/db');
 const { normalizedSql } = require('../utils/clinicienSql');
 
-/**
- * GET /api/clinicien/registre-epr
- * Alimente la fenêtre "Registre EPR" (Épilepsie pharmacorésistante
- * pédiatrique), détachée de la Vue d'Ensemble. Toutes les requêtes sont
- * reprises à l'identique de l'ancien clinicienOverviewController.js — seule
- * leur répartition entre fenêtres a changé.
- */
+
 async function getClinicienRegistreEpr(req, res) {
   try {
     const [
@@ -32,7 +26,6 @@ async function getClinicienRegistreEpr(req, res) {
       eprDureeMoyenneCrises,
       eprPharmacoresistanceIlae,
     ] = await Promise.all([
-      // --- EPR : % de pharmacorésistance confirmée ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE LOWER(TRIM(statut_pharmacoresistance_confirme::text)) IN ('oui', 'true', 't', '1'))::int AS confirmes,
@@ -40,7 +33,6 @@ async function getClinicienRegistreEpr(req, res) {
         FROM epr_pharmacoresistance
       `),
 
-      // --- EPR : répartition des étiologies ---
       pool.query(`
         SELECT COALESCE(categorie_etiologique, 'Non renseigné') AS categorie, COUNT(*)::int AS count
         FROM epr_etiologie
@@ -48,7 +40,6 @@ async function getClinicienRegistreEpr(req, res) {
         GROUP BY categorie_etiologique
       `),
 
-      // --- EPR : fréquence de crises moyenne (dernier rapport par patient) ---
       pool.query(`
         SELECT ROUND(AVG(frequence_normalisee_mois)::numeric, 1) AS moyenne
         FROM (
@@ -59,7 +50,6 @@ async function getClinicienRegistreEpr(req, res) {
         ) dernier
       `),
 
-      // --- EPR : répartition des types de crise ILAE 2017 ---
       pool.query(`
         SELECT COALESCE(type_crise_ilae2017, 'Non renseigné') AS type, COUNT(*)::int AS count
         FROM epr_type_crise
@@ -68,16 +58,9 @@ async function getClinicienRegistreEpr(req, res) {
         LIMIT 8
       `),
 
-      // --- EPR : âge moyen au début des crises (mois) ---
       pool.query(`SELECT ROUND(AVG(age_debut_crises_mois)::numeric, 1) AS moyenne FROM epr_identification_clinique WHERE age_debut_crises_mois IS NOT NULL`),
-
-      // --- EPR : âge moyen au diagnostic de pharmacorésistance (mois) ---
       pool.query(`SELECT ROUND(AVG(age_diagnostic_pharmacoresistance_mois)::numeric, 1) AS moyenne FROM epr_identification_clinique WHERE age_diagnostic_pharmacoresistance_mois IS NOT NULL`),
-
-      // --- EPR : durée de suivi moyenne (mois) ---
       pool.query(`SELECT ROUND(AVG(duree_suivi_mois)::numeric, 1) AS moyenne FROM epr_suivi WHERE duree_suivi_mois IS NOT NULL`),
-
-      // --- EPR : prévalence de la régression développementale ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE presence_regression = TRUE)::int AS positifs,
@@ -85,9 +68,7 @@ async function getClinicienRegistreEpr(req, res) {
         FROM epr_regression_developpementale
       `),
 
-      // --- EPR : éligibilité chirurgicale parmi les patients ayant eu un bilan
-      //     pré-chirurgical (un patient peut avoir plusieurs bilans -> on ne
-      //     retient que le plus récent) ---
+      
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE eligibilite_chirurgie = TRUE)::int AS eligibles,
@@ -100,7 +81,6 @@ async function getClinicienRegistreEpr(req, res) {
         ) dernier
       `),
 
-      // --- EPR : devenir post-chirurgical (répartition) ---
       pool.query(`
         SELECT COALESCE(evolution_post_chirurgie, 'Non renseigné') AS evolution, COUNT(*)::int AS count
         FROM epr_chirurgie
@@ -109,8 +89,7 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- EPR : comorbidités neuropsychologiques (dernier bilan neuropsy par
-      //     patient) — TSA/TDAH, troubles du comportement, troubles du sommeil. ---
+      
       pool.query(`
         SELECT
           COUNT(*)::int AS total_evalues,
@@ -124,15 +103,7 @@ async function getClinicienRegistreEpr(req, res) {
         ) dernier
       `),
 
-      // --- EPR : fréquence de crises moyenne de la cohorte, par trimestre
-      //     (24 derniers mois). generate_series force l'apparition de TOUS
-      //     les trimestres, y compris ceux sans donnée (frequence_moyenne =
-      //     NULL, nb_patients = 0) — sans quoi un trimestre vide disparaît du
-      //     graphe et son point est relié au trimestre suivant comme s'ils
-      //     étaient consécutifs, ce qui peut faire passer un an de trou de
-      //     données pour une vraie tendance. nb_patients est renvoyé pour
-      //     signaler qu'un pic reposant sur 1-2 patients n'a pas le même
-      //     poids qu'une moyenne sur toute la cohorte. ---
+      
       pool.query(`
         SELECT
           to_char(q, 'YYYY-"T"Q') AS periode,
@@ -150,11 +121,7 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY q
       `),
 
-      // --- EPR : antiépileptiques les plus essayés dans la cohorte, avec le
-      //     détail du motif d'échec (Inefficacité vs Effet indésirable). Répond
-      //     à la question clinique la plus concrète du registre EPR : "qu'a-t-on
-      //     déjà essayé, et pourquoi ça n'a pas marché ?" — jusqu'ici epr_liste_ae
-      //     n'était exploité qu'en comptage global (v_epr_nb_ae). ---
+      
       pool.query(`
         SELECT
           COALESCE(nom_ae, 'Non renseigné') AS nom_ae,
@@ -167,11 +134,7 @@ async function getClinicienRegistreEpr(req, res) {
         LIMIT 8
       `),
 
-      // --- EPR : devenir (statut de suivi) croisé avec l'étiologie principale
-      //     — réutilise analytics.v_epr_cohorte_etiologie (déjà définie dans
-      //     schema_registre.sql, jusqu'ici jamais exploitée côté frontend).
-      //     Répond à : "les patients à étiologie structurelle ont-ils un
-      //     meilleur devenir que les génétiques, dans notre cohorte ?" ---
+      
       pool.query(`
         SELECT
           COALESCE(etiologie_principale, 'Non renseigné') AS etiologie,
@@ -182,10 +145,7 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY etiologie_principale
       `),
 
-      // --- EPR : classification ACMG des variants génétiques identifiés —
-      //     epr_genetique n'apparaissait jusqu'ici nulle part côté dashboard,
-      //     alors que c'est central pour l'orientation thérapeutique et le
-      //     conseil génétique en épilepsie pharmacorésistante pédiatrique. ---
+      
       pool.query(`
         SELECT
           COALESCE(classification_acmg, 'Non classé') AS classification,
@@ -195,10 +155,7 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- EPR : types d'anomalies EEG intercritiques (dernier EEG par patient) —
-      //     epr_eeg.type_anomalie n'était exploité qu'au niveau binaire
-      //     Normal/Anormal ; le détail (pointes, pointes-ondes, ralentissement
-      //     focal...) est directement utile à la classification syndromique. ---
+      
       pool.query(`
         SELECT COALESCE(NULLIF(TRIM(type_anomalie), ''), 'Non précisé') AS type, COUNT(*)::int AS count
         FROM (
@@ -212,10 +169,7 @@ async function getClinicienRegistreEpr(req, res) {
         LIMIT 8
       `),
 
-      // --- EPR : antécédents familiaux d'épilepsie —
-      //     epr_antecedents.atcd_familiaux_epilepsie n'apparaissait jusqu'ici
-      //     nulle part côté dashboard, alors que c'est un élément d'orientation
-      //     vers une cause génétique, en complément de epr_genetique. ---
+      
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE atcd_familiaux_epilepsie = TRUE)::int AS positifs,
@@ -223,12 +177,7 @@ async function getClinicienRegistreEpr(req, res) {
         FROM epr_antecedents
       `),
 
-      // --- EPR : développement psychomoteur AVANT les crises (Normal / Retard) —
-      //     epr_antecedents.developpement_psychomoteur_avant_crises n'apparaissait
-      //     jusqu'ici nulle part, alors que epr_regression_developpementale
-      //     (régression APRÈS les crises) est déjà affiché. Les deux mis côte
-      //     à côte donnent une vraie lecture évolutive : retard préexistant vs
-      //     régression secondaire aux crises — signal pronostique important. ---
+      
       pool.query(`
         SELECT COALESCE(NULLIF(TRIM(developpement_psychomoteur_avant_crises), ''), 'Non renseigné') AS statut, COUNT(*)::int AS count
         FROM epr_antecedents
@@ -236,11 +185,7 @@ async function getClinicienRegistreEpr(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- EPR : durée moyenne des crises (minutes) — epr_frequence_crises.
-      //     duree_moyenne_min n'apparaissait jusqu'ici nulle part ; la
-      //     fréquence seule (déjà affichée) ne dit rien de la sévérité par
-      //     épisode, alors que la durée est un signal de risque d'état de
-      //     mal épileptique (dernier rapport connu par patient). ---
+      
       pool.query(`
         SELECT ROUND(AVG(duree_moyenne_min)::numeric, 1) AS moyenne
         FROM (
@@ -251,13 +196,7 @@ async function getClinicienRegistreEpr(req, res) {
         ) dernier
       `),
 
-      // --- EPR : statut déclaratif de pharmacorésistance vs calcul ILAE —
-      //     réutilise analytics.v_epr_pharmacoresistance_detail (déjà
-      //     définie dans schema_registre.sql, jusqu'ici jamais exploitée).
-      //     Le champ epr_pharmacoresistance.statut_pharmacoresistance_confirme
-      //     est saisi à la main et peut diverger du calcul objectif ILAE
-      //     (≥2 échecs par inefficacité sur epr_liste_ae). Un écart entre les
-      //     deux est un signal de sur/sous-classification à vérifier. ---
+      
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE statut_declare = TRUE)::int AS declares_positifs,

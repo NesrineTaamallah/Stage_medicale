@@ -1,11 +1,4 @@
-/**
- * Corrige les fiches coordonnee_patient insérées EN CLAIR (via un INSERT SQL
- * direct) en les rechiffrant avec la même fonction encrypt() que l'API,
- * pour que /api/coordonnees/reveal (et donc decrypt()) fonctionne.
- *
- * Usage (depuis le dossier backend/) :
- *   node scripts/fix-encrypt-coordonnees.js
- */
+
 require('dotenv').config();
 const pool = require('../config/db');
 const { encrypt } = require('../utils/cryptoUtils');
@@ -16,9 +9,7 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-// Les 5 vraies fiches, reprises telles quelles depuis les INSERT en clair
-// de config/insert_sep_data.sql (lignes 95-99), pour pouvoir les rechiffrer
-// avec les valeurs réellement stockées plutôt que des données de test.
+
 const PATIENTS = [
   {
     pseudonyme: 'SEP_AZ_005',

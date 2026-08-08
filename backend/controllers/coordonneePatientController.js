@@ -10,12 +10,7 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-/**
- * GET /api/coordonnees
- * Liste uniquement les pseudonymes — jamais les champs chiffrés en clair,
- * même via cet endpoint. Le front affiche des placeholders floutés tant
- * que /reveal n'a pas été appelé pour la ligne concernée.
- */
+
 async function listCoordonnees(req, res) {
   try {
     const result = await pool.query(
@@ -28,13 +23,7 @@ async function listCoordonnees(req, res) {
   }
 }
 
-/**
- * POST /api/coordonnees/reveal
- * body: { pseudonyme, password }
- * Re-vérifie le mot de passe du clinicien connecté (comme une confirmation
- * de session) avant de déchiffrer et renvoyer la fiche complète. Chaque
- * appel — succès ou échec — est journalisé dans access_logs.
- */
+
 async function revealCoordonnee(req, res) {
   const { pseudonyme, password } = req.body;
 
@@ -59,14 +48,7 @@ async function revealCoordonnee(req, res) {
     const row = result.rows[0];
 
     if (!row) {
-      // Pas encore de fiche coordonnee_patient pour ce pseudonyme (identité
-      // civile pas encore saisie / extraite) — ça ne veut pas dire qu'il n'y
-      // a rien à montrer : un numero_dossier en clair existe déjà côté
-      // documents_bruts dès l'upload initial (voir creerDossier). On le
-      // retrouve en recalculant le pseudonyme de chaque document du même
-      // registre (même fonction déterministe qu'à l'upload) et on renvoie
-      // au moins ce champ, le reste restant `null` tant que la fiche n'est
-      // pas complétée, plutôt que de renvoyer une 404 qui bloque l'écran.
+      
       const patientResult = await pool.query(
         `SELECT registre FROM patients WHERE pseudonyme = $1`,
         [pseudonyme]
@@ -107,15 +89,6 @@ async function revealCoordonnee(req, res) {
   }
 }
 
-/**
- * POST /api/coordonnees
- * body: { pseudonyme, document_id?, ...champs en clair }
- * Chiffre chaque champ sensible avant stockage (fenêtre 3 / pseudonymisation).
- * `document_id`, s'il est fourni (validation depuis le panneau "Extraire"
- * document par document), marque ce document précis comme
- * coordonnees_extraites = true, pour qu'il disparaisse de la liste des
- * documents non extraits de ce patient.
- */
 async function createCoordonnee(req, res) {
   const { pseudonyme, document_id, ...fields } = req.body;
   if (!pseudonyme) {

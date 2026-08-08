@@ -1,17 +1,13 @@
 const pool = require('../config/db');
 const { logAccess } = require('../utils/accessLog');
 
-// Colonnes techniques à exclure du calcul de complétude (clé, FK, métadonnées,
-// colonnes générées côté SQL — pas des données saisies par le clinicien).
+
 const COMPLETUDE_EXCLUDE = new Set([
   'pseudonyme', 'id', 'created_at', 'registre',
-  'delai_diagnostic_mois', // GENERATED ALWAYS AS (sep_identification_clinique)
+  'delai_diagnostic_mois', 
 ]);
 
-/**
- * Tables "singleton" (une ligne par patient) utilisées pour le calcul de
- * complétude — leur absence de ligne compte comme 0% (voir plus bas).
- */
+
 const COMPLETUDE_TABLES = {
   SEP: [
     'sep_identification_clinique', 'sep_antecedents',
@@ -23,17 +19,6 @@ const COMPLETUDE_TABLES = {
   ],
 };
 
-/**
- * Tables "répétées" (0..N lignes par patient : visites, IRM, poussées...).
- * Leur NOMBRE de lignes est légitimement variable d'un patient à l'autre
- * (un patient sans poussée n'a simplement aucune ligne dans sep_poussees —
- * ce n'est pas un dossier incomplet), donc contrairement aux tables
- * singleton, une table répétée SANS AUCUNE ligne n'est PAS comptée dans le
- * calcul (ni au numérateur ni au dénominateur).
- * En revanche, pour chaque ligne qui EXISTE, ses champs vides comptent bien
- * comme "non renseignés" — un examen enregistré à moitié doit faire baisser
- * la complétude au même titre qu'un champ vide dans les tables singleton.
- */
 const COMPLETUDE_TABLES_REPETEES = {
   SEP: [
     'sep_edss_visites', 'sep_poussees', 'sep_irm',
@@ -46,9 +31,7 @@ const COMPLETUDE_TABLES_REPETEES = {
   ],
 };
 
-// Tables + colonne date utilisées pour déterminer la date de dernière visite
-// (dernière donnée horodatée disponible, tous types d'examens/évènements
-// confondus — le registre ne modélise pas de table "visites" générique).
+
 const DATE_SOURCES = [
   ['sep_edss_visites', 'date_visite'],
   ['sep_poussees', 'date_poussee'],
@@ -69,33 +52,14 @@ const DATE_SOURCES = [
   ['epr_bilan_ergotherapique', 'date_bilan'],
 ];
 
-// Convention du registre : une valeur manquante est soit un vrai NULL SQL,
-// soit littéralement la chaîne 'NA' (utilisée dans plusieurs scripts
-// d'analyse, ex. `WHERE age_debut_crises_mois != 'NA'`) — les deux doivent
-// compter comme "non renseigné" pour la complétude.
+
 function isMissingValue(val) {
   if (val === null || val === undefined || val === '') return true;
   if (typeof val === 'string' && val.trim().toUpperCase() === 'NA') return true;
   return false;
 }
 
-/**
- * % de champs renseignés (non NULL / non 'NA') sur l'ensemble des tables
- * du registre, pour un pseudonyme donné — tables singleton + tables
- * répétées combinées.
- *
- * `columnsByTable` fournit, pour chaque table, la liste complète de ses
- * colonnes (hors exclusions) — utile quand la ligne n'existe pas encore
- * pour ce patient : dans ce cas on compte quand même toutes ses colonnes
- * comme "non renseignées" au lieu de les ignorer, sinon un dossier dont
- * aucune table n'est créée obtient artificiellement 100% (division par 0
- * -> 0, ou pire, un total réduit qui gonfle le taux des tables restantes).
- * Cette règle "absence = 0%" ne s'applique qu'aux tables singleton
- * (`singletonRowsByTable`) : pour les tables répétées
- * (`repeatedRowsByTable`, tableau de lignes), l'ABSENCE de ligne n'est pas
- * comptée (ce n'est pas un défaut de saisie), mais chaque ligne existante
- * est passée au crible champ par champ comme les autres.
- */
+
 function computeCompletude(singletonRowsByTable, singletonTables, repeatedRowsByTable, repeatedTables, columnsByTable) {
   let filled = 0;
   let total = 0;
@@ -113,7 +77,7 @@ function computeCompletude(singletonRowsByTable, singletonTables, repeatedRowsBy
 
   for (const t of repeatedTables || []) {
     const rows = (repeatedRowsByTable && repeatedRowsByTable[t]) || [];
-    if (rows.length === 0) continue; // absence de ligne = non comptée, pas 0%
+    if (rows.length === 0) continue; 
     const cols = (columnsByTable && columnsByTable[t]) || Object.keys(rows[0]);
     for (const row of rows) {
       for (const col of cols) {
@@ -128,13 +92,7 @@ function computeCompletude(singletonRowsByTable, singletonTables, repeatedRowsBy
 }
 
 
-/**
- * GET /api/dossiers
- * Liste légère des dossiers (pas de données identifiantes ici — celles-ci
- * restent dans coordonnee_patient / le flux de la partie "Patients"), avec
- * en plus la date de dernière visite et un indicateur de complétude du
- * dossier, utiles pour prioriser le suivi clinique d'un coup d'œil.
- */
+
 async function listDossiers(req, res) {
   try {
     const patientsResult = await pool.query(
@@ -151,10 +109,7 @@ async function listDossiers(req, res) {
     );
     const derniereVisiteByPseudo = new Map(dateResult.rows.map((r) => [r.pseudonyme, r.derniere_visite]));
 
-    // Tables singleton (une ligne par patient) : indexées par pseudonyme -> ligne unique.
     const allTables = [...COMPLETUDE_TABLES.SEP, ...COMPLETUDE_TABLES.EPR];
-    // Tables répétées (0..N lignes par patient) : mêmes colonnes à charger,
-    // mais regroupées en tableaux plutôt qu'écrasées par pseudonyme.
     const allRepeatedTables = [...COMPLETUDE_TABLES_REPETEES.SEP, ...COMPLETUDE_TABLES_REPETEES.EPR];
     const allTablesForColumns = [...allTables, ...allRepeatedTables];
 
@@ -168,14 +123,14 @@ async function listDossiers(req, res) {
         [allTablesForColumns]
       ),
     ]);
-    const rowsByTableByPseudo = {}; // { pseudonyme: { table: row } }
+    const rowsByTableByPseudo = {}; 
     allTables.forEach((table, i) => {
       for (const row of tableResults[i].rows) {
         rowsByTableByPseudo[row.pseudonyme] = rowsByTableByPseudo[row.pseudonyme] || {};
         rowsByTableByPseudo[row.pseudonyme][table] = row;
       }
     });
-    const repeatedRowsByTableByPseudo = {}; // { pseudonyme: { table: [row, ...] } }
+    const repeatedRowsByTableByPseudo = {}; 
     allRepeatedTables.forEach((table, i) => {
       for (const row of repeatedTableResults[i].rows) {
         repeatedRowsByTableByPseudo[row.pseudonyme] = repeatedRowsByTableByPseudo[row.pseudonyme] || {};
@@ -183,7 +138,7 @@ async function listDossiers(req, res) {
         repeatedRowsByTableByPseudo[row.pseudonyme][table].push(row);
       }
     });
-    const columnsByTable = {}; // { table: [col, ...] } — toutes colonnes, y compris pour les lignes absentes
+    const columnsByTable = {}; 
     for (const { table_name, column_name } of columnResult.rows) {
       columnsByTable[table_name] = columnsByTable[table_name] || [];
       columnsByTable[table_name].push(column_name);
@@ -208,12 +163,6 @@ async function listDossiers(req, res) {
   }
 }
 
-/**
- * GET /api/dossiers/:pseudonyme
- * Renvoie les entités médicales extraites (NER), regroupées par section,
- * telles qu'injectées dans le schéma relationnel — voir schema_registre.sql.
- * Le regroupement diffère selon le registre (SEP vs EPR).
- */
 async function getDossierDetail(req, res) {
   const { pseudonyme } = req.params;
 
@@ -340,17 +289,7 @@ async function buildEntitesEPR(pseudonyme) {
   };
 }
 
-// Whitelist des tables modifiables depuis le dossier détaillé, désormais
-// TOUTES les catégories cliniques (Identification, Antécédents, Présentation,
-// Poussées, Handicap, Imagerie, Biologie, Potentiels évoqués, Traitement,
-// Suivi — SEP comme EPR), et plus seulement Identification.
-//
-// - SINGLETON_TABLES : une ligne par patient (clé primaire = pseudonyme) ->
-//   upsert par pseudonyme, comme avant.
-// - REPEATED_TABLES : plusieurs lignes possibles par patient (visites,
-//   poussées, IRM, EEG...) -> il faut cibler la ligne exacte par son `id`
-//   (colonne SERIAL PRIMARY KEY), sans quoi on ne pourrait pas savoir
-//   laquelle des N lignes modifier.
+
 const SINGLETON_TABLES = new Set([
   'patients',
   'sep_identification_clinique', 'sep_presentation_initiale', 'sep_evolution',
@@ -370,19 +309,9 @@ const REPEATED_TABLES = new Set([
 
 const ALLOWED_TABLES = new Set([...SINGLETON_TABLES, ...REPEATED_TABLES]);
 
-// Colonnes techniques jamais modifiables depuis ce endpoint, quelle que soit
-// la table : clé primaire, clé étrangère patient, métadonnées.
 const EXCLUDED_COLUMNS = new Set(['id', 'pseudonyme', 'created_at', 'registre']);
 
-/**
- * Colonnes réellement éditables d'une table : toutes ses colonnes SQL, moins
- * les colonnes techniques ci-dessus et les colonnes générées côté SQL
- * (GENERATED ALWAYS AS ... STORED, ex. delai_diagnostic_mois) — PostgreSQL
- * refuse de toute façon un UPDATE dessus. Interrogé dynamiquement sur
- * information_schema plutôt qu'une whitelist codée en dur par colonne : reste
- * synchronisé avec schema_registre.sql sans double maintenance, tout en
- * bloquant strictement toute table/colonne hors de ce périmètre.
- */
+
 async function getColonnesEditables(table) {
   const result = await pool.query(
     `SELECT column_name FROM information_schema.columns
@@ -394,22 +323,7 @@ async function getColonnesEditables(table) {
   );
 }
 
-/**
- * PATCH /api/dossiers/:pseudonyme/champ
- * body : { table, colonne, valeur, id? }
- *
- * `id` (clé SERIAL de la ligne) est requis pour les tables "répétées"
- * (REPEATED_TABLES) où un patient peut avoir plusieurs lignes (visites,
- * poussées, examens...) — sans lui on ne pourrait pas savoir laquelle
- * modifier. Il est ignoré pour les tables "singleton".
- *
- * Endpoint générique mais volontairement restreint par whitelist de tables
- * + vérification dynamique des colonnes réelles : impossible de cibler une
- * table ou une colonne hors du schéma clinique, même en forgeant la requête.
- * Une seule colonne modifiée par appel (édition champ par champ avec
- * confirmation côté frontend) — pas de mise à jour en masse pouvant écraser
- * des données par erreur.
- */
+
 async function updateChampDossier(req, res) {
   const { pseudonyme } = req.params;
   const { table, colonne, valeur, id } = req.body;
@@ -429,9 +343,7 @@ async function updateChampDossier(req, res) {
     if (!patient) {
       return res.status(404).json({ error: 'Dossier introuvable.' });
     }
-    // Les tables sep_* / epr_* sont réservées au registre correspondant :
-    // on évite qu'un appel malformé écrive dans epr_identification_clinique
-    // pour un patient SEP (ou l'inverse), ce qui créerait une ligne fantôme.
+    
     if (table.startsWith('sep_') && patient.registre !== 'SEP') {
       return res.status(400).json({ error: 'Ce champ ne correspond pas au registre de ce dossier.' });
     }
@@ -439,15 +351,10 @@ async function updateChampDossier(req, res) {
       return res.status(400).json({ error: 'Ce champ ne correspond pas au registre de ce dossier.' });
     }
 
-    // La valeur vide est normalisée en NULL SQL plutôt qu'en chaîne vide,
-    // conformément à la convention NULL/'NA' déjà utilisée ailleurs dans
-    // le registre pour représenter une donnée manquante.
+  
     const valeurNormalisee = valeur === '' || valeur === undefined ? null : valeur;
 
-    // `table` et `colonne` sont vérifiés ci-dessus contre le schéma réel
-    // (pas interpolés directement depuis req.body sans vérification) :
-    // l'usage de template string ici est donc sûr, seules les valeurs
-    // variables passent en paramètres liés.
+    
     let query;
     let params;
     if (table === 'patients') {
@@ -459,8 +366,7 @@ async function updateChampDossier(req, res) {
            RETURNING ${colonne}`;
       params = [valeurNormalisee, pseudonyme];
     } else {
-      // Table répétée : il faut la ligne exacte (id), sinon on ne sait pas
-      // laquelle des N lignes du patient modifier.
+      
       if (!id) {
         return res.status(400).json({ error: 'Identifiant de ligne manquant pour ce champ.' });
       }

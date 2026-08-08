@@ -1,24 +1,3 @@
-"""
-extraction_patient.py
-======================
-
-Extraction des données non médicales du patient (numero_dossier, nom_prenom,
-date_naissance, adresse, origine, telephone, cin, num_cnam, nom_prenom_pere,
-nom_prenom_mere, frere, soeur, autre_antecedent) à partir d'un texte
-transcrit (OCR ou ASR), via Qwen3-8B quantizé 4-bit.
-
-⚠️ Squelette de reconstruction : ce fichier n'existait pas dans le repo
-GitHub (seul extraction_service.py, qui l'importe, y était). Si tu as déjà
-une version plus avancée de ce fichier en local (chunking, résolution de
-coréférence par union-find, mécanisme anti-boucle, double sortie de
-correction...), REMPLACE le contenu ci-dessous par le tien : seule la
-forme de l'interface (noms des globales et de la fonction) doit rester
-compatible avec extraction_service.py.
-
-Chargement paresseux : le modèle n'est chargé qu'au premier appel à
-extraire_donnees_patient(), pas à l'import du module — ainsi /health peut
-répondre tout de suite sans déclencher le chargement GPU.
-"""
 
 import json
 import re
@@ -35,7 +14,6 @@ CHAMPS = [
     "frere", "soeur", "autre_antecedent",
 ]
 
-# État global lu par /health dans extraction_service.py — NE PAS renommer.
 _extractor_model = None
 _extractor_tokenizer = None
 _model_load_error = None
@@ -53,7 +31,6 @@ SYSTEM_PROMPT = (
 
 
 def _charger_modele():
-    """Charge Qwen3-8B en 4-bit (NF4) sur GPU. Idempotent et thread-safe."""
     global _extractor_model, _extractor_tokenizer, _model_load_error
 
     if _extractor_model is not None or _model_load_error is not None:
@@ -79,16 +56,12 @@ def _charger_modele():
             _extractor_tokenizer = tokenizer
             _extractor_model = model
         except Exception as exc:
-            # Cas fréquent sur RTX 3050 6 Go : OOM si un autre service GPU
-            # (Whisper/PaddleOCR) tourne déjà. On mémorise l'erreur pour ne
-            # pas retenter le chargement à chaque requête, et /health la
-            # remonte telle quelle.
+            
             _model_load_error = str(exc)
             raise
 
 
 def _extraire_json(texte_genere: str) -> dict:
-    """Isole le premier objet JSON valide dans la sortie brute du modèle."""
     match = re.search(r"\{.*\}", texte_genere, re.DOTALL)
     if not match:
         raise ValueError("Aucun JSON trouvé dans la sortie du modèle.")
@@ -96,20 +69,11 @@ def _extraire_json(texte_genere: str) -> dict:
 
 
 def _normaliser(resultat: dict) -> dict:
-    """Garantit que tous les champs attendus sont présents (chaîne vide sinon)."""
     return {champ: str(resultat.get(champ, "") or "").strip() for champ in CHAMPS}
 
 
 def extraire_donnees_patient(texte: str, chunking: bool = True, verbose: bool = False) -> dict:
-    """
-    Point d'entrée appelé par extraction_service.py (POST /extraire/patient).
-
-    NOTE : ce squelette ne fait qu'un seul passage sur le texte complet.
-    Le chunking + résolution de coréférence par union-find (pour les textes
-    longs multi-documents) mentionnés dans le contexte du projet ne sont
-    PAS reconstruits ici — à réintégrer depuis ta version originale si tu
-    l'as développée ailleurs.
-    """
+    
     _charger_modele()
 
     messages = [

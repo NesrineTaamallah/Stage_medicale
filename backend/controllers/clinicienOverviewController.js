@@ -3,11 +3,7 @@ const { normalizedSql } = require('../utils/clinicienSql');
 const { decrypt } = require('../utils/cryptoUtils');
 const { logAccess } = require('../utils/accessLog');
 
-/**
- * Parse une date_naissance déchiffrée, saisie soit en 'YYYY-MM-DD' soit en
- * 'DD/MM/YYYY' selon la source d'import (cf. insert_sep_data.sql vs
- * coordonnee_patient_seed.sql) — renvoie null si non exploitable.
- */
+
 function parseDateNaissance(raw) {
   if (!raw) return null;
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
@@ -36,16 +32,7 @@ function trancheDe(age) {
   return '18 ans et +';
 }
 
-/**
- * GET /api/clinicien/overview
- * Alimente désormais UNIQUEMENT la fenêtre "Vue d'Ensemble" (recentrée) :
- * KPI globaux, comparatif SEP/EPR, alertes de suivi transversales, et flux
- * d'activité du clinicien connecté. Le détail clinique propre à chaque
- * registre a été déplacé vers /api/clinicien/registre-sep et
- * /api/clinicien/registre-epr (cf. clinicienSepController.js /
- * clinicienEprController.js) pour donner à chaque pathologie sa propre
- * fenêtre au lieu d'un unique onglet fourre-tout.
- */
+
 async function getClinicienOverview(req, res) {
   try {
     const [
@@ -66,7 +53,6 @@ async function getClinicienOverview(req, res) {
       recentActivity,
       suiviQualite,
     ] = await Promise.all([
-      // --- KPI globaux ---
       pool.query(`
         SELECT
           COUNT(*)::int AS total_patients,
@@ -76,12 +62,7 @@ async function getClinicienOverview(req, res) {
         FROM patients
       `),
 
-      // --- Répartition par sexe (SEP + EPR) ---
-      // Depuis migration_epr_sexe.sql, epr_identification_clinique porte
-      // aussi la colonne 'sexe' (symétrique de sep_identification_clinique) :
-      // le donut peut donc couvrir les deux registres sans artefact de
-      // schéma. UNION ALL plutôt qu'un JOIN unique car les deux tables ne
-      // partagent pas le même nom de PK de table source.
+      
       pool.query(`
         SELECT
           COALESCE(NULLIF(TRIM(sexe), ''), 'Non renseigné') AS sexe,
@@ -98,17 +79,7 @@ async function getClinicienOverview(req, res) {
         GROUP BY 1
       `),
 
-      // --- Fiches sans extraction des données patient ---
-      // Un patient compte comme "en attente d'extraction" s'il a au moins un
-      // document dont le texte a été validé (texte_transcrit renseigné) mais
-      // qui n'a pas encore servi à extraire les coordonnées
-      // (coordonnees_extraites = false, cf. documents_bruts). Un document
-      // simplement "valide" n'a pas encore d'extraction ; dès que
-      // l'extraction est faite et enregistrée (coordonnees_extraites =
-      // true), il ne compte plus. Remplace l'ancienne définition basée sur
-      // la seule présence d'une ligne dans coordonnee_patient, qui ne
-      // reflétait pas les documents ajoutés après coup à un dossier déjà
-      // renseigné.
+      
       pool.query(`
         SELECT
           COUNT(DISTINCT p.pseudonyme)::int AS total_patients,
@@ -122,7 +93,6 @@ async function getClinicienOverview(req, res) {
          AND d.coordonnees_extraites = false
       `),
 
-      // --- Courbe des inclusions par mois (12 derniers mois, SEP vs EPR) ---
       pool.query(`
         SELECT
           to_char(m, 'YYYY-MM') AS month,
@@ -139,21 +109,18 @@ async function getClinicienOverview(req, res) {
         ORDER BY m
       `),
 
-      // --- Statut de suivi SEP ---
       pool.query(`
         SELECT COALESCE(statut_dernier_suivi, 'Non renseigné') AS statut, COUNT(*)::int AS count
         FROM sep_suivi
         GROUP BY statut_dernier_suivi
       `),
 
-      // --- Statut de suivi EPR ---
       pool.query(`
         SELECT COALESCE(statut_dernier_suivi, 'Non renseigné') AS statut, COUNT(*)::int AS count
         FROM epr_suivi
         GROUP BY statut_dernier_suivi
       `),
 
-      // --- Alerte : suivi toujours en cours mais dernier point de suivi ancien (> 6 mois) ---
       pool.query(`
         SELECT COUNT(*)::int AS count FROM (
           SELECT s.pseudonyme
@@ -194,8 +161,7 @@ async function getClinicienOverview(req, res) {
         ) alertes
       `),
 
-      // --- Alerte SEP : pas d'IRM depuis plus de 12 mois, y compris les patients
-      //     n'ayant JAMAIS eu d'IRM ---
+      
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM patients p
@@ -206,7 +172,6 @@ async function getClinicienOverview(req, res) {
             OR MAX(i.date_examen) < now() - interval '12 months'
       `).then((r) => ({ rows: [{ count: r.rowCount }] })),
 
-      // --- Alerte SEP : traitement de fond arrivant à échéance sous 30 jours ---
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM sep_traitement_fond
@@ -214,8 +179,7 @@ async function getClinicienOverview(req, res) {
           AND date_fin BETWEEN now() AND now() + interval '30 days'
       `),
 
-      // --- Alerte EPR : pas d'EEG depuis plus de 12 mois, y compris les
-      //     patients n'ayant JAMAIS eu d'EEG ---
+      
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM patients p
@@ -226,8 +190,7 @@ async function getClinicienOverview(req, res) {
             OR MAX(e.date_eeg) < now() - interval '12 months'
       `).then((r) => ({ rows: [{ count: r.rowCount }] })),
 
-      // --- Alerte EPR : aucun bilan multidisciplinaire (neuropsy, orthophonie,
-      //     ergothérapie) jamais réalisé ---
+      
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM patients p
@@ -238,10 +201,7 @@ async function getClinicienOverview(req, res) {
           AND bn.pseudonyme IS NULL AND bo.pseudonyme IS NULL AND be.pseudonyme IS NULL
       `),
 
-      // --- Alerte transversale : transition ado → adulte ---
-      // Enjeu majeur en pédiatrie, absent de l'ancienne vue d'ensemble.
-      // Âge actuel approximé (age à l'inclusion + temps écoulé, cf. supra),
-      // patients encore en suivi actif (ni perdu de vue, ni décédé/résolu).
+      
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM (
@@ -258,10 +218,7 @@ async function getClinicienOverview(req, res) {
           AND ${normalizedSql('e.statut')} NOT IN ('perdu de vue', 'decede')
       `),
 
-      // --- Alerte clinique SEP : évidence d'activité de la maladie (EDA),
-      //     critère NEDA-3 inversé (Giovannoni et al. 2017 ; standard de suivi
-      //     SEP le plus répandu). Reprend EXACTEMENT la même condition que
-      //     clinicienEntitesController.js (type 'activiteMaladieSep'). ---
+      
       pool.query(`
         WITH edss_ordered AS (
           SELECT pseudonyme, score_edss, date_visite,
@@ -301,10 +258,7 @@ async function getClinicienOverview(req, res) {
           )
       `),
 
-      // --- Alerte clinique EPR : pharmacorésistance confirmée (critère ILAE
-      //     2010) mais aucun bilan pré-chirurgical enregistré — recommandation
-      //     ILAE = référer sans délai. Reprend EXACTEMENT la même condition
-      //     que clinicienEntitesController.js (type 'pharmacoresistanceSansEvaluationEpr'). ---
+      
       pool.query(`
         SELECT COUNT(*)::int AS count
         FROM patients p
@@ -315,12 +269,17 @@ async function getClinicienOverview(req, res) {
           AND bp.pseudonyme IS NULL
       `),
 
-      // --- Activité récente du clinicien connecté, agrégée par jour ---
       pool.query(
         `SELECT
            d::date AS day,
            COUNT(*) FILTER (WHERE al.action LIKE 'coordonnee_patient_reveal%')::int AS fiches_consultees,
-           COUNT(*) FILTER (WHERE al.action LIKE 'analyse_statistique%')::int AS analyses_lancees
+           COUNT(*) FILTER (WHERE al.action LIKE 'analyse_statistique%')::int AS analyses_lancees,
+           COUNT(*) FILTER (WHERE al.action = 'transcription_audio')::int AS transcriptions_audio,
+           COUNT(*) FILTER (WHERE al.action = 'extraction_ocr')::int AS extractions_ocr,
+           COUNT(*) FILTER (WHERE al.action = 'extraction_patient')::int AS extractions_patient,
+           COUNT(*) FILTER (WHERE al.action = 'export_patients')::int AS exports_patients,
+           COUNT(*) FILTER (WHERE al.action = 'dossier_view')::int AS dossiers_consultes,
+           COUNT(*) FILTER (WHERE al.action = 'dossier_document_creer')::int AS documents_televerses
          FROM generate_series(
            (now() - interval '6 days')::date,
            now()::date,
@@ -329,20 +288,20 @@ async function getClinicienOverview(req, res) {
          LEFT JOIN access_logs al
            ON al.created_at::date = d
            AND al.user_id = $1
-           AND (al.action LIKE 'coordonnee_patient_reveal%' OR al.action LIKE 'analyse_statistique%')
+           AND (
+             al.action LIKE 'coordonnee_patient_reveal%'
+             OR al.action LIKE 'analyse_statistique%'
+             OR al.action IN (
+               'transcription_audio', 'extraction_ocr', 'extraction_patient',
+               'export_patients', 'dossier_view', 'dossier_document_creer'
+             )
+           )
          GROUP BY d
          ORDER BY d`,
         [req.user.sub]
       ),
 
-      // --- Indicateur de qualité de suivi agrégé ("% patients à jour") ---
-      // Inspiré des indicateurs de qualité standard des registres SEP de
-      // référence (EDSS/IRM tous les 6-12 mois, cf. registres suédois et
-      // italien) : plutôt que des alertes patient par patient uniquement,
-      // un score global donne au clinicien un baromètre de la qualité de
-      // suivi de sa cohorte active. "À jour" = EDSS ET IRM < 12 mois (SEP),
-      // EEG ET fréquence de crises rapportée < 12 mois (EPR), parmi les
-      // patients en suivi actif (hors perdu de vue / décédé).
+      
       pool.query(`
         WITH sep_actifs AS (
           SELECT s.pseudonyme
@@ -378,14 +337,7 @@ async function getClinicienOverview(req, res) {
       `),
     ]);
 
-    // --- Répartition par tranche d'âge ---
-    // Âge exact calculé à partir de date_naissance (coordonnee_patient),
-    // déchiffrée côté Node — ce champ est chiffré en base et ne peut pas
-    // être exploité dans une clause SQL. Repli sur 'age' brut (patients,
-    // saisi à l'inclusion, non chiffré) pour les patients sans fiche
-    // coordonnee_patient ou avec une date_naissance illisible.
-    // Accès en masse à des données identifiantes -> journalisé comme un
-    // reveal, au même titre que /api/coordonnees/reveal.
+    
     const ageRows = await pool.query(`
       SELECT p.pseudonyme, p.age, cp.date_naissance
       FROM patients p
@@ -403,7 +355,7 @@ async function getClinicienOverview(req, res) {
         age = ageEnAnnees(dateNaissance);
         dateNaissanceUtilisees += 1;
       } else if (row.age !== null && row.age !== undefined) {
-        age = row.age; // repli : âge saisi à l'inclusion
+        age = row.age; 
       }
 
       const tranche = trancheDe(age);
@@ -425,7 +377,7 @@ async function getClinicienOverview(req, res) {
       totals: totals.rows[0],
       sexeRepartition: sexeRepartition.rows,
       ageRepartition: ageRepartitionRows,
-      ageEstimeApproximatif: false, // âge exact depuis date_naissance quand disponible, sinon repli sur age brut
+      ageEstimeApproximatif: false, 
       fichesIdentite: fichesIdentite.rows[0],
       inclusionsByMonth: inclusionsByMonth.rows,
       comparatifSuivi: {
@@ -446,6 +398,12 @@ async function getClinicienOverview(req, res) {
         day: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : r.day,
         fiches_consultees: r.fiches_consultees,
         analyses_lancees: r.analyses_lancees,
+        transcriptions_audio: r.transcriptions_audio,
+        extractions_ocr: r.extractions_ocr,
+        extractions_patient: r.extractions_patient,
+        exports_patients: r.exports_patients,
+        dossiers_consultes: r.dossiers_consultes,
+        documents_televerses: r.documents_televerses,
       })),
       suiviQualite: {
         sep: { aJour: suiviQualite.rows[0]?.sep_a_jour ?? 0, total: suiviQualite.rows[0]?.sep_actifs_total ?? 0 },

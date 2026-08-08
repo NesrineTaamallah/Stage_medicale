@@ -20,29 +20,15 @@ function fmtDate(d) {
   return date.toLocaleDateString('fr-FR');
 }
 
-/**
- * Fenêtre "Extraire" — remplace le panneau déplié inline sous une ligne du
- * tableau Entités Médicales par une fenêtre modale unique :
- *
- * - Liste tous les documents non extraits du patient, chacun avec son texte
- *   brut affiché intégralement.
- * - Un seul bouton "Extraire" en haut à droite de la fenêtre lance
- *   l'extraction pour TOUS les documents de la liste en une fois (au lieu
- *   d'un bouton par document).
- * - Une fois l'extraction terminée, le résultat structuré apparaît sous
- *   chaque texte brut correspondant, avec des champs modifiables — le
- *   clinicien peut corriger avant de valider.
- * - "Valider" enregistre un document (POST /api/coordonnees) et le retire
- *   de la liste ; quand il n'en reste plus, `onAllDone` est appelé.
- */
+
 export default function ExtractionModal({ pseudonyme, onClose, onAllDone }) {
-  const [documents, setDocuments] = useState(null); // null = chargement
+  const [documents, setDocuments] = useState(null); 
   const [loadError, setLoadError] = useState('');
   const [extracting, setExtracting] = useState(false);
-  const [results, setResults] = useState({}); // { [docId]: fields }
-  const [errors, setErrors] = useState({}); // { [docId]: message }
-  const [saving, setSaving] = useState({}); // { [docId]: bool }
-  const [saved, setSaved] = useState({}); // { [docId]: bool }
+  const [results, setResults] = useState({}); 
+  const [errors, setErrors] = useState({}); 
+  const [saving, setSaving] = useState({}); 
+  const [saved, setSaved] = useState({}); 
   const [pseudonymeResolu, setPseudonymeResolu] = useState(pseudonyme);
 
   useEffect(() => {
@@ -55,11 +41,9 @@ export default function ExtractionModal({ pseudonyme, onClose, onAllDone }) {
     if (!documents || documents.length === 0) return;
     setExtracting(true);
     setErrors({});
-    // Une extraction à la fois, document par document — pour rester
-    // cohérent avec l'endpoint existant POST /api/extraction/patient qui
-    // ne traite qu'un document à la fois (document_id).
+    
     for (const doc of documents) {
-      if (results[doc.id]) continue; // déjà extrait, on ne relance pas
+      if (results[doc.id]) continue; 
       try {
         const res = await client.post('/api/extraction/patient', { document_id: doc.id });
         const { pseudonyme: pseudonymeRenvoye, document_id: _d, ...rest } = res.data;

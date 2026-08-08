@@ -9,28 +9,11 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-/**
- * POST /api/coordonnees/export
- * body: { password, pseudonymes: string[] }
- *
- * Exporte la fiche complète (déchiffrée) des patients demandés sous forme
- * d'un fichier CSV en clair (ouvrable directement dans Excel).
- *
- * ATTENTION SÉCURITÉ : ce fichier contient des données identifiantes en
- * clair (CIN, téléphone, adresse, nom, n° CNAM...). Contrairement à
- * l'ancien export chiffré (.enc), rien ne protège plus ce fichier une fois
- * téléchargé — c'est un choix explicite demandé côté clinicien pour
- * pouvoir l'ouvrir directement dans Excel. Le mot de passe reste requis
- * en amont pour réauthentifier le clinicien (empêcher un export "en un
- * clic" par une session laissée ouverte) mais ne sert plus à chiffrer
- * quoi que ce soit.
- */
+
 function versLigneCsv(valeurs) {
   return valeurs
     .map((v) => {
       const s = v === null || v === undefined ? '' : String(v);
-      // Échappement CSV standard : guillemets doublés, champ entre guillemets
-      // dès qu'il contient une virgule, un guillemet ou un retour à la ligne.
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     })
     .join(',');
@@ -74,7 +57,6 @@ async function exportPatients(req, res) {
       return res.status(401).json({ error: 'Mot de passe incorrect.' });
     }
 
-    // --- Récupération + déchiffrement des fiches demandées ---
     const patients = [];
     for (const pseudonyme of pseudonymes) {
       const patientResult = await pool.query(
@@ -82,7 +64,7 @@ async function exportPatients(req, res) {
         [pseudonyme]
       );
       const patient = patientResult.rows[0];
-      if (!patient) continue; // pseudonyme inconnu (course condition, ligne supprimée) : on l'ignore plutôt que d'échouer tout l'export
+      if (!patient) continue; 
 
       const coordResult = await pool.query(
         `SELECT * FROM coordonnee_patient WHERE pseudonyme = $1`,
@@ -101,8 +83,7 @@ async function exportPatients(req, res) {
       patients.push(fiche);
     }
 
-    // --- Génération du CSV (BOM UTF-8 pour qu'Excel affiche correctement
-    //     les accents dès l'ouverture) ---
+    
     const entete = versLigneCsv(CSV_COLUMNS.map((c) => c.label));
     const lignes = patients.map((fiche) =>
       versLigneCsv(CSV_COLUMNS.map((c) => fiche[c.key]))

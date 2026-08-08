@@ -1,16 +1,4 @@
-/**
- * Déchiffre un fichier exporté par POST /api/coordonnees/export.
- *
- * Usage :
- *   node decrypt_export.js export_patients_XXXX.enc sortie.json
- * (le mot de passe est demandé de façon interactive, jamais en argument de
- * ligne de commande — pour éviter qu'il ne se retrouve dans l'historique
- * shell ou dans la liste des process).
- *
- * Format du fichier .enc : salt(16) || iv(12) || authTag(16) || ciphertext
- * (voir backend/controllers/exportController.js).
- * Aucune dépendance externe : uniquement les modules Node natifs.
- */
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -24,7 +12,6 @@ const SCRYPT_KEYLEN = 32;
 function demanderMotDePasse() {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    // Masque la saisie à l'écran.
     rl._writeToOutput = (str) => {
       if (str.includes('\n')) rl.output.write('\n');
     };

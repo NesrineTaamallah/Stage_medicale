@@ -1,26 +1,4 @@
-/**
- * Script d'URGENCE — réinitialisation 2FA hors application.
- *
- * À utiliser uniquement si TOUS les admins sont bloqués (2FA perdu / app
- * d'authentification supprimée) et qu'aucun admin actif ne peut donc utiliser
- * la fonction "Réinitialiser le 2FA" de l'interface (qui exige déjà d'être
- * connecté en tant qu'admin, et ne permet pas de se réinitialiser soi-même).
- *
- * Volontairement PAS exposé comme route HTTP : ce script doit être exécuté
- * directement sur le serveur/la base par une personne ayant un accès
- * d'infrastructure (pas juste un accès web), pour éviter d'ouvrir une porte
- * dérobée exploitable depuis l'application elle-même.
- *
- * Usage :
- *   node backend/scripts/emergency-reset-2fa.js admin@example.com
- *
- * Effet : équivalent à resetTotp() — repasse le compte en "2FA non configuré".
- * L'utilisateur devra reconfigurer un nouveau QR code à sa prochaine connexion
- * (après avoir bien sûr réauthentifié avec son mot de passe).
- *
- * Toute exécution est journalisée dans access_logs comme les resets normaux,
- * avec une action distincte pour audit (EMERGENCY_RESET_2FA).
- */
+
 
 const pool = require('../config/db');
 

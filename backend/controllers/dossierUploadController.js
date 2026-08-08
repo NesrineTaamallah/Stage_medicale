@@ -20,17 +20,9 @@ const PADDLEOCR_PYTHON_BIN = process.env.PADDLEOCR_PYTHON_BIN || PYTHON_BIN;
 const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://127.0.0.1:8001';
 const PADDLEOCR_SERVICE_URL = process.env.PADDLEOCR_SERVICE_URL || 'http://127.0.0.1:8002';
 
-// undici (moteur de fetch() natif de Node) applique par défaut un timeout
-// de ~5 min en attente des headers de réponse (UND_ERR_HEADERS_TIMEOUT).
-// L'inférence PaddleOCR-VL en CPU pur peut dépasser ce délai sur certains
-// documents (page dense, upscaling important...) — sans ce dispatcher
-// dédié, Node abandonnait la requête AVANT que le service ait fini de
-// répondre, et basculait à tort sur le mode spawn (pourtant plus lent).
-// Aligné sur OCR_TIMEOUT_SECONDS = 1800 (30 min) côté paddleocr_service.py,
-// avec 2 min de marge pour laisser le serveur répondre avant que Node
-// n'abandonne (mesuré en pratique : ~22-23 min par image sur ce CPU).
+
 const LONG_INFERENCE_DISPATCHER = new Agent({
-  headersTimeout: 32 * 60 * 1000, // 32 min
+  headersTimeout: 32 * 60 * 1000, 
   bodyTimeout: 32 * 60 * 1000,
   connectTimeout: 32 * 60 * 1000,
   keepAliveTimeout: 32 * 60 * 1000,
@@ -90,12 +82,7 @@ function transcribeAudioSpawn(audioPath) {
   });
 }
 
-/**
- * Transcrit un fichier audio : essaie d'abord le service HTTP persistant
- * (rapide, modèle déjà en mémoire) ; si le service n'est pas joignable
- * (pas démarré, ou down), retombe sur le mode spawn (lent mais toujours
- * fonctionnel) pour ne jamais bloquer la création de dossier.
- */
+
 async function transcribeAudio(audioPath) {
   try {
     return await transcribeAudioViaService(audioPath);
@@ -112,10 +99,6 @@ async function transcribeAudio(audioPath) {
   }
 }
 
-/**
- * Appelle le service paddleocr_service.py (pipeline déjà chargé) pour
- * l'OCR d'un document scanné (image ou PDF). Renvoie le markdown transcrit.
- */
 async function ocrScanViaService(filePath) {
   const absolutePath = path.resolve(filePath);
   const res = await fetch(`${PADDLEOCR_SERVICE_URL}/ocr`, {
@@ -135,11 +118,7 @@ async function ocrScanViaService(filePath) {
   return data.markdown;
 }
 
-/**
- * Ancien mode : lance paddleocr_transcribe.py en sous-processus à chaque
- * appel (recharge le pipeline PaddleOCR-VL à chaque fois, donc lent).
- * Conservé comme repli si le service HTTP n'est pas démarré.
- */
+
 function ocrScanSpawn(filePath) {
   return new Promise((resolve, reject) => {
     const proc = spawn(PADDLEOCR_PYTHON_BIN, [PADDLEOCR_SCRIPT, '--input', filePath, '--json'], {
@@ -171,19 +150,11 @@ function ocrScanSpawn(filePath) {
   });
 }
 
-/**
- * Transcrit (OCR) un document scanné : essaie d'abord le service HTTP
- * persistant (rapide, pipeline déjà en mémoire) ; si injoignable, retombe
- * sur spawn() (lent mais toujours fonctionnel).
- */
 async function ocrScan(filePath) {
   try {
     return await ocrScanViaService(filePath);
   } catch (err) {
-    // Log complet de la cause réelle avant de basculer sur spawn() : le
-    // message générique masquait le vrai type d'erreur (ECONNREFUSED,
-    // timeout, DNS, proxy...) — sans ça, impossible de savoir pourquoi
-    // fetch() échoue alors que le service répond bien à curl.
+    
     console.warn('[paddleocr] Erreur fetch réelle :', err);
     if (err.cause) console.warn('[paddleocr] err.cause :', err.cause);
 
@@ -199,20 +170,7 @@ async function ocrScan(filePath) {
   }
 }
 
-/**
- * GET /api/dossiers/verifier?pathologie=SEP|EPR&numero_dossier=...
- *
- * Vérifie, dès la saisie du numéro de dossier à l'étape 0 du wizard, si ce
- * numéro (pour cette pathologie) correspond déjà à un patient existant. Le
- * pseudonyme étant déterministe (HMAC sur registre + numéro de dossier), on
- * peut le recalculer et regarder s'il existe déjà dans `patients`, sans
- * jamais stocker le numéro de dossier en clair côté patients.
- *
- * Renvoie { existe: false } si aucun patient, ou { existe: true, pseudonyme,
- * pathologie, numero_dossier, date_diagnostic, date_inclusion } sinon —
- * c'est cette réponse qui alimente l'alerte "patient déjà existant" et le
- * bouton "Voir le dossier" côté wizard.
- */
+
 async function verifierDossier(req, res) {
   const { pathologie, numero_dossier } = req.query;
 
@@ -226,13 +184,7 @@ async function verifierDossier(req, res) {
   try {
     const numeroNormalise = String(numero_dossier).trim().toUpperCase();
 
-    // 1) Source principale : `documents_bruts`, où le numero_dossier est
-    // stocké en clair dès l'upload initial (creerDossier), avant même toute
-    // pseudonymisation ou saisie d'identité civile. C'est la source la plus
-    // fiable et la moins coûteuse (comparaison SQL directe, indexée) — et
-    // surtout la seule qui couvre les dossiers dont `coordonnee_patient`
-    // n'a pas encore été rempli (identité pas encore saisie/extraite), qui
-    // passaient auparavant sous le radar du check de doublon.
+    
     const docResult = await pool.query(
       `SELECT numero_dossier FROM documents_bruts
         WHERE pathologie = $1 AND UPPER(TRIM(numero_dossier)) = $2
@@ -244,13 +196,7 @@ async function verifierDossier(req, res) {
     if (docResult.rows[0]) {
       pseudonyme = genererPseudonyme(pathologie, docResult.rows[0].numero_dossier);
     } else {
-      // 2) Repli : pseudonymes legacy attribués à la main (ex. SEP_MJ_001),
-      // dont le seul lien vers le numero_dossier passe par
-      // coordonnee_patient (chiffré avec IV aléatoire, donc pas
-      // recherchable directement en SQL — on déchiffre chaque ligne pour
-      // comparer). Coûteux si la table grossit beaucoup, mais un registre
-      // clinique reste de taille modeste ; à revoir avec un index
-      // déterministe si ça devient un problème de perf.
+      
       const coordResult = await pool.query(
         `SELECT pseudonyme, numero_dossier FROM coordonnee_patient WHERE numero_dossier IS NOT NULL`
       );
@@ -273,8 +219,7 @@ async function verifierDossier(req, res) {
       [pseudonyme]
     );
     const patient = patientResult.rows[0];
-    // On ne signale le doublon que si la pathologie du patient trouvé
-    // correspond bien à celle demandée dans le wizard.
+    
     if (!patient || patient.registre !== pathologie) {
       return res.json({ existe: false });
     }
@@ -301,29 +246,11 @@ async function verifierDossier(req, res) {
   }
 }
 
-/**
- * POST /api/dossiers/creer
- * multipart/form-data :
- *   numero_dossier, pathologie (SEP|EPR), date_diagnostic (YYYY-MM-DD),
- *   type_document, type_entree (audio|scan), fichier
- *
- * Étape 1 du pipeline uniquement : enregistre le document brut (avec son
- * numéro de dossier en clair, tel que saisi) et, si type_entree = audio,
- * lance la transcription WhisperX.
- *
- * Volontairement AUCUNE pseudonymisation ici, ni écriture dans la table
- * `patients` / les tables SEP/EPR : ce rattachement (génération du
- * pseudonyme + extraction d'entités depuis le texte transcrit ou l'OCR)
- * est fait par une étape ultérieure du pipeline, pas par ce endpoint.
- */
+
 async function creerDossier(req, res) {
   const {
     numero_dossier, pathologie, date_diagnostic, date_inclusion, type_document, type_entree,
-    // Fourni uniquement par le wizard en mode "ajout de document à un
-    // dossier existant" (existingPatient) : le pseudonyme réel du patient
-    // déjà connu côté client, à utiliser TEL QUEL au lieu de le recalculer
-    // par hash — indispensable pour les pseudonymes "legacy" attribués à la
-    // main (ex. SEP_MJ_001), qui ne sont pas dérivables depuis numero_dossier.
+    
     pseudonyme_existant,
   } = req.body;
   const fichier = req.file;
@@ -344,10 +271,7 @@ async function creerDossier(req, res) {
     return res.status(400).json({ error: 'Fichier manquant.' });
   }
 
-  // Si un pseudonyme existant est annoncé, on vérifie qu'il correspond bien
-  // à un patient réel de la bonne pathologie avant de lui faire confiance
-  // (le champ vient du client) — sinon on retombe sur le calcul par hash,
-  // comme pour une création normale.
+  
   let pseudonyme = null;
   if (pseudonyme_existant) {
     const check = await pool.query(
@@ -359,15 +283,12 @@ async function creerDossier(req, res) {
     }
   }
   if (!pseudonyme) {
-    // Pseudonymisation par défaut : déterministe (HMAC sur registre + numéro
-    // de dossier), donc calculable dès l'upload sans attendre l'extraction
-    // d'entités — cas d'une création de dossier normale (pas d'ajout à un
-    // patient déjà existant).
+    
     pseudonyme = genererPseudonyme(pathologie, numero_dossier);
   }
 
   let texte_transcrit = null;
-  let mots_confiance = null; // JSONB : confiance par mot (Whisper uniquement, pour coloration frontend)
+  let mots_confiance = null; 
   let statut = 'en_attente';
 
   if (type_entree === 'audio') {
@@ -376,17 +297,21 @@ async function creerDossier(req, res) {
       texte_transcrit = transcription.text;
       mots_confiance = transcription.words;
       statut = 'transcrit';
+      await logAccess({ userId: req.user.sub, action: 'transcription_audio', success: true, req });
     } catch (err) {
       console.error('Erreur transcription :', err);
       statut = 'erreur_transcription';
+      await logAccess({ userId: req.user.sub, action: 'transcription_audio', success: false, req });
     }
   } else if (type_entree === 'scan') {
     try {
       texte_transcrit = await ocrScan(fichier.path);
       statut = 'transcrit';
+      await logAccess({ userId: req.user.sub, action: 'extraction_ocr', success: true, req });
     } catch (err) {
       console.error('Erreur OCR :', err);
       statut = 'erreur_transcription';
+      await logAccess({ userId: req.user.sub, action: 'extraction_ocr', success: false, req });
     }
   }
 
@@ -405,14 +330,7 @@ async function creerDossier(req, res) {
       ]
     );
 
-    // On crée une ligne "stub" dans `patients` pour que le dossier apparaisse
-    // tout de suite dans la liste côté clinicien — les colonnes d'identité
-    // (nom, prénom, ...) restent vides tant que `coordonnee_patient` n'a pas
-    // été renseignée par l'étape d'extraction ultérieure. Un seul et même
-    // patient (même pseudonyme) peut recevoir plusieurs documents au fil du
-    // temps : ON CONFLICT DO NOTHING garantit qu'il reste toujours une seule
-    // ligne dans `patients`, quel que soit le nombre de documents ajoutés —
-    // y compris quand `pseudonyme` est un pseudonyme "legacy" déjà existant.
+    
     await pool.query(
       `INSERT INTO patients (pseudonyme, registre, date_inclusion)
        VALUES ($1, $2, $3)
@@ -420,12 +338,7 @@ async function creerDossier(req, res) {
       [pseudonyme, pathologie, date_inclusion]
     );
 
-    // Idem côté table "entité patient" du registre concerné (identification
-    // clinique SEP ou EPR) : on ne renseigne ici QUE la date de diagnostic,
-    // saisie manuellement par le clinicien à cette étape. Tous les autres
-    // champs (sexe, gouvernorat, âges calculés, antécédents, évolution...)
-    // restent NULL tant qu'ils n'auront pas été remplis par une future étape
-    // d'extraction automatique d'entités médicales à partir du texte brut.
+    
     const identificationTable = pathologie === 'SEP'
       ? 'sep_identification_clinique'
       : 'epr_identification_clinique';
@@ -452,21 +365,7 @@ async function creerDossier(req, res) {
   }
 }
 
-/**
- * PATCH /api/dossiers/documents/:id/texte
- * body JSON : { texte_transcrit: string }
- *
- * Permet au clinicien de corriger le texte transcrit (audio ou OCR) avant
- * validation finale, directement depuis l'étape de confirmation du wizard.
- *
- * À la validation, le texte définitif est également répercuté dans
- * `patients.detaille` (colonne texte libre du pseudonyme concerné) : c'est
- * là qu'atterrit le résultat de l'extraction, quel que soit le type
- * d'entrée (audio transcrit ou document scanné). Un même patient pouvant
- * recevoir plusieurs documents au fil du temps, chaque nouveau texte validé
- * est ajouté à la suite du contenu déjà présent (jamais écrasé), séparé par
- * un bandeau indiquant le type de document et la date.
- */
+
 async function corrigerTexteTranscrit(req, res) {
   const { id } = req.params;
   const { texte_transcrit } = req.body;
@@ -489,19 +388,10 @@ async function corrigerTexteTranscrit(req, res) {
     }
 
     const doc = result.rows[0];
-    // Priorité à la colonne `pseudonyme` (fixée à la création par
-    // creerDossier) ; repli par hash uniquement pour les documents créés
-    // avant l'ajout de cette colonne.
+    
     const pseudonyme = doc.pseudonyme || genererPseudonyme(doc.pathologie, doc.numero_dossier);
 
-    // Chaque bloc ajouté à `patients.detaille` porte un marqueur "doc#<id>"
-    // dans son en-tête, pour pouvoir le RETROUVER et le REMPLACER lors d'une
-    // correction ultérieure du même document (bouton "Corriger" côté
-    // Patients), au lieu de toujours ajouter un nouveau bloc à la suite —
-    // ce qui dupliquait le texte à chaque relecture/correction. Ce PATCH
-    // n'était appelé auparavant qu'une seule fois (juste après création,
-    // dans le wizard), donc le bug ne se voyait pas ; il est maintenant
-    // rappelable depuis la modale "Documents associés".
+    
     const marqueur = `doc#${doc.id}`;
     const entete = `--- ${doc.type_document || 'document'} · ${marqueur} · ${new Date().toLocaleDateString('fr-FR')} ---`;
     const nouveauBloc = `${entete}\n${texte_transcrit}`;
@@ -513,8 +403,7 @@ async function corrigerTexteTranscrit(req, res) {
 
     let nouveauDetaille;
     if (!texte_transcrit.trim()) {
-      // Texte vidé volontairement : on retire le bloc s'il existait déjà,
-      // on n'ajoute rien de nouveau.
+      
       nouveauDetaille = indexExistant >= 0
         ? blocs.filter((_, i) => i !== indexExistant).join('\n\n')
         : detailleActuel;
@@ -536,24 +425,7 @@ async function corrigerTexteTranscrit(req, res) {
   }
 }
 
-/**
- * GET /api/dossiers/:pseudonyme/documents
- *
- * Liste les documents bruts (audio transcrit / scan) rattachés à un
- * pseudonyme. `documents_bruts` ne connaît que le numero_dossier en clair
- * (voir schema_documents.sql) : on retrouve les lignes correspondantes en
- * recalculant le pseudonyme de chaque document (même fonction déterministe
- * qu'à l'upload) et en le comparant à celui demandé, plutôt que de stocker
- * le numéro de dossier en clair côté `patients`.
- *
- * Renvoie aussi `numero_dossier` au niveau racine (nécessaire pour rouvrir
- * le wizard "Ajouter un document") : pris sur le premier document trouvé
- * ci-dessus si possible, sinon déchiffré depuis `coordonnee_patient` — seule
- * source restante pour les pseudonymes "legacy" attribués à la main (ex.
- * SEP_MJ_001), qui ne sont pas dérivés par hash du numero_dossier et n'ont
- * donc jamais de ligne `documents_bruts` correspondante tant qu'aucun
- * document n'a encore été uploadé via ce pipeline pour eux.
- */
+
 async function getDocumentsByPseudonyme(req, res) {
   const { pseudonyme } = req.params;
 
@@ -577,9 +449,7 @@ async function getDocumentsByPseudonyme(req, res) {
     );
 
     const documents = docsResult.rows
-      // Priorité à la colonne `pseudonyme` (fixée à la création, fiable
-      // pour tous les cas y compris legacy) ; repli par hash uniquement
-      // pour les lignes créées avant l'ajout de cette colonne.
+      
       .filter((d) => (d.pseudonyme
         ? d.pseudonyme === pseudonyme
         : genererPseudonyme(patient.registre, d.numero_dossier) === pseudonyme))
@@ -590,8 +460,7 @@ async function getDocumentsByPseudonyme(req, res) {
         type_entree: d.type_entree,
         nom_fichier_original: d.nom_fichier_original,
         texte_transcrit: d.texte_transcrit,
-        // Confiance par mot (Whisper uniquement) : liste [{word,start,end,score,confidence}]
-        // utilisée par le frontend pour colorer les mots peu fiables (rouge/jaune).
+        
         mots_confiance: d.mots_confiance,
         statut: d.statut,
         created_at: d.created_at,
@@ -622,15 +491,7 @@ async function getDocumentsByPseudonyme(req, res) {
   }
 }
 
-/**
- * GET /api/dossiers/:pseudonyme/documents-non-extraits
- * Sous-ensemble de getDocumentsByPseudonyme ci-dessus : uniquement les
- * documents qui ont un texte transcrit ET n'ont pas encore servi à extraire
- * les coordonnées du patient (coordonnees_extraites = false). Alimente le
- * panneau "Extraire" de la fenêtre Entités Médicales : un patient peut avoir
- * 3-4 documents (visite, EEG, courrier...), chacun traité séparément plutôt
- * qu'un seul bloc de texte concaténé.
- */
+
 async function getDocumentsNonExtraits(req, res) {
   const { pseudonyme } = req.params;
 
@@ -665,9 +526,6 @@ async function getDocumentsNonExtraits(req, res) {
         type_document: d.type_document,
         type_entree: d.type_entree,
         nom_fichier_original: d.nom_fichier_original,
-        // Texte brut affiché tel quel dans le panneau "Extraire" (comme
-        // dans "Documents associés") — pas seulement le lien du fichier
-        // audio/scan, pour que le clinicien puisse relire avant d'extraire.
         texte_transcrit: d.texte_transcrit,
         mots_confiance: d.mots_confiance,
         statut: d.statut,
@@ -681,13 +539,6 @@ async function getDocumentsNonExtraits(req, res) {
   }
 }
 
-/**
- * GET /api/dossiers/documents/:id/fichier
- * Télécharge le fichier original (audio ou scan) d'un document brut.
- * Pas de re-vérification de pseudonyme ici : l'accès est déjà restreint au
- * rôle clinicien par le middleware de route, comme pour les autres endpoints
- * de ce contrôleur.
- */
 async function telechargerFichier(req, res) {
   const { id } = req.params;
 

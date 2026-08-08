@@ -7,19 +7,12 @@ const { sendAccountLockedAlertEmail } = require('../utils/mailer');
 require('dotenv').config();
 
 const MAX_ATTEMPTS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const LOCK_DURATION_MS = 15 * 60 * 1000; 
 
-// Hash bcrypt valide (mot de passe arbitraire) utilisé uniquement pour
-// normaliser le temps de réponse quand l'email n'existe pas -> empêche
-// un attaquant de distinguer "email inconnu" de "mauvais mot de passe"
-// en mesurant le temps de réponse (timing attack / énumération d'emails).
+
 const DUMMY_HASH = '$2b$12$abcdefghijklmnopqrstuuOa1zQZKzHZOL8CDPGPn4RY0Nx6Cy9K';
 
-/**
- * Alerte tous les admins actifs par email quand un compte vient d'être
- * verrouillé (5 échecs de connexion). Volontairement fire-and-forget côté
- * appelant : un échec d'envoi ne doit jamais faire échouer la réponse de login.
- */
+
 async function notifyAdminsAccountLocked(lockedUser) {
   const admins = await pool.query(
     `SELECT email FROM users WHERE role = 'admin' AND is_active = true`
@@ -34,22 +27,19 @@ async function notifyAdminsAccountLocked(lockedUser) {
 }
 
 async function login(req, res) {
-  const { email, password } = req.body; // déjà normalisé (lowercase) par le middleware validate
+  const { email, password } = req.body; 
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     const user = result.rows[0];
 
     if (!user) {
-      await verifyPassword(password, DUMMY_HASH); // normalise le temps de réponse
+      await verifyPassword(password, DUMMY_HASH); 
       await logAccess({ action: `LOGIN_ATTEMPT:${email}`, success: false, req });
       return res.status(401).json({ error: 'Identifiants invalides.' });
     }
 
-    // Bloque les comptes désactivés par un admin (suspension via onglet Utilisateurs).
-    // Placé après la vérification d'existence (pour ne pas révéler l'existence du
-    // compte à un attaquant) mais avant la vérification du mot de passe (pas la peine
-    // de faire perdre du temps/tentatives à un compte déjà désactivé).
+    
     if (user.is_active === false) {
       await logAccess({ userId: user.id, action: 'LOGIN_ATTEMPT_DISABLED_ACCOUNT', success: false, req });
       return res.status(403).json({ error: 'Ce compte a été désactivé. Contactez un administrateur.' });
@@ -85,7 +75,6 @@ async function login(req, res) {
       });
 
       if (shouldLock) {
-        // Fire-and-forget : n'attend pas l'envoi pour répondre à l'utilisateur verrouillé.
         notifyAdminsAccountLocked(user).catch((e) =>
           console.error('Échec notification admins (compte verrouillé) -', e.message)
         );
@@ -170,7 +159,7 @@ async function changePassword(req, res) {
     return res.status(403).json({ error: 'Ce token ne permet pas cette action.' });
   }
 
-  const { newPassword } = req.body; // déjà validé (longueur + complexité) par le middleware validate
+  const { newPassword } = req.body; 
 
   try {
     const newHash = await hashPassword(newPassword);

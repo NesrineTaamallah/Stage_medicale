@@ -10,9 +10,6 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-# Voir whisper_transcribe.py pour l'explication : force UTF-8 sur
-# stdout/stderr pour éviter les caractères accentués corrompus ("�") quand
-# ce script est lancé via spawn() depuis Node sur Windows.
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "buffer"):
@@ -20,16 +17,9 @@ if hasattr(sys.stderr, "buffer"):
 
 from dotenv import load_dotenv
 
-# Même raisonnement que dans whisper_transcribe.py : résoudre le .env par
-# rapport à ce script plutôt que par rapport au cwd, pour que ça fonctionne
-# aussi quand ce script est lancé via spawn() depuis Node (cwd potentiellement
-# différent de backend/).
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
 load_dotenv(dotenv_path=_ENV_PATH)
 
-# ---------------------------------------------------------------------------
-# Configuration (reprise du notebook)
-# ---------------------------------------------------------------------------
 
 SUPPORTED_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
 LANG = "fr"
@@ -40,10 +30,6 @@ MAX_SCALE = 4.0
 
 PDF_DPI = 300
 
-
-# ---------------------------------------------------------------------------
-# 1. Détection / validation du fichier d'entrée
-# ---------------------------------------------------------------------------
 
 def validate_input_file(input_path: Path) -> Path:
     if not input_path.is_file():
@@ -56,13 +42,10 @@ def validate_input_file(input_path: Path) -> Path:
     return input_path
 
 
-# ---------------------------------------------------------------------------
-# 2. Conversion PDF -> images (cv2 ne lit pas les PDF)
-# ---------------------------------------------------------------------------
 
 def pdf_to_images(pdf_path: Path, out_dir: Path, dpi: int = PDF_DPI) -> List[Path]:
     try:
-        import fitz  # PyMuPDF
+        import fitz  
     except ImportError:
         raise RuntimeError(
             "PyMuPDF (fitz) n'est pas installé. Installez-le avec : pip install pymupdf"
@@ -84,15 +67,12 @@ def pdf_to_images(pdf_path: Path, out_dir: Path, dpi: int = PDF_DPI) -> List[Pat
 
 
 def expand_input(filepath: Path, out_dir: Path) -> List[Path]:
-    """Si PDF, éclate en une image par page. Sinon renvoie [filepath]."""
     if filepath.suffix.lower() == ".pdf":
         return pdf_to_images(filepath, out_dir)
     return [filepath]
 
 
-# ---------------------------------------------------------------------------
-# 3. Prétraitement — deskew + débruitage + CLAHE (avant upscaling)
-# ---------------------------------------------------------------------------
+
 
 def deskew_image(img):
     import cv2
@@ -156,9 +136,7 @@ def preprocess_image(filepath: Path, out_dir: Path, apply_denoise: bool = False)
     return out_path
 
 
-# ---------------------------------------------------------------------------
-# 4. Prétraitement — upscaling de l'image
-# ---------------------------------------------------------------------------
+
 
 def decider_et_appliquer_upscaling(
     filepath: Path,
@@ -167,9 +145,7 @@ def decider_et_appliquer_upscaling(
     max_scale: float = MAX_SCALE,
     out_dir: Path = None,
 ) -> dict:
-    """Regarde la résolution native de l'image (capture d'écran ou page issue
-    d'un PDF scanné) et décide si un upscaling est nécessaire avant l'OCR.
-    N'upscale que si besoin, et plafonne toujours à max_width."""
+    
     import cv2
 
     img = cv2.imread(str(filepath))
@@ -220,9 +196,7 @@ def decider_et_appliquer_upscaling(
     return decision
 
 
-# ---------------------------------------------------------------------------
-# 5. PaddleOCR-VL (singleton — coûteux, chargé une seule fois par process)
-# ---------------------------------------------------------------------------
+
 
 _PIPELINE_CACHE = {}
 
@@ -246,8 +220,7 @@ def _load_pipeline():
 
 
 def run_paddleocr_vl(filepath: Path, out_dir: Path, preprocess_dir: Path) -> dict:
-    """Lance PaddleOCR-VL sur un fichier, avec repli automatique sans
-    upscaling en cas d'OOM. Écrit les .json/.md bruts dans out_dir."""
+    
     import paddle
 
     pipeline = _load_pipeline()
@@ -315,9 +288,7 @@ def run_paddleocr_vl(filepath: Path, out_dir: Path, preprocess_dir: Path) -> dic
     return info
 
 
-# ---------------------------------------------------------------------------
-# 6. Nettoyage du markdown généré
-# ---------------------------------------------------------------------------
+
 
 def strip_inline_images(texte: str) -> str:
     return re.sub(
@@ -416,8 +387,7 @@ def detecter_table_tronquee(texte: str, seuil_lignes: int = 5) -> dict:
 
 
 def nettoyer_markdown(contenu: str) -> tuple:
-    """Nettoie un contenu markdown brut (images inline, LaTeX, tables
-    tronquées). Renvoie (contenu_nettoye, liste_alertes_qc)."""
+    
     contenu = strip_inline_images(contenu)
     contenu = nettoyer_latex(contenu)
 
@@ -433,33 +403,9 @@ def nettoyer_markdown(contenu: str) -> tuple:
     return contenu, qc_msgs
 
 
-# ---------------------------------------------------------------------------
-# 7. Pipeline complet (un seul fichier d'entrée, potentiellement multi-pages)
-# ---------------------------------------------------------------------------
 
 def transcribe_scan(input_path: str, out_dir: str = None) -> dict:
-    """
-    Transcrit un document scanné (image ou PDF) en texte Markdown.
-
-    Étapes : (PDF -> images par page) -> prétraitement (deskew + CLAHE) ->
-    upscaling conditionnel -> PaddleOCR-VL -> nettoyage markdown (images
-    inline, LaTeX, détection de tables tronquées) -> concaténation des pages.
-
-    Args:
-        input_path: chemin vers le fichier scanné (pdf, png, jpg, ...).
-        out_dir: dossier de sortie pour les fichiers intermédiaires et le
-            .md final. Par défaut, un dossier temporaire est utilisé pour
-            les intermédiaires et le .md final est écrit à côté du fichier
-            d'entrée.
-
-    Returns:
-        dict avec au moins la clé "markdown" (texte final) et "qc_alerts"
-        (liste d'alertes qualité, éventuellement vide).
-
-    Raises:
-        FileNotFoundError: si input_path n'existe pas.
-        ValueError: si l'extension n'est pas supportée.
-    """
+    
     src = validate_input_file(Path(input_path))
 
     work_dir = Path(out_dir) if out_dir else Path(tempfile.mkdtemp(prefix="paddleocr_"))
@@ -511,9 +457,7 @@ def transcribe_scan(input_path: str, out_dir: str = None) -> dict:
         gc.collect()
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -536,8 +480,7 @@ def main():
 
     markdown_text = result["markdown"]
 
-    # Sauvegarde du .md final, affiché à l'écran côté plateforme mais aussi
-    # persisté sur disque (à côté du fichier d'entrée par défaut).
+    
     md_out_path = Path(args.md_out) if args.md_out else Path(args.input).with_suffix(".md")
     try:
         md_out_path.write_text(markdown_text, encoding="utf-8")

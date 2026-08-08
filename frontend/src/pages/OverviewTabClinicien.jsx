@@ -8,8 +8,14 @@ import {
 const REGISTRE_COLORS = { sep: '#175F69', epr: '#C98A2C' };
 
 const ACTIVITY_SERIES = [
-  { key: 'fiches_consultees', label: 'Fiches consultées', color: '#175F69' },
-  { key: 'analyses_lancees', label: 'Analyses lancées', color: '#C98A2C' },
+  { key: 'fiches_consultees', label: 'Fiches consultées', color: '#0B3D5C' },
+  { key: 'analyses_lancees', label: 'Analyses lancées', color: '#1E7BB8' },
+  { key: 'transcriptions_audio', label: 'Transcriptions audio', color: '#6BB6E3' },
+  { key: 'extractions_ocr', label: 'Extractions OCR', color: '#5B4B8A' },
+  { key: 'extractions_patient', label: 'Extractions patient', color: '#8677B3' },
+  { key: 'exports_patients', label: 'Exports patients', color: '#2F8F6E' },
+  { key: 'dossiers_consultes', label: 'Dossiers consultés', color: '#67B79A' },
+  { key: 'documents_televerses', label: 'Documents téléversés', color: '#A9D6C6' },
 ];
 
 // NOTE (correction) : les clés étaient comparées telles quelles ('Epilepsie

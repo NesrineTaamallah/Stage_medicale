@@ -1,16 +1,4 @@
-/**
- * Détecte et rechiffre automatiquement toute fiche coordonnee_patient
- * insérée EN CLAIR (ex: via un INSERT SQL direct dans un script de seed),
- * en réutilisant la même fonction encrypt() que l'API.
- *
- * Contrairement à l'ancienne version (scripts/fix-encrypt-coordonnees.js),
- * ce module ne cible pas une liste de patients codée en dur : il scanne
- * toute la table et rechiffre uniquement les valeurs qui ne sont pas déjà
- * au format chiffré "iv:authTag:ciphertext" produit par encrypt().
- *
- * Prévu pour être appelé automatiquement (ex. depuis run-migration.js)
- * plutôt que lancé manuellement.
- */
+
 const { encrypt } = require('./cryptoUtils');
 
 const SENSITIVE_FIELDS = [
@@ -19,21 +7,13 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-// Format produit par encrypt() : iv(24 hex) : authTag(32 hex) : ciphertext(hex, longueur variable)
 const ENCRYPTED_FORMAT = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i;
 
 function isAlreadyEncrypted(value) {
   return typeof value === 'string' && ENCRYPTED_FORMAT.test(value);
 }
 
-/**
- * Scanne coordonnee_patient et rechiffre en place tout champ sensible
- * qui n'est pas déjà au format chiffré. Idempotent : sans effet si tout
- * est déjà chiffré (ne fait aucune requête UPDATE dans ce cas).
- *
- * @param {import('pg').Pool | import('pg').PoolClient} db
- * @returns {Promise<{scanned: number, fixed: number}>}
- */
+
 async function encryptPlaintextCoordonnees(db) {
   const { rows } = await db.query(
     `SELECT pseudonyme, ${SENSITIVE_FIELDS.join(', ')} FROM coordonnee_patient`

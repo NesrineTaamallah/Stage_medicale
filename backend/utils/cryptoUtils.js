@@ -2,7 +2,7 @@ const crypto = require('crypto');
 require('dotenv').config();
 
 const ALGORITHM = 'aes-256-gcm';
-const KEY = process.env.TOTP_ENCRYPTION_KEY; // 32 octets en hex (64 caractères)
+const KEY = process.env.TOTP_ENCRYPTION_KEY; 
 
 if (!KEY || Buffer.from(KEY, 'hex').length !== 32) {
   throw new Error(
@@ -12,10 +12,7 @@ if (!KEY || Buffer.from(KEY, 'hex').length !== 32) {
 
 const keyBuffer = Buffer.from(KEY, 'hex');
 
-/**
- * Chiffre une chaîne (ex: secret TOTP) avant stockage en base.
- * Retourne une chaîne combinée "iv:authTag:ciphertext" en hex.
- */
+
 function encrypt(plainText) {
   const iv = crypto.randomBytes(12); // 96 bits recommandé pour GCM
   const cipher = crypto.createCipheriv(ALGORITHM, keyBuffer, iv);
@@ -25,9 +22,7 @@ function encrypt(plainText) {
   return [iv.toString('hex'), authTag.toString('hex'), encrypted.toString('hex')].join(':');
 }
 
-/**
- * Déchiffre une chaîne produite par encrypt().
- */
+
 function decrypt(payload) {
   const [ivHex, authTagHex, dataHex] = payload.split(':');
   const iv = Buffer.from(ivHex, 'hex');

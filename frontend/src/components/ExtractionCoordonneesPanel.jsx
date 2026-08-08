@@ -2,9 +2,7 @@ import { useState, useEffect } from 'react';
 import client from '../api/client';
 import { IconRefresh, IconCheckCircle, IconAlert } from './Icons';
 
-// Mêmes champs / ordre que CHAMPS_COORDONNEE côté backend
-// (extractionController.js / coordonneePatientController.js) — uniquement
-// des champs de la table coordonnee_patient, jamais de nom de médecin.
+
 export const CHAMPS = [
   { key: 'numero_dossier', label: 'Numéro de dossier' },
   { key: 'nom_prenom', label: 'Nom et prénom' },
@@ -21,33 +19,7 @@ export const CHAMPS = [
   { key: 'autre_antecedent', label: 'Autres antécédents', multi: true },
 ];
 
-/**
- * Panneau réutilisable "Extraire données patient" / "Extraire coordonnées".
- * Les points d'entrée décrits par la clinicienne (wizard Ajouter, fenêtre
- * Entités Médicales — dossier entier ou document par document) appellent
- * tous la même route POST /api/extraction/patient et affichent le même
- * résultat structuré, modifiable, avant validation.
- *
- * Trois modes d'entrée, mutuellement exclusifs :
- * - `pseudonyme` : dossier déjà existant, le serveur concatène tous ses
- *   documents transcrits et fusionne avec la fiche coordonnee_patient déjà
- *   en base (une seule ligne par patient, jamais écrasée).
- * - `documentId` : UN SEUL document précis (cas "plusieurs fichiers non
- *   extraits" — extraction traitée document par document). À la
- *   validation, `documentId` est renvoyé avec la sauvegarde pour que ce
- *   document précis soit marqué comme extrait côté serveur.
- * - `texte` : texte fourni directement (ex. juste après une transcription,
- *   avant que le dossier existe en base côté coordonnee_patient) — dans ce
- *   cas `pseudonymeCible` doit être fourni pour savoir où enregistrer au
- *   moment de la validation.
- *
- * `autoStart` : si vrai, l'extraction se lance automatiquement au montage
- * du composant — pour que le clic du bouton parent ("Extraire") déclenche
- * directement l'extraction, sans exiger un second clic sur un bouton
- * interne.
- *
- * onValidated(fields) est appelé après enregistrement réussi.
- */
+
 export default function ExtractionCoordonneesPanel({
   pseudonyme = null,
   texte = null,
@@ -58,7 +30,7 @@ export default function ExtractionCoordonneesPanel({
   onValidated = null,
   onCancel = null,
 }) {
-  const [fields, setFields] = useState(null); // objet extrait, modifiable
+  const [fields, setFields] = useState(null); 
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

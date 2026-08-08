@@ -34,27 +34,23 @@ function validateParams(schema) {
 
 router.post('/users', requireAuth, requireRole('admin'), validate(createUserSchema), createUser);
 router.get('/users', requireAuth, requireRole('admin'), listUsers);
-router.get('/users/detailed', requireAuth, requireRole('admin'), listUsersDetailed); // nouveau
+router.get('/users/detailed', requireAuth, requireRole('admin'), listUsersDetailed);
 router.post('/users/:id/reset-2fa', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), resetTotp);
-router.post('/users/:id/resend-temp-password', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), resendTempPassword); // nouveau
-router.post('/users/:id/unlock', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), unlockUser); // nouveau
-router.post('/users/:id/toggle-active', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), toggleActive); // nouveau
-router.post('/users/notify-dormant', requireAuth, requireRole('admin'), notifyDormantUsers); // nouveau
-router.post('/users/retry-failed-emails', requireAuth, requireRole('admin'), retryFailedEmails); // nouveau
+router.post('/users/:id/resend-temp-password', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), resendTempPassword); 
+router.post('/users/:id/unlock', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), unlockUser); 
+router.post('/users/:id/toggle-active', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), toggleActive); 
+router.post('/users/notify-dormant', requireAuth, requireRole('admin'), notifyDormantUsers); 
+router.post('/users/retry-failed-emails', requireAuth, requireRole('admin'), retryFailedEmails); 
 
-// --- Onglet Communications ---
-router.post('/communications/send', requireAuth, requireRole('admin'), sendCommunication); // nouveau
-router.post('/users/notify-mfa-setup', requireAuth, requireRole('admin'), notifyMfaSetup); // nouveau
+router.post('/communications/send', requireAuth, requireRole('admin'), sendCommunication); 
+router.post('/users/notify-mfa-setup', requireAuth, requireRole('admin'), notifyMfaSetup); 
 
-// --- Onglet Vue d'ensemble ---
-router.get('/overview', requireAuth, requireRole('admin'), getOverview); // nouveau
+router.get('/overview', requireAuth, requireRole('admin'), getOverview);
 
-// --- Onglet Logs & Sécurité ---
-// NB : /logs/export et /logs/anomalies et /logs/user/:id doivent être déclarés
-// avant toute route générique pour éviter les conflits de matching Express.
-router.get('/logs/export', requireAuth, requireRole('admin'), exportLogsCsv); // nouveau
-router.get('/logs/anomalies', requireAuth, requireRole('admin'), getAnomalies); // nouveau
-router.get('/logs/user/:id', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), getUserTimeline); // nouveau
-router.get('/logs', requireAuth, requireRole('admin'), getLogs); // nouveau
+
+router.get('/logs/export', requireAuth, requireRole('admin'), exportLogsCsv); 
+router.get('/logs/anomalies', requireAuth, requireRole('admin'), getAnomalies);
+router.get('/logs/user/:id', requireAuth, requireRole('admin'), validateParams(userIdParamSchema), getUserTimeline); 
+router.get('/logs', requireAuth, requireRole('admin'), getLogs); 
 
 module.exports = router;

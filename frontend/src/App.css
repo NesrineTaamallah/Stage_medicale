@@ -1,9 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* ---------- Palette clinique — Dégradé de bleus ---------- */
-  /* Une seule famille de couleur, du bleu nuit au bleu ciel pâle :
-     plus sobre et plus professionnel qu'un mélange de teintes. */
+  
   --ink: #0e1c30;
   --ink-soft: #45566d;
   --blue-900: #0c2f5e;
@@ -14,7 +12,6 @@
   --blue-lighter: #bfe0f9;
   --blue-pale: #e6f2fb;
 
-  /* Variables principales pour cohérence globale */
   --primary: var(--blue);
   --primary-deep: var(--blue-deep);
   --primary-tint: var(--blue-pale);
@@ -23,7 +20,6 @@
   --accent-deep: var(--blue-700);
   --accent-tint: var(--blue-lighter);
 
-  /* Palette secondaire - nuances neutres froides (dans la même famille) */
   --paper: #f6faff;
   --card: #ffffff;
   --surface: #eef5fc;
@@ -32,7 +28,6 @@
   --slate-lighter: #dae6f2;
   --line: #d3e2f0;
 
-  /* États sémantiques (WCAG AA) */
   --amber: #c8790f;
   --amber-tint: #faedd7;
   --error: #c23b4e;
@@ -46,7 +41,6 @@
   --sun: #d99a2b;
   --sun-tint: #f8ecd6;
 
-  /* Alias rétro-compatibilité */
   --gold: var(--amber);
   --gold-tint: var(--amber-tint);
   --highlight: var(--blue-light);
@@ -65,27 +59,22 @@
   --indigo-light: var(--blue-light);
   --indigo-lighter: var(--blue-pale);
 
-  /* Typographie : Fraunces (display, caractère) + Inter (lecture clinique) */
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, Consolas, monospace;
 
-  /* Rayons — arrondis doux, jamais pointus (registre pédiatrique) */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 22px;
 
-  /* Ombres — teintées de bleu plutôt que gris neutre */
   --shadow-sm: 0 1px 2px 0 rgba(14, 28, 48, 0.05);
   --shadow-md: 0 4px 10px -2px rgba(20, 90, 163, 0.14), 0 2px 4px -1px rgba(20, 90, 163, 0.07);
   --shadow-lg: 0 10px 22px -6px rgba(20, 90, 163, 0.18), 0 4px 8px -2px rgba(20, 90, 163, 0.07);
   --shadow-xl: 0 20px 40px -10px rgba(14, 28, 48, 0.2), 0 10px 16px -6px rgba(20, 90, 163, 0.09);
 
-  /* Dégradé sidebar sombre — même famille bleue que le reste de l'app */
   --sidebar-grad: linear-gradient(180deg, #0e2c52, #0a2140 70%);
 
-  /* Transitions fluides */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -100,7 +89,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- Logo ---------- */
+
 .brand-mark {
   width: 34px;
   height: 34px;
@@ -114,7 +103,6 @@ body {
   box-shadow: 0 4px 10px -3px rgba(20, 90, 163, 0.45), 0 0 0 3px rgba(255, 255, 255, 0.06);
 }
 
-/* ---------- Éléments structurels ---------- */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -134,7 +122,6 @@ body {
   margin: 0;
 }
 
-/* ---------- Signature : tracé EEG ---------- */
 .eeg-trace {
   height: 28px;
   width: 100%;
@@ -160,7 +147,6 @@ body {
   .eeg-trace path { animation: none; stroke-dashoffset: 0; opacity: .8; }
 }
 
-/* ---------- Illustrations de registre (écran de choix SEP/EPR) ---------- */
 .pathology-art {
   width: 100%;
   max-width: 220px;
@@ -168,7 +154,6 @@ body {
   display: block;
 }
 
-/* ---------- Cartes d'authentification ---------- */
 .auth-card {
   width: 420px;
   max-width: calc(100vw - 32px);
@@ -242,7 +227,6 @@ input:disabled, select:disabled {
   cursor: not-allowed;
 }
 
-/* Champs de code : lecture façon instrument */
 input[maxlength="6"] {
   font-family: var(--font-mono);
   font-size: 20px;
@@ -297,7 +281,6 @@ button.secondary {
 }
 button.secondary:hover { background: var(--primary-tint); border-color: var(--primary-soft); color: var(--primary-deep); }
 
-/* ---------- États ---------- */
 .error {
   color: var(--error);
   background: var(--error-tint);
@@ -335,7 +318,7 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   box-shadow: 0 0 0 1px var(--line), 0 10px 24px -8px rgba(17, 24, 39, 0.16);
 }
 
-/* ---------- Tableaux de bord ---------- */
+
 .dashboard {
   max-width: 1040px;
   margin: 0 auto;
@@ -387,7 +370,7 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   margin: 0 0 4px;
 }
 
-/* Fenêtre modale (ex. ajout d'utilisateur) */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -454,7 +437,7 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   background: var(--paper);
 }
 
-/* ---------- Notifications flottantes (Toast) ---------- */
+
 .toast-viewport {
   position: fixed;
   top: 20px;
@@ -521,7 +504,6 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
   .toast { min-width: 0; max-width: none; }
 }
 
-/* Badge de rôle */
 .role-badge {
   display: inline-flex;
   align-items: center;
@@ -555,7 +537,6 @@ button.secondary:hover { background: var(--primary-tint); border-color: var(--pr
 .badge-success { background: var(--success-tint); color: var(--success); }
 .badge-muted   { background: var(--line); color: var(--slate); }
 
-/* ---------- Tables ---------- */
 table {
   border-color: var(--line);
 }
@@ -571,7 +552,6 @@ tbody tr:hover {
   background: var(--primary-tint);
 }
 
-/* ---------- Icônes ligne ---------- */
 .icon {
   display: inline-flex;
   align-items: center;
@@ -580,7 +560,6 @@ tbody tr:hover {
 }
 .icon svg { display: block; }
 
-/* ---------- Actions restructurées (onglet Utilisateurs) ---------- */
 .actions-cell {
   display: flex;
   align-items: center;
@@ -589,7 +568,6 @@ tbody tr:hover {
   position: relative;
 }
 
-/* Toggle actif/inactif : action fréquente et réversible, reste inline */
 .status-toggle {
   display: inline-flex;
   align-items: center;
@@ -629,7 +607,6 @@ tbody tr:hover {
   white-space: nowrap;
 }
 
-/* Bouton kebab (menu ⋮) */
 .kebab-btn {
   width: 32px;
   height: 32px;
@@ -651,7 +628,6 @@ tbody tr:hover {
   color: var(--primary-deep);
 }
 
-/* Menu déroulant groupé */
 .actions-menu {
   position: absolute;
   top: calc(100% + 6px);

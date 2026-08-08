@@ -11,12 +11,9 @@ import './App.css';
 
 function PrivateRoute({ children, role }) {
   const { user, isLoading } = useAuth();
-  if (isLoading) return null; // évite un flash de redirection pendant la vérification /me
+  if (isLoading) return null; 
   if (!user) return <Navigate to="/login" />;
-  // `role` peut être une chaîne (un seul rôle autorisé) ou un tableau
-  // (plusieurs rôles autorisés) — chaque utilisateur des 4 rôles
-  // (admin, clinicien, chercheur, statisticien) n'accède ainsi qu'aux
-  // routes explicitement listées pour son rôle.
+  
   if (role) {
     const allowedRoles = Array.isArray(role) ? role : [role];
     if (!allowedRoles.includes(user?.role)) return <Navigate to="/login" />;

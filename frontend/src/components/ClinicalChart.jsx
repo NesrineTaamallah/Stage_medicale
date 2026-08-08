@@ -1,36 +1,10 @@
-/**
- * Courbe de suivi clinique — SVG "maison", sans dépendance (le projet n'a pas
- * de lib de charts type recharts/chart.js, cf. package.json). Pensé pour les
- * deux courbes que les neurologues utilisent en pratique pour suivre chaque
- * pathologie du registre :
- *
- * - SEP pédiatrique : courbe EDSS (Expanded Disability Status Scale, 0–10)
- *   dans le temps, à chaque visite. C'est LE score de référence utilisé en
- *   consultation pour objectiver la progression du handicap ; on y superpose
- *   classiquement des seuils cliniques repères (EDSS 4 = limitation nette du
- *   périmètre de marche, EDSS 6 = aide à la marche nécessaire).
- *
- * - Épilepsie pharmacorésistante : courbe de fréquence des crises (crises /
- *   mois, normalisée — cf. colonne générée frequence_normalisee_mois dans
- *   epr_frequence_crises) dans le temps. C'est l'équivalent, en épileptologie,
- *   de l'agenda de crises : le suivi se fait par comparaison à la fréquence
- *   de base, avec le seuil "répondeur" à -50% comme repère standard des
- *   essais thérapeutiques et de la pratique clinique (définition ILAE).
- */
+
 
 function buildPath(pts) {
   return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
 }
 
-/**
- * @param points        [{ date: 'YYYY-MM-DD', value: number }], triés par date
- * @param yMin/yMax     bornes de l'axe Y
- * @param yTicks        graduations à afficher sur l'axe Y
- * @param unit           unité affichée dans les info-bulles / axe
- * @param referenceLines [{ y: number, label: string, color?: string }] — seuils cliniques
- * @param color          couleur de la courbe
- * @param emptyLabel     message si aucun point
- */
+
 export default function LineChartSVG({
   points = [],
   yMin = 0,
@@ -75,7 +49,6 @@ export default function LineChartSVG({
 
   const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' });
 
-  // N'affiche pas plus de ~7 étiquettes de dates sous l'axe pour rester lisible.
   const labelEvery = Math.max(1, Math.ceil(clean.length / 7));
 
   return (

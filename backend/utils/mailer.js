@@ -9,15 +9,14 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASSWORD,
   },
-  family: 4, // force IPv4 — corrige la majorité des timeouts Gmail sur Windows/réseaux mal configurés
+  family: 4, 
   connectionTimeout: 10000,
   greetingTimeout: 10000,
   socketTimeout: 15000,
-  logger: true, // affiche l'échange SMTP complet dans la console
+  logger: true, 
   debug: true,
 });
 
-// Vérifie la connexion SMTP au démarrage plutôt qu'à la première tentative d'envoi
 transporter.verify((err) => {
   if (err) {
     console.error('SMTP indisponible au démarrage :', err.message);
@@ -67,9 +66,7 @@ async function sendDormantReminderEmail(toEmail, role) {
 }
 
 async function sendCustomEmail(toEmail, subject, message) {
-  // Le message est saisi en texte libre par l'admin (pas de HTML) : on
-  // échappe les caractères spéciaux puis on ne convertit que les sauts de
-  // ligne, pour éviter toute injection HTML via le formulaire.
+  
   const escapeHtml = (str) => String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

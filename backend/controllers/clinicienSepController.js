@@ -1,13 +1,7 @@
 const pool = require('../config/db');
 const { normalizedSql } = require('../utils/clinicienSql');
 
-/**
- * GET /api/clinicien/registre-sep
- * Alimente la fenêtre "Registre SEP" (Sclérose En Plaques pédiatrique),
- * détachée de la Vue d'Ensemble. Toutes les requêtes sont reprises à
- * l'identique de l'ancien clinicienOverviewController.js — seule leur
- * répartition entre fenêtres a changé.
- */
+
 async function getClinicienRegistreSep(req, res) {
   try {
     const [
@@ -31,8 +25,7 @@ async function getClinicienRegistreSep(req, res) {
       sepAtcdFamiliauxAutoImmuns,
       sepObservance,
     ] = await Promise.all([
-      // --- Répartition par gouvernorat (registre SEP uniquement — seul registre
-      //     qui capture ce champ actuellement) ---
+      
       pool.query(`
         SELECT COALESCE(gouvernorat_code, 'Non renseigné') AS gouvernorat, COUNT(*)::int AS count
         FROM sep_identification_clinique
@@ -40,17 +33,14 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- SEP : délai diagnostic moyen (mois) ---
       pool.query(`SELECT ROUND(AVG(delai_diagnostic_mois)::numeric, 1) AS moyenne FROM sep_identification_clinique WHERE delai_diagnostic_mois IS NOT NULL`),
 
-      // --- SEP : répartition des formes évolutives ---
       pool.query(`
         SELECT COALESCE(forme_evolutive, 'Non renseigné') AS forme, COUNT(*)::int AS count
         FROM sep_evolution
         GROUP BY forme_evolutive
       `),
 
-      // --- SEP : dernier score EDSS moyen (une visite la plus récente par patient) ---
       pool.query(`
         SELECT ROUND(AVG(score_edss)::numeric, 1) AS moyenne, COUNT(*)::int AS nb_patients
         FROM (
@@ -61,17 +51,14 @@ async function getClinicienRegistreSep(req, res) {
         ) dernier
       `),
 
-      // --- SEP : poussées des 90 derniers jours ---
       pool.query(`SELECT COUNT(*)::int AS count FROM sep_poussees WHERE date_poussee >= now() - interval '90 days'`),
 
-      // --- SEP : patients sous traitement de fond actif (pas de date de fin) ---
       pool.query(`
         SELECT COUNT(DISTINCT pseudonyme)::int AS count
         FROM sep_traitement_fond
         WHERE date_fin IS NULL
       `),
 
-      // --- SEP : % de dernières IRM montrant de nouvelles lésions ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE LOWER(TRIM(nouvelles_lesions_vs_irm_anterieure::text)) IN ('oui', 'true', 't', '1'))::int AS avec_nouvelles_lesions,
@@ -83,7 +70,6 @@ async function getClinicienRegistreSep(req, res) {
         ) derniere
       `),
 
-      // --- SEP : % de bandes oligoclonales positives (dernier prélèvement LCR) ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (
@@ -100,7 +86,6 @@ async function getClinicienRegistreSep(req, res) {
         ) dernier
       `),
 
-      // --- SEP : présentation initiale (type de 1er événement + récupération complète) ---
       pool.query(`
         SELECT
           COALESCE(type_premier_evenement, 'Non renseigné') AS type,
@@ -113,7 +98,6 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- SEP : répartition des lignes thérapeutiques (traitement de fond en cours) ---
       pool.query(`
         SELECT ligne_therapeutique, COUNT(DISTINCT pseudonyme)::int AS count
         FROM sep_traitement_fond
@@ -122,7 +106,6 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY ligne_therapeutique
       `),
 
-      // --- SEP : motifs de switch thérapeutique les plus fréquents ---
       pool.query(`
         SELECT motif_switch, COUNT(*)::int AS count
         FROM sep_traitement_fond
@@ -132,7 +115,6 @@ async function getClinicienRegistreSep(req, res) {
         LIMIT 5
       `),
 
-      // --- SEP : % de consanguinité parentale ---
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE LOWER(TRIM(consanguinite_parentale::text)) IN ('oui', 'true', 't', '1'))::int AS positifs,
@@ -140,7 +122,6 @@ async function getClinicienRegistreSep(req, res) {
         FROM sep_antecedents
       `),
 
-      // --- SEP : délai moyen avant conversion en forme secondairement progressive ---
       pool.query(`
         SELECT ROUND(AVG(date_conversion_sp - id.date_diagnostic) / 30.44, 1) AS delai_moyen_mois
         FROM sep_evolution ev
@@ -148,14 +129,7 @@ async function getClinicienRegistreSep(req, res) {
         WHERE date_conversion_sp IS NOT NULL AND id.date_diagnostic IS NOT NULL
       `),
 
-      // --- SEP : EDSS moyen de la cohorte, par trimestre (24 derniers mois).
-      //     generate_series force l'apparition de TOUS les trimestres de la
-      //     fenêtre, y compris ceux sans donnée (edss_moyen = NULL, nb_patients
-      //     = 0) — sans quoi un trimestre vide disparaît silencieusement du
-      //     graphe et son point est relié au trimestre suivant comme s'ils
-      //     étaient consécutifs. nb_patients est renvoyé pour signaler côté
-      //     UI qu'une moyenne reposant sur 1-2 patients n'a pas le même poids
-      //     qu'une moyenne sur toute la cohorte. ---
+      
       pool.query(`
         SELECT
           to_char(q, 'YYYY-"T"Q') AS periode,
@@ -173,12 +147,7 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY q
       `),
 
-      // --- SEP : Taux Annualisé de Poussées (TAP), moyenne de cohorte par
-      //     année civile — réutilise la vue analytics.v_sep_tap_annuel déjà
-      //     définie dans schema_registre.sql (jusqu'ici jamais exploitée).
-      //     generate_series force l'apparition des 3 dernières années même
-      //     sans aucune poussée enregistrée (tap_moyen = NULL, nb_patients = 0),
-      //     pour la même raison que la correction sur l'EDSS trimestriel. ---
+      
       pool.query(`
         SELECT
           y::int AS annee,
@@ -193,11 +162,7 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY y
       `),
 
-      // --- SEP : impact scolaire/cognitif rapporté — sep_suivi.impact_scolaire_cognitif
-      //     et score_cognitif n'apparaissaient jusqu'ici nulle part côté dashboard,
-      //     alors qu'en pédiatrie l'impact cognitif est souvent plus parlant pour
-      //     le suivi au quotidien que l'EDSS moteur seul. score_cognitif_non_applicable
-      //     distingue "non testable selon l'âge" de "jamais évalué". ---
+      
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE impact_scolaire_cognitif = TRUE)::int AS impact_positif,
@@ -208,12 +173,7 @@ async function getClinicienRegistreSep(req, res) {
         FROM sep_suivi
       `),
 
-      // --- SEP : sérologie différentielle (dernier prélèvement par patient) —
-      //     sep_biologie_lcr.anticorps_type n'apparaissait jusqu'ici nulle part
-      //     côté dashboard, alors que la distinction NMO-IgG/MOG / AQP4 vs
-      //     négatif est déterminante pour le diagnostic différentiel
-      //     SEP pédiatrique vs NMOSD/MOGAD (prise en charge thérapeutique
-      //     opposée selon le sous-type). ---
+      
       pool.query(`
         SELECT COALESCE(NULLIF(TRIM(anticorps_type), ''), 'Non recherché / négatif') AS type, COUNT(*)::int AS count
         FROM (
@@ -225,11 +185,7 @@ async function getClinicienRegistreSep(req, res) {
         ORDER BY count DESC
       `),
 
-      // --- SEP : antécédents familiaux auto-immuns neurologiques —
-      //     sep_antecedents.atcd_familiaux_auto_immuns_neuro n'apparaissait
-      //     jusqu'ici nulle part côté dashboard, alors que c'est pertinent
-      //     pour le conseil aux familles et la vigilance sur le diagnostic
-      //     différentiel (SEP vs autre maladie auto-immune). ---
+      
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE atcd_familiaux_auto_immuns_neuro = TRUE)::int AS positifs,
@@ -237,13 +193,7 @@ async function getClinicienRegistreSep(req, res) {
         FROM sep_antecedents
       `),
 
-      // --- SEP : observance thérapeutique (traitement de fond actif) —
-      //     sep_traitement_fond.observance n'apparaissait jusqu'ici nulle
-      //     part côté dashboard, alors qu'une observance partielle/absente
-      //     peut expliquer un échec apparent de traitement autrement classé
-      //     à tort comme switch pour inefficacité. Un seul traitement actif
-      //     par patient (DISTINCT ON le plus récent) pour éviter de compter
-      //     plusieurs fois un même patient. ---
+      
       pool.query(`
         SELECT COALESCE(NULLIF(TRIM(observance), ''), 'Non renseigné') AS observance, COUNT(*)::int AS count
         FROM (

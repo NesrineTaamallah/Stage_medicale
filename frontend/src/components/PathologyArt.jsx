@@ -1,8 +1,4 @@
-/* ---------------------------------------------------------------------- */
-/* Illustrations éditoriales légères, même esprit graphique que            */
-/* EegTrace / BrandMark : traits fins, palette du thème, aucune image      */
-/* externe à charger (pas de dépendance réseau, pas de souci de droits).   */
-/* ---------------------------------------------------------------------- */
+
 
 const SEGMENTS_SEP = [
   { cx: 18, cy: 78, atteint: false },
@@ -14,10 +10,7 @@ const SEGMENTS_SEP = [
   { cx: 214, cy: 50, atteint: false },
 ];
 
-/** Axone myélinisé : segments clairs = myéline intacte, segments en
- * pointillés rouges = zones de démyélinisation (motif caractéristique
- * de la SEP). Sous-titre visuel : la petite courbe pointillée évoque le
- * score EDSS suivi dans le temps. */
+
 export function ArtSEP({ className }) {
   return (
     <svg className={className} viewBox="0 0 240 130" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -43,9 +36,7 @@ export function ArtSEP({ className }) {
   );
 }
 
-/** Silhouette de cerveau stylisée traversée par un tracé EEG en dents de
- * scie (activité paroxystique), pour évoquer l'épilepsie pharmacorésis-
- * tante sans photo ni imagerie médicale réelle. */
+
 export function ArtEPR({ className }) {
   return (
     <svg className={className} viewBox="0 0 240 130" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

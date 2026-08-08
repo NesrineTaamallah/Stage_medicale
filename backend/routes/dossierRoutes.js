@@ -16,8 +16,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// Formats attendus pour un document d'examen : image (IRM, EEG scanné,
-// photo de compte-rendu) ou PDF.
 const ALLOWED_MIME_ENTITE = ['application/pdf', 'image/png', 'image/jpeg', 'image/tiff', 'image/webp'];
 
 const uploadEntite = multer({
@@ -31,15 +29,13 @@ const uploadEntite = multer({
   },
 });
 
-// Comme coordonneePatientRoutes : réservé aux cliniciens.
 router.use(requireAuth, requireRole('clinicien'));
 
 router.get('/', listDossiers);
 router.get('/:pseudonyme', getDossierDetail);
 router.patch('/:pseudonyme/champ', updateChampDossier);
 
-// Document joint à une ligne d'examen (IRM, EEG, LCR, potentiels évoqués,
-// génétique...) — voir migration_entites_fichier_joint.sql.
+
 router.post('/:pseudonyme/entite-fichier', uploadEntite.single('fichier'), uploaderFichierEntite);
 router.get('/entite-fichier/:table/:id/telecharger', telechargerFichierEntite);
 

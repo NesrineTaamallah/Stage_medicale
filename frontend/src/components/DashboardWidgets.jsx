@@ -1,7 +1,4 @@
-// Composants et helpers partagés entre OverviewTabClinicien, RegistreSepTab et
-// RegistreEprTab. Extrait tel quel de l'ancien OverviewTabClinicien.jsx (aucune
-// logique modifiée) pour permettre la découpe en 3 fenêtres distinctes sans
-// dupliquer le code d'affichage.
+
 
 export const GOUVERNORAT_PALETTE = [
   '#175F69', '#C98A2C', '#6B5CA5', '#C1508A', '#0EA5E9',
@@ -16,45 +13,32 @@ export function normalizeKey(str) {
     .toLowerCase();
 }
 
-// NOTE (correction) : un dénominateur nul (aucun dossier renseigné) ne veut
-// pas dire "0 %" — cela veut dire "non calculable". pct() renvoie null dans
-// ce cas ; pctLabel() formate l'affichage en conséquence.
+
 export function pct(part, total) {
   if (!total) return null;
   return Math.round((part / total) * 100);
 }
 
-// CORRECTION : "Non calculable" seul ne dit pas au clinicien POURQUOI —
-// s'il s'agit d'un dénominateur explicitement à 0 (aucun patient évalué)
-// vs une donnée pas encore chargée. On garde la VALEUR principale courte
-// (elle est affichée en gros caractères par HeroStatCard) et on renvoie
-// l'explication séparément via zeroSampleHint(), à afficher en hint (petit
-// texte) — jamais concaténée dans la valeur principale.
+
 export function pctLabel(part, total) {
   const value = pct(part, total);
   if (value === null) return 'Non calculable';
   return `${value}% (${part}/${total})`;
 }
 
-// Hint à afficher sous une carte pctLabel quand le dénominateur est
-// explicitement 0 (à distinguer d'une donnée simplement pas encore chargée).
+
 export function zeroSampleHint(total) {
   if (total === 0) return 'Aucun patient évalué.';
   return undefined;
 }
 
-// Combine plusieurs hints potentiels (certains pouvant être undefined) en un
-// seul texte, pour éviter d'écraser un hint existant (ex. explicatif) quand
-// on ajoute un avertissement (petit effectif / dénominateur nul).
+
 export function combineHints(...hints) {
   const parts = hints.filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : undefined;
 }
 
-// CORRECTION : un pourcentage calculé sur un tout petit effectif (ex. 100%
-// sur 4 patients) peut être lu à tort comme un signal fort. On fournit un
-// hint prêt à l'emploi pour les cartes concernées — seuillé à 10 par défaut,
-// cohérent avec la taille de cohorte pédiatrique typique de ce registre.
+
 export function smallSampleHint(total, threshold = 10) {
   if (total === null || total === undefined || total === 0) return undefined;
   if (total < threshold) return `Basé sur un petit effectif (n=${total}) — à interpréter avec prudence.`;
@@ -62,7 +46,6 @@ export function smallSampleHint(total, threshold = 10) {
 }
 
 export function monthLabel(monthStr) {
-  // monthStr = 'YYYY-MM'
   const d = new Date(`${monthStr}-01T00:00:00`);
   const str = d.toLocaleDateString('fr-FR', { month: 'short' });
   return str.replace('.', '');
@@ -98,12 +81,7 @@ export function CardTitle({ children, hint }) {
   );
 }
 
-/**
- * `onClick` est optionnel : quand fourni, la carte devient un bouton
- * (curseur, léger effet au survol, flèche indicative) — utilisé par les
- * cartes d'alerte de la Vue d'Ensemble pour ouvrir la liste des patients
- * concernés dans la fenêtre "Entités Médicales".
- */
+
 export function HeroStatCard({ label, value, hint, onClick }) {
   const clickable = typeof onClick === 'function';
   return (
@@ -131,14 +109,7 @@ export function HeroStatCard({ label, value, hint, onClick }) {
   );
 }
 
-/**
- * Graphe en ligne générique — une ou plusieurs séries superposées sur un axe
- * temporel discret (mois, trimestre, année...). Réutilisable partout où une
- * tendance de cohorte doit être visualisée (TAP annuel, EDSS moyen, fréquence
- * de crises...), au lieu d'un simple chiffre ponctuel.
- *
- * data: [{ label: '2024-T1', ...séries }], series: [{ key, label, color }]
- */
+
 export function MultiLineChart({ data, series, width = 640, height = 220, unitSuffix = '' }) {
   if (!data || data.length === 0) {
     return <p className="hint" style={{ padding: '30px 0', textAlign: 'center' }}>Pas encore assez de données pour tracer une tendance.</p>;
@@ -228,7 +199,6 @@ export function MultiLineChart({ data, series, width = 640, height = 220, unitSu
   );
 }
 
-/** Camembert générique (réutilise le tracé en arc utilisé côté admin). */
 export function Donut({ segments, size = 132, thickness = 20 }) {
   const total = segments.reduce((s, x) => s + x.value, 0);
   const r = (size - thickness) / 2;
@@ -299,7 +269,6 @@ export function DonutCard({ title, hint, segments, centerLabel, centerValue }) {
   );
 }
 
-/** Barre horizontale empilée — statuts / catégories mutuellement exclusifs. */
 export function StackedBar({ segments }) {
   const total = segments.reduce((s, x) => s + x.value, 0);
   return (

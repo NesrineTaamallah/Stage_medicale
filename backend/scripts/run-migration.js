@@ -1,44 +1,17 @@
-/**
- * Exécute un fichier .sql de migration en réutilisant la même configuration
- * de connexion que le reste du backend (DB_HOST, DB_USER, etc. depuis .env).
- *
- * Différence avec l'ancienne version : ici chaque instruction SQL est
- * exécutée séparément (dans une transaction), pour pouvoir dire exactement
- * quelle instruction plante au lieu d'un vague "erreur de syntaxe sur ou
- * près de CREATE" qui ne précise pas laquelle des ~30 CREATE TABLE est en cause.
- *
- * Rechiffrement automatique de coordonnee_patient :
- * dans le fonctionnement normal de l'app, l'ajout d'un patient passe par
- * coordonneePatientController.js, qui appelle déjà encrypt() avant l'INSERT —
- * les données réelles ne sont donc JAMAIS écrites en clair. Le seul cas où du
- * texte en clair peut atterrir en base, c'est quand un fichier de seed/test
- * (ex. insert_epr_data.sql, insert_sep_data.sql) fait un INSERT SQL direct en
- * contournant ce contrôleur. C'est uniquement pour ce cas que ce script
- * vérifie et rechiffre automatiquement coordonnee_patient après coup —
- * ça ne change rien au comportement de l'application elle-même.
- *
- * Usage :
- *   node backend/scripts/run-migration.js backend/config/schema_registre.sql
- */
+
 const fs = require('fs');
 const path = require('path');
 const pool = require('../config/db');
 const { encryptPlaintextCoordonnees } = require('../utils/encryptPlaintextCoordonnees');
 
-/**
- * Découpe le fichier en instructions individuelles, en respectant :
- *  - les commentaires -- ligne
- *  - les chaînes entre guillemets simples '...'
- *  - les blocs $$ ... $$ (corps de fonctions plpgsql, ex. CREATE OR REPLACE FUNCTION)
- * pour ne pas couper un ';' qui se trouve à l'intérieur de l'un de ces blocs.
- */
+
 function splitStatements(sql) {
   const statements = [];
   let current = '';
   let i = 0;
   let inLineComment = false;
   let inSingleQuote = false;
-  let dollarTag = null; // ex: '$$' ou '$tag$' quand on est dans un bloc dollar-quoted
+  let dollarTag = null; 
 
   while (i < sql.length) {
     const c = sql[i];
@@ -54,7 +27,7 @@ function splitStatements(sql) {
     if (dollarTag) {
       current += c;
       if (sql.startsWith(dollarTag, i)) {
-        current += dollarTag.slice(1); // le premier char déjà ajouté ci-dessus
+        current += dollarTag.slice(1); 
         i += dollarTag.length;
         dollarTag = null;
         continue;
@@ -111,8 +84,7 @@ function splitStatements(sql) {
   const trimmedRest = current.trim();
   if (trimmedRest.length > 0) statements.push(trimmedRest);
 
-  // Ignore les "instructions" qui ne contiennent en réalité que des
-  // commentaires (ex. un bloc de notes en fin de fichier sans ';').
+
   return statements.filter((stmt) => {
     const withoutComments = stmt
       .split('\n')
@@ -145,7 +117,6 @@ async function main() {
 
   let sql = fs.readFileSync(fullPath, 'utf8');
 
-  // Retire un éventuel BOM (fréquent avec des fichiers sauvegardés/édités sous Windows)
   if (sql.charCodeAt(0) === 0xfeff) {
     console.log('BOM détecté en début de fichier — retiré automatiquement.');
     sql = sql.slice(1);
@@ -175,10 +146,7 @@ async function main() {
     await client.query('COMMIT');
     console.log(`\n✅ Migration appliquée avec succès (${statements.length} instructions).`);
 
-    // Rechiffrement automatique : si ce fichier a inséré/modifié des lignes
-    // dans coordonnee_patient (ex. via un INSERT SQL direct dans un seed),
-    // toute donnée encore en clair est détectée et rechiffrée ici — plus
-    // besoin de lancer scripts/fix-encrypt-coordonnees.js à la main.
+    
     if (/coordonnee_patient/i.test(sql)) {
       console.log('\n🔍 coordonnee_patient concernée par ce fichier — vérification du chiffrement...');
       const { scanned, fixed } = await encryptPlaintextCoordonnees(pool);

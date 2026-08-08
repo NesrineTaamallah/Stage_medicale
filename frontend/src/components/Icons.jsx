@@ -1,5 +1,4 @@
-// Icônes ligne minimalistes (stroke, 1.5px) — cohérentes avec l'identité éditoriale clinique.
-// Toutes acceptent { size = 18, color = 'currentColor' }.
+
 
 const base = (size, color, children) => (
   <svg

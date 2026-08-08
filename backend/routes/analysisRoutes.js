@@ -1,14 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { logAccess } = require('../utils/accessLog'); // déjà utilisé ailleurs dans le repo
+const { logAccess } = require('../utils/accessLog');
 
 const ANALYSIS_SERVICE_URL = process.env.ANALYSIS_SERVICE_URL || 'http://localhost:8000';
 
-// Accès réservé clinicien / statisticien (rôle déjà défini dans schema.sql)
 router.use(requireAuth, requireRole('clinicien', 'statisticien'));
 
-// Liste des analyses disponibles (alimente dynamiquement le frontend)
 router.get('/', async (req, res) => {
   try {
     const r = await fetch(`${ANALYSIS_SERVICE_URL}/analyses`);
@@ -20,7 +18,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Exécution d'une analyse précise avec la config choisie par le clinicien
 router.post('/:analyseId/run', async (req, res) => {
   const { analyseId } = req.params;
   try {
@@ -48,6 +45,4 @@ router.post('/:analyseId/run', async (req, res) => {
 
 module.exports = router;
 
-// Dans app.js, ajouter :
-//   const analysisRoutes = require('./routes/analysisRoutes');
-//   app.use('/api/analyses', analysisRoutes);
+
