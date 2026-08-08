@@ -10,11 +10,7 @@ from sqlalchemy import create_engine
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Dossier de sortie des figures : quand ce script est lancé via l'API
-# (script_runner.py), OUTPUT_DIR pointe vers un dossier temporaire propre
-# à cette exécution, récupéré ensuite pour l'affichage dans le frontend.
-# En dehors de l'API (script lancé seul en console), on retombe sur
-# l'ancien chemin fixe.
+
 DOSSIER_SORTIE = os.environ.get("OUTPUT_DIR", "/mnt/user-data/outputs")
 
 def obtenir_moteur_postgres():

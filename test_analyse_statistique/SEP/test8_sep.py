@@ -119,9 +119,6 @@ cohorte AS (
     WHERE ic.date_diagnostic IS NOT NULL
 ),
 
--- Duree de suivi reellement observee par patient (date_dernier_suivi,
--- table sep_suivi). Table pivot 1-1 (PK/FK = pseudonyme) : le LEFT JOIN
--- ci-dessous dans tap_precoce ne peut donc pas dupliquer de lignes.
 suivi AS (
     SELECT s.pseudonyme, s.date_dernier_suivi
     FROM sep_suivi s
@@ -198,11 +195,7 @@ edss_dernier AS (
     FROM analytics.v_sep_edss_dernier_connu
 ),
 
--- CORRECTION v10 #1 : ajout de la borne haute manquante. Le critere C4 de
--- Y_objectif est "EDSS >= 6 atteint ENTRE la fin de fenetre TAP ET 5 ans"
--- (borne fermee des deux cotes). Sans `date_visite < diagnostic + 5 ans`,
--- un patient atteignant EDSS 6 a 8 ou 10 ans etait compte a tort comme
--- evenement precoce. La borne basse (> fin TAP) etait deja correcte.
+
 edss6_delai AS (
     SELECT ic.pseudonyme,
            MIN(v.date_visite) AS date_edss6,

@@ -78,13 +78,7 @@ FENETRE_TAP_PRECOCE_ANNEES = 1
 COVARIABLES_POST_BASELINE_COX = {"tap_moyen"}
 
 SQL_BASE = """
--- Table pivot + identification clinique (registre SEP uniquement)
--- date_diagnostic = vrai repère t=0 du Test #4 ("au diagnostic"), PAS date_inclusion
--- [CORRECTIF #2] date_diagnostic confirmée existante dans la vraie base (colonne
--- non documentée dans le dictionnaire .md fourni, mais présente en Postgres).
--- On exclut ici explicitement les patients pour qui elle est NULL : sans cette
--- date, aucune fenêtre temporelle du Test #4 (IRM initiale, EDSS à horizon,
--- TAP précoce, temps jusqu'à progression) n'est calculable pour ce patient.
+
 SELECT
     p.pseudonyme,
     p.date_inclusion,

@@ -27,7 +27,8 @@ if _HF_TOKEN:
 
 
 
-MODEL_NAME = "nesrine56/whisper-large-v3-ct2"
+
+MODEL_NAME = os.environ.get("WHISPER_MODEL_PATH") or "nesrine56/whisper-large-v3-ct2"
 ALIGN_MODEL_NAME = "jonatasgrosman/wav2vec2-large-xlsr-53-french"
 LANGUAGE = "fr"
 

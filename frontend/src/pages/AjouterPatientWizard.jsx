@@ -470,6 +470,14 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                   <IconAlert size={14} /> La date de diagnostic n'est pas renseignée pour ce dossier. Merci de la compléter ci-dessous pour pouvoir créer le document.
                 </p>
               )}
+              {isAjoutDocument && !form.date_inclusion && (
+                <p style={{
+                  display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5,
+                  color: 'var(--amber, #c8790f)', margin: 0,
+                }}>
+                  <IconAlert size={14} /> La date d'inclusion n'est pas renseignée pour ce dossier. Merci de la compléter ci-dessous pour pouvoir créer le document.
+                </p>
+              )}
               <SummaryRow label="Numéro de dossier" value={form.numero_dossier} />
               <SummaryRow label="Pathologie" value={form.pathologie} />
               {isAjoutDocument && !form.date_diagnostic ? (
@@ -488,7 +496,22 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
               ) : (
                 <SummaryRow label="Date de diagnostic" value={form.date_diagnostic} />
               )}
-              <SummaryRow label="Date d'inclusion" value={form.date_inclusion} />
+              {isAjoutDocument && !form.date_inclusion ? (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px',
+                  background: 'var(--card)', border: '1px solid var(--amber, #c8790f)', borderRadius: 10, fontSize: 13, gap: 12,
+                }}>
+                  <span style={{ color: 'var(--slate-soft)', whiteSpace: 'nowrap' }}>Date d'inclusion</span>
+                  <input
+                    type="date"
+                    value={form.date_inclusion}
+                    onChange={(e) => update('date_inclusion', e.target.value)}
+                    style={{ ...inputStyle, padding: '6px 10px', maxWidth: 170 }}
+                  />
+                </div>
+              ) : (
+                <SummaryRow label="Date d'inclusion" value={form.date_inclusion} />
+              )}
               <SummaryRow label="Type de document" value={TYPES_DOCUMENT.find((t) => t.value === form.type_document)?.label} />
               <SummaryRow label="Type d'entrée" value={form.type_entree === 'audio' ? 'Audio (transcription automatique)' : 'Document scanné'} />
               <SummaryRow label="Fichier" value={file?.name} />
@@ -525,6 +548,35 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                   </p>
                   {audioUrl && (
                     <audio controls src={audioUrl} style={{ width: '100%', marginBottom: 10 }} />
+                  )}
+                  {Array.isArray(result.mots_confiance) && result.mots_confiance.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <p style={{ margin: '0 0 6px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate-soft)' }}>
+                        Score de confiance Whisper (survolez un mot en rouge pour vérifier)
+                      </p>
+                      <div style={{
+                        fontSize: 13, lineHeight: 1.9, padding: 10, background: 'var(--paper)',
+                        border: '1px solid var(--line)', borderRadius: 8,
+                      }}>
+                        {result.mots_confiance.map((w, i) => {
+                          const color = w.confidence === 'low'
+                            ? '#d92d20'
+                            : w.confidence === 'medium'
+                              ? '#c8790f'
+                              : 'var(--slate)';
+                          const weight = w.confidence === 'low' ? 700 : 400;
+                          return (
+                            <span
+                              key={i}
+                              title={`score: ${w.score}`}
+                              style={{ color, fontWeight: weight, marginRight: 4 }}
+                            >
+                              {w.word}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                   <textarea
                     value={texteCorrige}
@@ -609,8 +661,8 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={submitting || !form.date_diagnostic}
-                style={{ ...primaryBtn, opacity: (submitting || !form.date_diagnostic) ? 0.5 : 1, cursor: (!form.date_diagnostic) ? 'not-allowed' : 'pointer' }}
+                disabled={submitting || !form.date_diagnostic || !form.date_inclusion}
+                style={{ ...primaryBtn, opacity: (submitting || !form.date_diagnostic || !form.date_inclusion) ? 0.5 : 1, cursor: (!form.date_diagnostic || !form.date_inclusion) ? 'not-allowed' : 'pointer' }}
               >
                 {submitting ? (
                   <>
