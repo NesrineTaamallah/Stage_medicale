@@ -25,6 +25,8 @@ import os
 import sys
 import traceback
 
+from typing import List, Optional
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -68,8 +70,17 @@ class TranscribeRequest(BaseModel):
     audio_path: str
 
 
+class WordConfidence(BaseModel):
+    word: str
+    start: Optional[float] = None
+    end: Optional[float] = None
+    score: float           # 0..1
+    confidence: str        # "high" | "medium" | "low" -> utilisé pour la coloration frontend
+
+
 class TranscribeResponse(BaseModel):
     text: str
+    words: List[WordConfidence] = []
 
 
 @app.get("/health")
@@ -95,7 +106,7 @@ def transcribe(req: TranscribeRequest):
         raise HTTPException(status_code=404, detail=f"Fichier audio introuvable : {req.audio_path}")
 
     try:
-        text = wt.transcribe_audio(req.audio_path)
+        result = wt.transcribe_audio(req.audio_path)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -105,4 +116,4 @@ def transcribe(req: TranscribeRequest):
         traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=f"Transcription échouée : {e}")
 
-    return {"text": text}
+    return result

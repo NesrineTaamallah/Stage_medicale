@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS documents_bruts (
     chemin_fichier          TEXT NOT NULL,
     nom_fichier_original    TEXT,
     texte_transcrit         TEXT,               -- rempli pour type_entree = 'audio' (WhisperX)
+    -- Confiance par mot pour type_entree = 'audio' uniquement : JSON
+    -- [{word, start, end, score, confidence}], combinaison de la confiance
+    -- ASR (avg_logprob/no_speech_prob du segment) et du score d'alignement
+    -- wav2vec2 par mot. Utilisé par le frontend pour colorer les mots peu
+    -- fiables (rouge < 60%, jaune 60-85%) dans le texte transcrit affiché
+    -- au clinicien. NULL pour les scans (OCR) et les documents transcrits
+    -- avant l'ajout de cette colonne.
+    mots_confiance           JSONB,
     -- Pseudonyme réellement rattaché à ce document, fixé une fois pour
     -- toutes à la création (creerDossier) : soit recalculé par hash pour un
     -- nouveau dossier, soit repris tel quel (existingPatient.pseudonyme)
@@ -46,6 +54,8 @@ CREATE TABLE IF NOT EXISTS documents_bruts (
 -- Pour les bases déjà créées avant l'ajout de la colonne `pseudonyme`
 -- ci-dessus (CREATE TABLE IF NOT EXISTS ne modifie pas une table existante).
 ALTER TABLE documents_bruts ADD COLUMN IF NOT EXISTS pseudonyme VARCHAR(255);
+-- Idem pour `mots_confiance` (voir migration_documents_bruts_mots_confiance.sql).
+ALTER TABLE documents_bruts ADD COLUMN IF NOT EXISTS mots_confiance JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_documents_bruts_numero_dossier ON documents_bruts(numero_dossier);
 CREATE INDEX IF NOT EXISTS idx_documents_bruts_pseudonyme ON documents_bruts(pseudonyme);

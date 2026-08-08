@@ -16,9 +16,9 @@ from difflib import SequenceMatcher
 # la transcription elle-même est correcte, seule la sortie stdout est
 # corrompue. C'est ce texte déjà corrompu qui finit stocké en base.
 if hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 if hasattr(sys.stderr, "buffer"):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 from dotenv import load_dotenv
 
@@ -244,19 +244,64 @@ def _load_models():
 # Fonction principale
 # ---------------------------------------------------------------------------
 
-def transcribe_audio(audio_path: str) -> str:
-    """
-    Transcrit un fichier audio en texte français nettoyé.
+def _segment_asr_confidence(seg: dict) -> float:
+    """Convertit avg_logprob (log-proba, négatif) + no_speech_prob d'un
+    segment ASR en une confiance unique dans [0, 1].
 
-    Étapes : ASR WhisperX -> alignement wav2vec2 FR (best effort) ->
-    dédoublonnage des segments -> corrections lexicales -> normalisation
-    médicale (nombres, unités).
+    exp(avg_logprob) approxime la probabilité moyenne des tokens du
+    segment ; on la pénalise par (1 - no_speech_prob) pour refléter le
+    doute du modèle sur la présence même de parole à cet endroit.
+    """
+    import math
+
+    avg_logprob = seg.get("avg_logprob")
+    no_speech_prob = seg.get("no_speech_prob", 0.0) or 0.0
+
+    if avg_logprob is None:
+        base = 0.75  # valeur neutre si l'info n'est pas dispo (ex. après align)
+    else:
+        base = math.exp(avg_logprob)  # avg_logprob <= 0 -> base in (0, 1]
+
+    conf = base * (1 - no_speech_prob)
+    return max(0.0, min(1.0, conf))
+
+
+def _confidence_level(score: float) -> str:
+    """Palier de confiance utilisé par le frontend pour la coloration."""
+    if score >= 0.85:
+        return "high"
+    if score >= 0.60:
+        return "medium"
+    return "low"
+
+
+def transcribe_audio(audio_path: str) -> dict:
+    """
+    Transcrit un fichier audio en texte français nettoyé, avec un score de
+    confiance par mot destiné à la coloration côté frontend (rouge/jaune
+    pour les mots peu fiables).
+
+    Étapes : ASR WhisperX -> alignement wav2vec2 FR (best effort, donne les
+    timestamps + score par mot) -> dédoublonnage des segments -> corrections
+    lexicales -> normalisation médicale (nombres, unités).
 
     Args:
         audio_path: chemin vers le fichier audio (wav, mp3, m4a, flac...).
 
     Returns:
-        Le texte transcrit et nettoyé (chaîne unique).
+        dict {
+            "text": str,               # texte complet nettoyé
+            "words": [                 # confiance par mot, pour coloration frontend
+                {
+                    "word": str,
+                    "start": float | None,
+                    "end": float | None,
+                    "score": float,         # 0..1
+                    "confidence": "high" | "medium" | "low",
+                },
+                ...
+            ],
+        }
 
     Raises:
         FileNotFoundError: si audio_path n'existe pas.
@@ -271,15 +316,64 @@ def transcribe_audio(audio_path: str) -> str:
     audio = whisperx.load_audio(audio_path)
     result = model.transcribe(audio, batch_size=BATCH_SIZE, language=LANGUAGE)
 
+    # Capture la confiance ASR (avg_logprob/no_speech_prob) AVANT l'alignement :
+    # whisperx.align() reconstruit les segments et ne conserve pas ces champs.
+    asr_conf_by_index = [_segment_asr_confidence(seg) for seg in result["segments"]]
+
     try:
-        result = whisperx.align(
+        aligned = whisperx.align(
             result["segments"], model_a, metadata_a, audio, device,
             return_char_alignments=False,
         )
+        segments = aligned["segments"]
+        # whisperx.align() garde le même nombre de segments, dans le même
+        # ordre -> on peut réattacher la confiance ASR capturée plus haut.
+        for i, seg in enumerate(segments):
+            seg["_asr_conf"] = asr_conf_by_index[i] if i < len(asr_conf_by_index) else 0.75
+        alignment_ok = True
     except Exception as e:
         print(f"[WARN] Alignement indisponible ({e}). Timestamps au niveau segment conservés.", file=sys.stderr)
+        segments = result["segments"]
+        for i, seg in enumerate(segments):
+            seg["_asr_conf"] = asr_conf_by_index[i] if i < len(asr_conf_by_index) else 0.75
+        alignment_ok = False
 
-    cleaned_segments = dedup_consecutive_segments(result["segments"])
+    cleaned_segments = dedup_consecutive_segments(segments)
+
+    # Construit la liste des mots avec score de confiance combiné
+    # (50% confiance ASR du segment, 50% confiance d'alignement du mot
+    # quand disponible ; sinon 100% confiance ASR du segment).
+    words_out = []
+    for seg in cleaned_segments:
+        asr_conf = seg.get("_asr_conf", 0.75)
+        seg_words = seg.get("words") if alignment_ok else None
+
+        if seg_words:
+            for w in seg_words:
+                align_score = w.get("score")
+                if align_score is None:
+                    combined = asr_conf
+                else:
+                    combined = 0.5 * asr_conf + 0.5 * max(0.0, min(1.0, align_score))
+                words_out.append({
+                    "word": w.get("word", "").strip(),
+                    "start": w.get("start"),
+                    "end": w.get("end"),
+                    "score": round(combined, 3),
+                    "confidence": _confidence_level(combined),
+                })
+        else:
+            # Pas d'alignement mot-à-mot dispo -> on retombe sur un score
+            # par mot égal à la confiance ASR du segment entier.
+            for w in seg.get("text", "").strip().split():
+                words_out.append({
+                    "word": w,
+                    "start": seg.get("start"),
+                    "end": seg.get("end"),
+                    "score": round(asr_conf, 3),
+                    "confidence": _confidence_level(asr_conf),
+                })
+
     full_text = " ".join(seg["text"].strip() for seg in cleaned_segments)
     full_text = apply_corrections(full_text)
     full_text = normalize_medical(full_text)
@@ -295,7 +389,8 @@ def transcribe_audio(audio_path: str) -> str:
             torch.cuda.empty_cache()
         except Exception:
             pass
-    return full_text.strip()
+
+    return {"text": full_text.strip(), "words": words_out}
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +404,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        text = transcribe_audio(args.audio)
+        result = transcribe_audio(args.audio)
     except FileNotFoundError as e:
         print(json.dumps({"error": str(e)}) if args.json else f"[ERREUR] {e}", file=sys.stderr)
         sys.exit(1)
@@ -318,9 +413,9 @@ def main():
         sys.exit(1)
 
     if args.json:
-        print(json.dumps({"text": text}, ensure_ascii=False))
+        print(json.dumps(result, ensure_ascii=False))
     else:
-        print(text)
+        print(result["text"])
 
 
 if __name__ == "__main__":

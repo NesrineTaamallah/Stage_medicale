@@ -13,11 +13,31 @@ Endpoint :
     ->  {"markdown": "...", "md_path": "...", "qc_alerts": [...], "n_pages": N}
 
     GET /health -> {"status": "ok", "pipeline_loaded": true|false}
+
+Ajouts par rapport à la version initiale :
+- Verrou global (_ocr_lock) : une seule transcription à la fois sur le CPU.
+  Les requêtes suivantes attendent leur tour au lieu de se battre pour le
+  même CPU, ce qui évite un ralentissement global.
+- Timeout serveur (OCR_TIMEOUT_SECONDS) : renvoie une 504 claire au lieu de
+  laisser le client (curl, frontend, etc.) attendre indéfiniment.
+- Logs de timing à chaque étape (attente du verrou, durée de traitement)
+  pour distinguer facilement "c'est lent" de "c'est bloqué".
 """
 
 import os
+
+# IMPORTANT : doit être défini AVANT l'import de paddleocr_transcribe / paddle,
+# sinon la variable n'a aucun effet (Paddle lit ces variables au chargement
+# de la librairie). Ne modifie ni le modèle ni la logique OCR : ça se contente
+# d'autoriser Paddle à utiliser plusieurs cœurs CPU au lieu d'un seul.
+os.environ.setdefault("OMP_NUM_THREADS", "8")  # ajuste selon ton nombre de cœurs
+
 import sys
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
+from threading import Lock
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -27,7 +47,28 @@ from pydantic import BaseModel
 # (prétraitement, upscaling, OCR, nettoyage markdown, singleton pipeline).
 import paddleocr_transcribe as pt
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("paddleocr_service")
+
 app = FastAPI(title="PaddleOCR-VL Service")
+
+# --------------------------------------------------------------------------
+# Configuration
+# --------------------------------------------------------------------------
+
+OCR_TIMEOUT_SECONDS = 1800  # 30 min max par requête, ajuste selon ce que tu observes
+
+# Une seule transcription à la fois : le CPU ne peut de toute façon pas
+# faire tourner deux inférences PaddleOCR-VL efficacement en parallèle.
+_ocr_lock = Lock()
+
+# Executor séparé pour pouvoir imposer un timeout dur sur transcribe_scan
+# (Lock.acquire seul ne permet pas d'interrompre l'appel en cours).
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-worker")
 
 
 class OcrRequest(BaseModel):
@@ -48,13 +89,13 @@ def _preload_pipeline():
     """Charge le pipeline PaddleOCR-VL dès le démarrage du service, pour que
     la première requête réelle soit déjà rapide elle aussi."""
     try:
-        print("[INFO] Préchargement de PaddleOCR-VL au démarrage...", file=sys.stderr)
+        logger.info("Préchargement de PaddleOCR-VL au démarrage...")
         pt._load_pipeline()
-        print("[INFO] Pipeline prêt, service opérationnel.", file=sys.stderr)
+        logger.info("Pipeline prêt, service opérationnel.")
     except Exception as e:
         # Ne bloque pas le démarrage : le pipeline sera rechargé (ou
         # l'erreur re-levée) à la première vraie requête.
-        print(f"[WARN] Préchargement du pipeline échoué : {e}", file=sys.stderr)
+        logger.warning(f"Préchargement du pipeline échoué : {e}")
 
 
 @app.get("/health")
@@ -67,19 +108,51 @@ def ocr(req: OcrRequest):
     if not os.path.isfile(req.input_path):
         raise HTTPException(status_code=404, detail=f"Fichier introuvable : {req.input_path}")
 
+    t_submitted = time.time()
+    logger.info(f"[OCR] Requête reçue : {req.input_path} (en attente du verrou...)")
+
+    future = _executor.submit(_run_transcribe, req)
+
     try:
-        result = pt.transcribe_scan(req.input_path, out_dir=req.out_dir)
+        result = future.result(timeout=OCR_TIMEOUT_SECONDS)
+    except FutureTimeoutError:
+        elapsed = time.time() - t_submitted
+        logger.error(f"[OCR] Timeout après {elapsed:.1f}s pour {req.input_path}")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Le traitement OCR a dépassé {OCR_TIMEOUT_SECONDS}s "
+                   f"({req.input_path}). Le traitement continue en arrière-plan "
+                   f"mais la réponse n'a pas pu être retournée à temps.",
+        )
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.exception(f"[OCR] Échec pour {req.input_path}")
         raise HTTPException(status_code=500, detail=f"OCR échoué : {e}")
+
+    return result
+
+
+def _run_transcribe(req: OcrRequest) -> dict:
+    """Exécuté dans le worker unique : acquiert le verrou, transcrit,
+    logue les durées, écrit le markdown."""
+    t_wait_start = time.time()
+    with _ocr_lock:
+        wait_duration = time.time() - t_wait_start
+        if wait_duration > 1:
+            logger.info(f"[OCR] Attente du verrou : {wait_duration:.1f}s pour {req.input_path}")
+
+        t0 = time.time()
+        logger.info(f"[OCR] Début transcription : {req.input_path}")
+        result = pt.transcribe_scan(req.input_path, out_dir=req.out_dir)
+        logger.info(f"[OCR] Transcription terminée en {time.time() - t0:.1f}s ({req.input_path})")
 
     markdown_text = result["markdown"]
     md_out_path = Path(req.md_out) if req.md_out else Path(req.input_path).with_suffix(".md")
     try:
         md_out_path.write_text(markdown_text, encoding="utf-8")
     except Exception as e:
-        print(f"[WARN] Impossible d'écrire le fichier .md ({md_out_path}) : {e}", file=sys.stderr)
+        logger.warning(f"Impossible d'écrire le fichier .md ({md_out_path}) : {e}")
 
     return {
         "markdown": markdown_text,

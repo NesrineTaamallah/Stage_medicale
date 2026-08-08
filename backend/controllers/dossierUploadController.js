@@ -52,7 +52,7 @@ async function transcribeAudioViaService(audioPath) {
   if (!data || typeof data.text !== 'string') {
     throw new Error('Réponse du service de transcription illisible.');
   }
-  return data.text;
+  return { text: data.text, words: Array.isArray(data.words) ? data.words : [] };
 }
 
 
@@ -79,7 +79,7 @@ function transcribeAudioSpawn(audioPath) {
       try {
         const parsed = JSON.parse(stdout.trim().split('\n').pop());
         if (parsed.error) return reject(new Error(parsed.error));
-        resolve(parsed.text);
+        resolve({ text: parsed.text, words: Array.isArray(parsed.words) ? parsed.words : [] });
       } catch (e) {
         reject(new Error('Réponse de transcription illisible.'));
       }
@@ -364,11 +364,14 @@ async function creerDossier(req, res) {
   }
 
   let texte_transcrit = null;
+  let mots_confiance = null; // JSONB : confiance par mot (Whisper uniquement, pour coloration frontend)
   let statut = 'en_attente';
 
   if (type_entree === 'audio') {
     try {
-      texte_transcrit = await transcribeAudio(fichier.path);
+      const transcription = await transcribeAudio(fichier.path);
+      texte_transcrit = transcription.text;
+      mots_confiance = transcription.words;
       statut = 'transcrit';
     } catch (err) {
       console.error('Erreur transcription :', err);
@@ -388,12 +391,14 @@ async function creerDossier(req, res) {
     const docResult = await pool.query(
       `INSERT INTO documents_bruts
          (numero_dossier, pathologie, date_diagnostic, type_document, type_entree,
-          chemin_fichier, nom_fichier_original, texte_transcrit, statut, pseudonyme)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          chemin_fichier, nom_fichier_original, texte_transcrit, mots_confiance, statut, pseudonyme)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id`,
       [
         numero_dossier, pathologie, date_diagnostic, type_document, type_entree,
-        fichier.path, fichier.originalname, texte_transcrit, statut, pseudonyme,
+        fichier.path, fichier.originalname, texte_transcrit,
+        mots_confiance ? JSON.stringify(mots_confiance) : null,
+        statut, pseudonyme,
       ]
     );
 
@@ -436,6 +441,7 @@ async function creerDossier(req, res) {
       pseudonyme,
       statut,
       texte_transcrit,
+      mots_confiance,
     });
   } catch (err) {
     console.error('Erreur creerDossier :', err);
@@ -560,7 +566,7 @@ async function getDocumentsByPseudonyme(req, res) {
 
     const docsResult = await pool.query(
       `SELECT id, numero_dossier, pseudonyme, type_document, type_entree, nom_fichier_original,
-              texte_transcrit, statut, created_at
+              texte_transcrit, mots_confiance, statut, created_at
          FROM documents_bruts
         WHERE pathologie = $1
         ORDER BY created_at DESC`,
@@ -581,6 +587,9 @@ async function getDocumentsByPseudonyme(req, res) {
         type_entree: d.type_entree,
         nom_fichier_original: d.nom_fichier_original,
         texte_transcrit: d.texte_transcrit,
+        // Confiance par mot (Whisper uniquement) : liste [{word,start,end,score,confidence}]
+        // utilisée par le frontend pour colorer les mots peu fiables (rouge/jaune).
+        mots_confiance: d.mots_confiance,
         statut: d.statut,
         created_at: d.created_at,
       }));
@@ -634,7 +643,7 @@ async function getDocumentsNonExtraits(req, res) {
 
     const docsResult = await pool.query(
       `SELECT id, numero_dossier, pseudonyme, type_document, type_entree, nom_fichier_original,
-              texte_transcrit, statut, created_at
+              texte_transcrit, mots_confiance, statut, created_at
          FROM documents_bruts
         WHERE pathologie = $1
           AND texte_transcrit IS NOT NULL
@@ -657,6 +666,7 @@ async function getDocumentsNonExtraits(req, res) {
         // dans "Documents associés") — pas seulement le lien du fichier
         // audio/scan, pour que le clinicien puisse relire avant d'extraire.
         texte_transcrit: d.texte_transcrit,
+        mots_confiance: d.mots_confiance,
         statut: d.statut,
         created_at: d.created_at,
       }));
