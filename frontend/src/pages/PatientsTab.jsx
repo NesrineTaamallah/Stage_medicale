@@ -129,6 +129,12 @@ export default function PatientsTab() {
     setError('');
   }
 
+  function openExport() {
+    setModal('EXPORT');
+    setPassword('');
+    setError('');
+  }
+
   function closeModal() {
     setModal(null);
     setPassword('');
@@ -231,13 +237,46 @@ export default function PatientsTab() {
         // Échec partiel (une fraction seulement) : on ferme quand même le
         // modal, les fiches qui ont réussi restent affichées — closeModal()
         // réinitialiserait un message d'erreur ici de toute façon.
+      } else if (modal === 'EXPORT') {
+        // Export chiffré : le mot de passe sert à la fois à réauthentifier
+        // le clinicien ET à dériver la clé de chiffrement du fichier
+        // téléchargé côté serveur (voir exportController.js) — le fichier
+        // reçu n'est donc déchiffrable qu'avec ce même mot de passe, via
+        // backend/scripts/decrypt_export.js.
+        const res = await client.post(
+          '/api/coordonnees/export',
+          { password, pseudonymes: filtered.map((r) => r.pseudonyme) },
+          { responseType: 'blob' }
+        );
+        const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+        const a = document.createElement('a');
+        const horodatage = new Date().toISOString().replace(/[:.]/g, '-');
+        a.href = blobUrl;
+        a.download = `export_patients_${horodatage}.enc`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(blobUrl);
       } else {
         const res = await client.post('/api/coordonnees/reveal', { pseudonyme: modal, password });
         setRows((prev) => prev.map((r) => (r.pseudonyme === modal ? { ...r, data: res.data } : r)));
       }
       closeModal();
     } catch (err) {
-      setError(err.response?.data?.error || 'Mot de passe incorrect.');
+      // La réponse d'erreur de /export arrive en Blob (à cause de
+      // responseType: 'blob' utilisé pour le téléchargement en cas de
+      // succès) : il faut la relire en texte avant de pouvoir en extraire
+      // le message JSON, sinon err.response.data.error est undefined.
+      if (err.response?.data instanceof Blob) {
+        try {
+          const texte = await err.response.data.text();
+          setError(JSON.parse(texte).error || 'Mot de passe incorrect.');
+        } catch {
+          setError('Mot de passe incorrect.');
+        }
+      } else {
+        setError(err.response?.data?.error || 'Mot de passe incorrect.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -259,6 +298,21 @@ export default function PatientsTab() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={openExport}
+              disabled={filtered.length === 0}
+              title="Télécharge un fichier chiffré (AES-256-GCM) contenant les fiches actuellement affichées — protégé par votre mot de passe, à déchiffrer avec backend/scripts/decrypt_export.js"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
+                color: 'var(--teal-deep)', fontSize: 12, fontWeight: 600,
+                cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: filtered.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <IconDownload size={14} />
+              Exporter (chiffré)
+            </button>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: rows.length === 0 ? 'not-allowed' : 'pointer', opacity: rows.length === 0 ? 0.5 : 1 }}>
               <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>Déchiffrer tout</span>
               <input
@@ -380,13 +434,17 @@ export default function PatientsTab() {
             </div>
             <h3 style={{ margin: '0 0 4px', fontSize: 16, fontFamily: 'var(--font-display)' }}>Confirmation requise</h3>
             <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-              Ces données sont sensibles (identité civile du patient). Saisissez votre mot de passe pour les afficher.
+              {modal === 'EXPORT'
+                ? "Ces données sont sensibles (identité civile du patient). Votre mot de passe sert aussi à chiffrer le fichier exporté : lui seul permettra de le déchiffrer plus tard, avec backend/scripts/decrypt_export.js."
+                : "Ces données sont sensibles (identité civile du patient). Saisissez votre mot de passe pour les afficher."}
             </p>
             <div style={{
               fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--paper)', border: '1px solid var(--line)',
               padding: '6px 10px', borderRadius: 8, display: 'inline-block', marginBottom: 16, color: 'var(--teal-deep)',
             }}>
-              {modal === 'ALL' ? `Toutes les lignes (${rows.length} patients)` : `Pseudonyme : ${modal}`}
+              {modal === 'ALL' && `Toutes les lignes (${rows.length} patients)`}
+              {modal === 'EXPORT' && `Export chiffré (${filtered.length} patient(s))`}
+              {modal !== 'ALL' && modal !== 'EXPORT' && `Pseudonyme : ${modal}`}
             </div>
             <input
               type="password"

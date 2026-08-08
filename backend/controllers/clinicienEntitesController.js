@@ -132,6 +132,89 @@ const REQUETES = {
     ORDER BY e.pseudonyme
   `),
 
+  // --- SEP : évidence d'activité de la maladie (EDA), critère NEDA-3 inversé ---
+  // NEDA-3 ("No Evidence of Disease Activity") est le standard le plus utilisé
+  // en pratique clinique et en essais thérapeutiques SEP (Giovannoni et al. 2017 ;
+  // repris par ECTRIMS/EAN) : absence de poussée, absence de progression EDSS
+  // confirmée, absence de nouvelle lésion IRM. Un patient en suivi actif qui
+  // présente AU MOINS UN de ces trois signes sur les 12 derniers mois est en
+  // "évidence d'activité de la maladie" (EDA) et doit être réévalué en priorité
+  // (réévaluation du traitement de fond notamment).
+  // Progression EDSS confirmée = seuil standard Lublin et al. 2014 / essais
+  // pivots (delta >= 1.0 point si EDSS de référence <= 5.5, >= 0.5 point si > 5.5).
+  activiteMaladieSep: async () => pool.query(`
+    WITH edss_ordered AS (
+      SELECT pseudonyme, score_edss, date_visite,
+             ROW_NUMBER() OVER (PARTITION BY pseudonyme ORDER BY date_visite DESC) AS rn
+      FROM sep_edss_visites
+      WHERE score_edss IS NOT NULL
+    ),
+    edss_progression AS (
+      SELECT a.pseudonyme, (a.score_edss - b.score_edss) AS delta, b.score_edss AS score_reference
+      FROM edss_ordered a
+      JOIN edss_ordered b ON b.pseudonyme = a.pseudonyme AND b.rn = 2
+      WHERE a.rn = 1
+    ),
+    irm_recente AS (
+      SELECT DISTINCT ON (pseudonyme) pseudonyme, date_examen, nouvelles_lesions_vs_irm_anterieure
+      FROM sep_irm
+      ORDER BY pseudonyme, date_examen DESC
+    ),
+    derniere_poussee AS (
+      SELECT pseudonyme, MAX(date_poussee) AS derniere_poussee FROM sep_poussees GROUP BY pseudonyme
+    )
+    SELECT p.pseudonyme, 'SEP' AS registre,
+           GREATEST(dp.derniere_poussee, irm.date_examen) AS derniere_info,
+           CASE
+             WHEN dp.derniere_poussee >= now() - interval '12 months' THEN 'Poussée récente (< 12 mois)'
+             WHEN irm.nouvelles_lesions_vs_irm_anterieure AND irm.date_examen >= now() - interval '12 months'
+               THEN 'Nouvelle(s) lésion(s) IRM'
+             WHEN edp.delta IS NOT NULL AND (
+                    (edp.score_reference <= 5.5 AND edp.delta >= 1)
+                 OR (edp.score_reference > 5.5 AND edp.delta >= 0.5)
+                  ) THEN 'Progression EDSS confirmée'
+           END AS statut
+    FROM patients p
+    JOIN sep_suivi s ON s.pseudonyme = p.pseudonyme
+    LEFT JOIN derniere_poussee dp ON dp.pseudonyme = p.pseudonyme
+    LEFT JOIN irm_recente irm ON irm.pseudonyme = p.pseudonyme
+    LEFT JOIN edss_progression edp ON edp.pseudonyme = p.pseudonyme
+    WHERE p.registre = 'SEP'
+      AND ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
+      AND (
+        (dp.derniere_poussee >= now() - interval '12 months')
+        OR (irm.nouvelles_lesions_vs_irm_anterieure AND irm.date_examen >= now() - interval '12 months')
+        OR (edp.delta IS NOT NULL AND (
+              (edp.score_reference <= 5.5 AND edp.delta >= 1)
+           OR (edp.score_reference > 5.5 AND edp.delta >= 0.5)
+        ))
+      )
+    ORDER BY derniere_info DESC NULLS LAST
+  `),
+
+  // --- EPR : pharmacorésistance confirmée (ILAE 2010) mais jamais évaluée
+  //     pour la chirurgie ---
+  // Définition ILAE (Kwan et al. 2010, consensus repris par toutes les
+  // recommandations ultérieures) : pharmacorésistance = échec de 2 traitements
+  // antiépileptiques bien choisis, bien tolérés et bien conduits. La
+  // recommandation ILAE (2022, Surgical Therapies Commission) est de référer
+  // ces patients pour une évaluation chirurgicale SANS délai — la littérature
+  // documente un sous-référencement majeur (< 1% des patients éligibles
+  // référés chaque année). Cette alerte cible donc spécifiquement les patients
+  // qui remplissent le critère ILAE mais n'ont aucun bilan pré-chirurgical
+  // enregistré.
+  pharmacoresistanceSansEvaluationEpr: async () => pool.query(`
+    SELECT p.pseudonyme, 'EPR' AS registre, NULL::date AS derniere_info,
+           'Pharmacorésistance confirmée (ILAE), aucun bilan pré-chirurgical' AS statut
+    FROM patients p
+    JOIN epr_pharmacoresistance epr ON epr.pseudonyme = p.pseudonyme
+    LEFT JOIN epr_bilan_prechirurgical bp ON bp.pseudonyme = p.pseudonyme
+    WHERE p.registre = 'EPR'
+      AND epr.statut_pharmacoresistance_confirme = TRUE
+      AND bp.pseudonyme IS NULL
+    ORDER BY p.pseudonyme
+  `),
+
   // --- Fiches sans extraction des données patient ---
   // Reprend EXACTEMENT la même condition que la carte de comptage
   // correspondante dans clinicienOverviewController.js : un patient est
@@ -161,6 +244,8 @@ const LABELS = {
   bilanMultidisciplinaireAbsent: 'EPR sans aucun bilan multidisciplinaire',
   transitionAdulte: 'Transition ado → adulte (16-18 ans)',
   identiteManquante: 'Fiches sans extraction des données',
+  activiteMaladieSep: 'SEP — évidence d\'activité de la maladie (NEDA-3)',
+  pharmacoresistanceSansEvaluationEpr: 'EPR — pharmacorésistance ILAE sans bilan pré-chirurgical',
 };
 
 async function getListePatientsAlerte(req, res) {

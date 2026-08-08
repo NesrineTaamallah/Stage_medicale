@@ -328,6 +328,36 @@ export default function OverviewTabClinicien({ onAlerteClick }) {
       </div>
 
       {/* =====================================================================
+          1ter. ALERTES CLINIQUES — basées sur des critères de référence en
+          neurologie (NEDA-3 pour la SEP, définition ILAE 2010 pour la
+          pharmacorésistance EPR), distinctes des alertes de suivi/délai
+          ci-dessus qui portent sur des dates administratives.
+      ===================================================================== */}
+      <SectionHeading
+        Icon={IconAlert}
+        title="Alertes cliniques"
+        subtitle="Basées sur des critères de référence en neurologie (NEDA-3, ILAE) — cliquez une carte pour voir la liste des patients concernés"
+      />
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <HeroStatCard
+          label="SEP — évidence d'activité de la maladie"
+          value={data.alertes.activiteMaladieSep}
+          hint={data.alertes.activiteMaladieSep > 0
+            ? "Critère NEDA-3 : poussée < 12 mois, progression EDSS confirmée, ou nouvelle(s) lésion(s) IRM. Réévaluer le traitement de fond."
+            : "Critère NEDA-3 (No Evidence of Disease Activity)."}
+          onClick={() => onAlerteClick?.('activiteMaladieSep')}
+        />
+        <HeroStatCard
+          label="EPR — pharmacorésistance sans bilan pré-chirurgical"
+          value={data.alertes.pharmacoresistanceSansEvaluationEpr}
+          hint={data.alertes.pharmacoresistanceSansEvaluationEpr > 0
+            ? "Définition ILAE 2010 (échec de 2 antiépileptiques bien conduits) atteinte : l'ILAE recommande une évaluation chirurgicale sans délai."
+            : "Définition ILAE de la pharmacorésistance."}
+          onClick={() => onAlerteClick?.('pharmacoresistanceSansEvaluationEpr')}
+        />
+      </div>
+
+      {/* =====================================================================
           1bis. QUALITÉ DE SUIVI — indicateur agrégé "% patients à jour"
           Inspiré des indicateurs standard des registres SEP de référence
           (EDSS/IRM tous les 6-12 mois) : complète les alertes individuelles

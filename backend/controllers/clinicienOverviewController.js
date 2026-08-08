@@ -61,6 +61,8 @@ async function getClinicienOverview(req, res) {
       alertesEegAncien,
       alertesBilanMultidisciplinaireAbsent,
       alertesTransitionAdulte,
+      alertesActiviteMaladieSep,
+      alertesPharmacoresistanceSansEvaluationEpr,
       recentActivity,
       suiviQualite,
     ] = await Promise.all([
@@ -256,6 +258,63 @@ async function getClinicienOverview(req, res) {
           AND ${normalizedSql('e.statut')} NOT IN ('perdu de vue', 'decede')
       `),
 
+      // --- Alerte clinique SEP : évidence d'activité de la maladie (EDA),
+      //     critère NEDA-3 inversé (Giovannoni et al. 2017 ; standard de suivi
+      //     SEP le plus répandu). Reprend EXACTEMENT la même condition que
+      //     clinicienEntitesController.js (type 'activiteMaladieSep'). ---
+      pool.query(`
+        WITH edss_ordered AS (
+          SELECT pseudonyme, score_edss, date_visite,
+                 ROW_NUMBER() OVER (PARTITION BY pseudonyme ORDER BY date_visite DESC) AS rn
+          FROM sep_edss_visites
+          WHERE score_edss IS NOT NULL
+        ),
+        edss_progression AS (
+          SELECT a.pseudonyme, (a.score_edss - b.score_edss) AS delta, b.score_edss AS score_reference
+          FROM edss_ordered a
+          JOIN edss_ordered b ON b.pseudonyme = a.pseudonyme AND b.rn = 2
+          WHERE a.rn = 1
+        ),
+        irm_recente AS (
+          SELECT DISTINCT ON (pseudonyme) pseudonyme, date_examen, nouvelles_lesions_vs_irm_anterieure
+          FROM sep_irm
+          ORDER BY pseudonyme, date_examen DESC
+        ),
+        derniere_poussee AS (
+          SELECT pseudonyme, MAX(date_poussee) AS derniere_poussee FROM sep_poussees GROUP BY pseudonyme
+        )
+        SELECT COUNT(*)::int AS count
+        FROM patients p
+        JOIN sep_suivi s ON s.pseudonyme = p.pseudonyme
+        LEFT JOIN derniere_poussee dp ON dp.pseudonyme = p.pseudonyme
+        LEFT JOIN irm_recente irm ON irm.pseudonyme = p.pseudonyme
+        LEFT JOIN edss_progression edp ON edp.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'SEP'
+          AND ${normalizedSql('s.statut_dernier_suivi')} NOT IN ('perdu de vue', 'decede')
+          AND (
+            (dp.derniere_poussee >= now() - interval '12 months')
+            OR (irm.nouvelles_lesions_vs_irm_anterieure AND irm.date_examen >= now() - interval '12 months')
+            OR (edp.delta IS NOT NULL AND (
+                  (edp.score_reference <= 5.5 AND edp.delta >= 1)
+               OR (edp.score_reference > 5.5 AND edp.delta >= 0.5)
+            ))
+          )
+      `),
+
+      // --- Alerte clinique EPR : pharmacorésistance confirmée (critère ILAE
+      //     2010) mais aucun bilan pré-chirurgical enregistré — recommandation
+      //     ILAE = référer sans délai. Reprend EXACTEMENT la même condition
+      //     que clinicienEntitesController.js (type 'pharmacoresistanceSansEvaluationEpr'). ---
+      pool.query(`
+        SELECT COUNT(*)::int AS count
+        FROM patients p
+        JOIN epr_pharmacoresistance epr ON epr.pseudonyme = p.pseudonyme
+        LEFT JOIN epr_bilan_prechirurgical bp ON bp.pseudonyme = p.pseudonyme
+        WHERE p.registre = 'EPR'
+          AND epr.statut_pharmacoresistance_confirme = TRUE
+          AND bp.pseudonyme IS NULL
+      `),
+
       // --- Activité récente du clinicien connecté, agrégée par jour ---
       pool.query(
         `SELECT
@@ -380,6 +439,8 @@ async function getClinicienOverview(req, res) {
         eegAncien: alertesEegAncien.rows[0]?.count ?? 0,
         bilanMultidisciplinaireAbsent: alertesBilanMultidisciplinaireAbsent.rows[0]?.count ?? 0,
         transitionAdulte: alertesTransitionAdulte.rows[0]?.count ?? 0,
+        activiteMaladieSep: alertesActiviteMaladieSep.rows[0]?.count ?? 0,
+        pharmacoresistanceSansEvaluationEpr: alertesPharmacoresistanceSansEvaluationEpr.rows[0]?.count ?? 0,
       },
       recentActivity: recentActivity.rows.map((r) => ({
         day: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : r.day,
