@@ -48,10 +48,7 @@ function dayLabel(dayStr) {
   return new Date(dayStr + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
-/* ---------------------------------------------------------------------- */
-/* En-tête de section — regroupe les cartes par thème, lecture rapide     */
-/* pour un profil non technique (le médecin-admin doit comprendre en 2s)  */
-/* ---------------------------------------------------------------------- */
+
 
 function SectionHeading({ Icon, title, subtitle }) {
   return (
@@ -79,9 +76,7 @@ function CardTitle({ children, hint }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Primitives graphiques SVG — légères, sans dépendance externe            */
-/* ---------------------------------------------------------------------- */
+
 
 function Donut({ segments, size = 132, thickness = 20 }) {
   const total = segments.reduce((s, x) => s + x.value, 0);
@@ -181,7 +176,6 @@ function Sparkline({ points, width = 220, height = 40, color = 'var(--primary)' 
   );
 }
 
-/** Barre horizontale unique, statuts mutuellement exclusifs (aucun compte compté deux fois). */
 function StackedBar({ segments, height = 22 }) {
   const total = segments.reduce((s, x) => s + x.value, 0);
   return (
@@ -217,14 +211,7 @@ function StackedBar({ segments, height = 22 }) {
   );
 }
 
-/**
- * Graphe à barres empilées, une barre par jour — remplace l'ancienne aire
- * empilée (illisible quand peu de jours ont de la donnée : effet "triangle
- * pointu" trompeur). Ici chaque jour est un repère visuel net, avec
- * quadrillage horizontal et total affiché au-dessus de chaque barre :
- * un médecin non technique doit pouvoir lire "quel jour, combien d'actions"
- * sans effort.
- */
+
 function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
   const n = days.length;
   if (n === 0) return null;
@@ -237,7 +224,6 @@ function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
 
   const totalsPerDay = days.map((_, i) => series.reduce((s, ser) => s + ser.values[i], 0));
   const rawMax = Math.max(...totalsPerDay, 1);
-  // arrondi à un palier "propre" pour un quadrillage lisible (5, 10, 15, 20...)
   const niceMax = Math.max(5, Math.ceil(rawMax / 5) * 5);
   const hasData = totalsPerDay.some((v) => v > 0);
 
@@ -375,7 +361,6 @@ function MiniBarChart({ buckets, height = 90 }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
 
 function HeroStatCard({ label, value, Icon, tone = 'primary', onClick, expanded, hint, urgent }) {
   const palette = {
@@ -442,7 +427,7 @@ export default function OverviewTab({ onNavigateToLogs, onNavigateToUser, onNavi
 
   useEffect(() => {
     fetchOverview();
-    const interval = setInterval(fetchOverview, 60000); // rafraîchissement auto — vue "état de santé"
+    const interval = setInterval(fetchOverview, 60000); 
     return () => clearInterval(interval);
   }, [fetchOverview]);
 

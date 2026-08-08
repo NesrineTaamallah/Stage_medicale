@@ -34,7 +34,6 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString('fr-FR');
 }
 
-/** Barre de complétude compacte pour la liste des dossiers — couleur selon le seuil (rouge < 50%, ambre < 80%, vert >= 80%). */
 function CompletudeCell({ value }) {
   const pct = Number.isFinite(value) ? value : 0;
   const color = pct >= 80 ? 'var(--success, #1c7a52)' : pct >= 50 ? 'var(--amber, #c8790f)' : 'var(--error, #c23b4e)';
@@ -57,10 +56,7 @@ function formatValue(v) {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? 'Oui' : 'Non';
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return fmtDate(v);
-  // Les colonnes numériques (NUMERIC côté PostgreSQL) reviennent souvent
-  // en JS comme des chaînes ("180.00", "15.0"...) : on les affiche comme
-  // de vrais chiffres formatés (fr-FR, sans zéros décimaux inutiles)
-  // plutôt que de laisser passer la chaîne brute telle quelle.
+  
   if (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)))) {
     const n = typeof v === 'number' ? v : Number(v);
     return n.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
@@ -68,7 +64,6 @@ function formatValue(v) {
   return String(v);
 }
 
-/** Grille label/valeur "boîte" pour les champs simples (scalaires) d'un objet. */
 function FieldsGrid({ entries }) {
   const filtered = entries.filter(([k]) => !['id', 'pseudonyme'].includes(k));
   if (filtered.length === 0) return null;
@@ -91,11 +86,7 @@ function FieldsGrid({ entries }) {
   );
 }
 
-// Miroir strict de EDITABLE_FIELDS côté backend (dossierController.js) :
-// seuls ces champs peuvent être modifiés depuis le dossier détaillé.
-// Toute clé absente d'ici reste en lecture seule (ex. delai_diagnostic_mois,
-// colonne calculée côté SQL — la modifier n'aurait de toute façon aucun
-// effet et provoquerait une erreur serveur).
+
 const IDENTIFICATION_TABLE_MAP = {
   SEP: {
     date_inclusion: 'patients', age: 'patients',
@@ -110,21 +101,7 @@ const IDENTIFICATION_TABLE_MAP = {
   },
 };
 
-/**
- * Variante éditable de FieldsGrid, réservée à l'onglet Identification.
- *
- * Parcours d'édition volontairement "à friction" pour éviter tout
- * enregistrement accidentel (clic malheureux + Entrée) :
- *   1. le champ est en lecture seule par défaut ;
- *   2. un clic explicite sur l'icône crayon bascule CE champ, et lui seul,
- *      en mode édition (input local, rien n'est envoyé au serveur) ;
- *   3. "Annuler" abandonne sans rien envoyer ;
- *   4. "Enregistrer" ouvre une confirmation native (window.confirm) — il
- *      faut valider ce second dialogue pour que la requête PATCH parte
- *      réellement. Appuyer sur Entrée dans le champ ne déclenche PAS
- *      l'enregistrement (onKeyDown intercepté) : il faut passer par le
- *      bouton + la confirmation.
- */
+
 function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
   const tableMap = IDENTIFICATION_TABLE_MAP[registre] || {};
   const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre'].includes(k));
@@ -148,7 +125,7 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
 
   async function confirmSave(k) {
     const table = tableMap[k];
-    if (!table) return; // sécurité : ne devrait pas arriver, le crayon n'est pas affiché sinon
+    if (!table) return; 
     const confirmed = window.confirm(
       `Confirmer la modification du champ "${humanizeKey(k)}" ?\n\nNouvelle valeur : ${draft || '(vide)'}`
     );
@@ -188,9 +165,7 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
                   type={k.startsWith('date_') ? 'date' : 'text'}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  // Entrée ne soumet rien : évite qu'une pression accidentelle
-                  // (ou un clavier virtuel mal maîtrisé) enregistre sans passer
-                  // par le bouton + la confirmation ci-dessous.
+                  
                   onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
                   style={{
                     padding: '8px 10px', border: '1.5px solid var(--teal)', borderRadius: 9,
@@ -227,10 +202,7 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
                 )}
               </div>
             ) : (
-              // position: relative + le crayon en position absolute DANS la
-              // boîte (au lieu d'être accolé au libellé au-dessus, où il
-              // pouvait se retrouver mal placé quand le libellé passait sur
-              // plusieurs lignes, ex. "AGE DIAGNOSTIC MOIS").
+              
               <div style={{ position: 'relative' }}>
                 <div style={{
                   padding: '9px 34px 9px 11px', border: '1.5px solid var(--line)', borderRadius: 9,
@@ -244,11 +216,7 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
                     onClick={() => startEdit(k, v)}
                     title="Modifier ce champ"
                     style={{
-                      // Coin haut-droit, à distance fixe des bords (pas de
-                      // centrage vertical par transform) : l'icône reste
-                      // strictement DANS le cadre, quelle que soit la
-                      // hauteur de la boîte, avec un petit fond qui la
-                      // détache visuellement du texte en dessous.
+                      
                       position: 'absolute', top: 5, right: 5, width: 20, height: 20,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       border: 'none', borderRadius: 5, background: 'var(--teal-tint)',
@@ -267,24 +235,7 @@ function EditableFieldsGrid({ entries, pseudonyme, registre, onFieldSaved }) {
   );
 }
 
-/**
- * Variante générique de EditableFieldsGrid (voir plus haut, initialement
- * réservée à l'onglet Identification) : ici toutes les entrées viennent
- * d'UNE SEULE table (`table`), ce qui couvre toutes les autres catégories
- * cliniques. `rowId` doit être fourni pour les tables "répétées" (une ligne
- * parmi plusieurs pour ce patient — visite, poussée, examen...) ; il est
- * ignoré pour les tables "singleton" (une ligne par patient).
- *
- * Même parcours à friction volontaire que l'original : lecture seule par
- * défaut -> crayon -> input local -> confirmation native avant tout PATCH.
- */
-/**
- * Case "Document" d'une ligne d'examen (IRM, EEG, LCR, potentiels évoqués,
- * génétique) : permet d'uploader le fichier associé (image ou PDF de
- * l'examen) et, une fois présent, propose son téléchargement. Le chemin est
- * géré uniquement côté serveur (chemin_fichier) — le clinicien ne
- * manipule jamais le chemin lui-même, seulement le fichier.
- */
+
 function FichierField({ table, rowId, pseudonyme, cheminFichier, nomFichierOriginal, onUploaded }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -292,7 +243,7 @@ function FichierField({ table, rowId, pseudonyme, cheminFichier, nomFichierOrigi
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0];
-    e.target.value = ''; // permet de re-sélectionner le même fichier ensuite
+    e.target.value = ''; 
     if (!file) return;
 
     setUploading(true);
@@ -375,9 +326,7 @@ function FichierField({ table, rowId, pseudonyme, cheminFichier, nomFichierOrigi
 }
 
 function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldSaved }) {
-  // nom_fichier_original s'affiche à l'intérieur de la case "Document"
-  // (chemin_fichier) plutôt que comme un champ texte séparé et éditable —
-  // il est renseigné automatiquement à l'upload, jamais saisi à la main.
+  
   const filtered = entries.filter(([k]) => !['id', 'pseudonyme', 'registre', 'created_at', 'nom_fichier_original'].includes(k));
   const nomFichierOriginal = entries.find(([k]) => k === 'nom_fichier_original')?.[1];
   const [editingKey, setEditingKey] = useState(null);
@@ -425,9 +374,7 @@ function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldS
       {filtered.map(([k, v]) => {
         const isEditing = editingKey === k;
 
-        // Case "Document" (chemin_fichier) : au lieu d'un champ texte, un
-        // bouton d'upload + un lien de téléchargement une fois le fichier
-        // présent — le clinicien choisit le fichier, jamais le chemin.
+        
         if (k === 'chemin_fichier') {
           return (
             <FichierField
@@ -523,19 +470,7 @@ function GenericEditableFieldsGrid({ entries, table, rowId, pseudonyme, onFieldS
   );
 }
 
-/**
- * Rendu générique et récursif d'un bloc d'entités : champs simples en grille,
- * sous-objets en sous-titre, tableaux répétés (visites, IRM, traitements...)
- * en liste de fiches. Évite de coder en dur chaque champ du schéma clinique,
- * qui évolue encore (cf. corrections successives dans schema_registre.sql).
- *
- * `tables` décrit, pour CETTE section, à quelle table SQL appartient chaque
- * clé de premier niveau (voir SECTION_TABLES_SEP / SECTION_TABLES_EPR plus
- * bas) — la clé spéciale `self` s'applique quand les champs simples de
- * `data` appartiennent directement à une table (ex. Antécédents). Quand
- * aucune correspondance n'est trouvée pour une clé, la section reste en
- * lecture seule par sécurité plutôt que de risquer un mauvais mapping.
- */
+
 function SectionContent({ data, tables, pseudonyme, onSaved, depth = 0 }) {
   if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
     return <p className="hint" style={{ margin: 0 }}>Aucune donnée extraite pour cette section.</p>;
@@ -612,11 +547,7 @@ function SectionContent({ data, tables, pseudonyme, onSaved, depth = 0 }) {
   );
 }
 
-// Table SQL d'origine de chaque catégorie affichée dans le dossier détaillé
-// (hors Identification, qui a son propre mapping mixte plus haut) — permet
-// à SectionContent de savoir quel PATCH envoyer pour chaque champ. `self`
-// = les champs simples de la section viennent directement de cette table ;
-// une clé nommée = ce sous-objet/tableau vient de cette table.
+
 const SECTION_TABLES_SEP = {
   antecedents: { self: { table: 'sep_antecedents', singleton: true } },
   presentation: { self: { table: 'sep_presentation_initiale', singleton: true } },
@@ -658,15 +589,7 @@ const SECTION_TABLES_EPR = {
   suivi: { self: { table: 'epr_suivi', singleton: true } },
 };
 
-/**
- * Catégories d'entités par registre, une par onglet — reprises telles quelles
- * des tableaux "Question 1 : Typologie des entités médicales à extraire"
- * (Tableau 1 registre SEP, Tableau 2 registre EPR). Chaque `get` va chercher
- * la portion de l'objet renvoyé par GET /api/dossiers/:pseudonyme (voir
- * dossierController.js -> buildEntitesSEP / buildEntitesEPR) correspondant à
- * cette catégorie précise, plutôt que de regrouper plusieurs catégories sous
- * un seul onglet générique "Évolution clinique" / "Imagerie" / "Traitements".
- */
+
 const TABS_SEP = [
   { key: 'identification', label: 'Identification', Icon: IconUsers, group: 'Clinique', get: (d) => stripIdent(d.identification) },
   { key: 'antecedents', label: 'Antécédents', Icon: IconHistory, group: 'Clinique', get: (d) => d.antecedents },
@@ -697,11 +620,8 @@ const TABS_EPR = [
   { key: 'suivi', label: 'Suivi', Icon: IconRefresh, group: 'Suivi', get: (d) => ({ statutDernierSuivi: d.suivi?.statut_dernier_suivi, dureeSuiviMois: d.suivi?.duree_suivi_mois }) },
 ];
 
-// Ordre d'affichage des groupes dans la sidebar (accordéon).
 const GROUP_ORDER = ['Clinique', 'Paraclinique', 'Traitement', 'Suivi'];
 
-// IconChart n'est volontairement pas importé sous ce nom pour éviter tout
-// conflit avec un usage futur de IconActivity ; petit alias local.
 function IconChartIcon(props) { return <IconTarget {...props} />; }
 
 function stripIdent(ident) {
@@ -710,7 +630,6 @@ function stripIdent(ident) {
   return rest;
 }
 
-/** Barre d'onglets horizontale, groupée par famille clinique (séparateur discret entre groupes) — remplace la liste latérale, une seule source de navigation. */
 function HorizontalNav({ tabs, active, onChange }) {
   const byGroup = GROUP_ORDER
     .map((g) => ({ group: g, items: tabs.filter((t) => t.group === g) }))
@@ -754,21 +673,6 @@ function HorizontalNav({ tabs, active, onChange }) {
   );
 }
 
-/**
- * Courbe de suivi, propre à chaque pathologie — affichée en tête de l'onglet
- * "Suivi", là où le clinicien s'attend à voir la trajectoire du patient plutôt
- * qu'un simple tableau de champs :
- *
- * - SEP : courbe EDSS dans le temps (une mesure par visite, sep_edss_visites).
- *   Seuils repères EDSS 4 (limitation nette du périmètre de marche sans aide)
- *   et EDSS 6 (aide à la marche unilatérale nécessaire) — les deux jalons
- *   cliniques classiques utilisés pour discuter la trajectoire avec la famille.
- *
- * - EPR : courbe de fréquence des crises dans le temps (crises/mois normalisé,
- *   epr_frequence_crises.frequence_normalisee_mois). Seuil "répondeur" à -50%
- *   par rapport à la fréquence de base (1ère mesure disponible) — définition
- *   standard utilisée en épileptologie pour juger l'efficacité d'un traitement.
- */
 function SuiviChart({ registre, data }) {
   if (registre === 'EPR') {
     const rows = data.evolutionClinique?.frequenceCrises || [];
@@ -832,23 +736,9 @@ function SuiviChart({ registre, data }) {
   );
 }
 
-/**
- * Vue "Dossier" pleine page — remplace l'ancienne modale, trop étroite pour
- * accueillir un onglet par catégorie clinique. Reprend l'esprit de la maquette
- * fiche patient (bandeau patient à gauche, onglets + contenu à droite, sur
- * toute la largeur disponible) plutôt qu'un panneau centré à largeur fixe.
- */
-/**
- * Nom & prénom en clair dans la fiche dossier — pour que le médecin identifie
- * son patient sans quitter cette page pour l'onglet "Identités patients".
- * Réutilise EXACTEMENT le même mécanisme que cet onglet (POST
- * /api/coordonnees/reveal, re-confirmation du mot de passe du clinicien
- * connecté, accès journalisé côté serveur) : le nom reste flouté/masqué tant
- * que ce n'est pas confirmé, il n'est jamais renvoyé "en clair" par défaut
- * avec le reste du dossier.
- */
+
 function IdentityReveal({ pseudonyme }) {
-  const [nom, setNom] = useState(null); // null = pas encore déverrouillé
+  const [nom, setNom] = useState(null); 
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -947,12 +837,7 @@ function IdentityReveal({ pseudonyme }) {
   );
 }
 
-/**
- * Résumé rapide affiché sous l'identité du patient dans la sidebar : les 1-2
- * chiffres qu'un clinicien regarde en premier avant même d'ouvrir un onglet
- * (dernier EDSS pour la SEP, dernière fréquence de crises pour l'EPR). Évite
- * que la sidebar ne soit qu'une redite de la navigation.
- */
+
 function QuickStats({ registre, data }) {
   if (registre === 'EPR') {
     const rows = data.evolutionClinique?.frequenceCrises || [];
@@ -990,13 +875,6 @@ function QuickStats({ registre, data }) {
   );
 }
 
-/**
- * L'extraction "en masse" pour un patient (tous ses documents non extraits
- * d'un coup) se fait désormais via la fenêtre modale ExtractionModal
- * (composants/ExtractionModal.jsx) : un seul bouton "Extraire" en haut de
- * la fenêtre lance l'extraction de tous les textes bruts listés, et le
- * résultat structuré/modifiable apparaît sous chacun.
- */
 
 function DossierView({ pseudonyme, onBack }) {
   const [data, setData] = useState(null);
@@ -1021,10 +899,7 @@ function DossierView({ pseudonyme, onBack }) {
   const activeDef = tabs.find((t) => t.key === activeTab) || tabs[0];
   const sectionTables = (registre === 'EPR' ? SECTION_TABLES_EPR : SECTION_TABLES_SEP)[activeTab];
 
-  // Après tout enregistrement hors onglet Identification (structure plus
-  // variée : objets imbriqués, tableaux de lignes), on recharge simplement
-  // le dossier complet plutôt que de rejouer une mise à jour "à la main"
-  // de l'état local pour chaque forme de donnée possible.
+  
   function reloadDossier() {
     client.get(`/api/dossiers/${pseudonyme}`).then((res) => setData(res.data)).catch(() => {});
   }
@@ -1111,28 +986,7 @@ function DossierView({ pseudonyme, onBack }) {
   );
 }
 
-/**
- * L'ajout d'un dossier (audio/scan -> transcription WhisperX -> pseudonymisation
- * -> NER) ouvre désormais le wizard plein écran AjouterPatientWizard —
- * voir son rendu plus bas, dans EntitesMedicalesTab.
- */
 
-
-/**
- * Fenêtre "Entités Médicales" — tableau de tous les dossiers (pseudonyme,
- * registre, dates), "Voir" pour le détail des entités extraites par le NER
- * (par catégorie), "Notes" libres, "Ajouter" (aperçu pipeline, pas encore
- * branché).
- *
- * `alertType` / `onConsumed` sont fournis par ClinicienDashboard : quand on
- * arrive ici via une carte d'alerte de la Vue d'Ensemble, on va chercher la
- * liste des patients concernés par cette alerte (GET
- * /api/clinicien/entites/alerte/:type) et on filtre le tableau sur ces
- * pseudonymes uniquement, avec un bandeau + un bouton pour repasser à la
- * liste complète. onConsumed() efface le filtre côté ClinicienDashboard pour
- * que revenir plus tard sur cet onglet sans passer par une carte affiche la
- * liste complète, pas un filtre périmé.
- */
 export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   const dossiersScrollRef = useDragScroll();
   const [rows, setRows] = useState([]);
@@ -1142,25 +996,16 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
   const [viewPseudo, setViewPseudo] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
-  const [alertFilter, setAlertFilter] = useState(null); // Set<pseudonyme> | null
+  const [alertFilter, setAlertFilter] = useState(null); 
   const [alertLabel, setAlertLabel] = useState('');
   const [alertLoading, setAlertLoading] = useState(false);
   const [alertError, setAlertError] = useState('');
 
-  // Mode "ajout de document à un dossier existant" : rempli soit en cliquant
-  // sur "Ajouter" pour un pseudonyme déjà listé (on va chercher son numéro
-  // de dossier + pathologie + date de diagnostic auprès du serveur), soit
-  // depuis l'alerte "patient déjà existant" affichée par le wizard lui-même.
+  
   const [ajoutPatient, setAjoutPatient] = useState(null);
-  const [ajoutLoading, setAjoutLoading] = useState(null); // pseudonyme en cours de résolution, ou null
+  const [ajoutLoading, setAjoutLoading] = useState(null); 
   const [ajoutError, setAjoutError] = useState('');
-
-  // Pseudonyme dont le panneau "Extraire" est déplié inline dans le
-  // tableau — sans passer par la fenêtre détail du dossier (DossierView).
-  // C'est le raccourci demandé pour le cas "le médecin a validé la
-  // transcription et quitté sans saisir l'identité" : depuis l'alerte
-  // "Fiches sans extraction des données", extraire directement depuis la liste.
-  const [extractRow, setExtractRow] = useState(null); // pseudonyme | null
+  const [extractRow, setExtractRow] = useState(null);
 
   async function ouvrirAjoutDocument(row) {
     setAjoutError('');
@@ -1214,13 +1059,12 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
         setAlertLoading(false);
         onConsumed?.();
       });
-  }, [alertType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [alertType]); 
 
   const bySearch = rows.filter((r) => r.pseudonyme.toLowerCase().includes(search.toLowerCase()));
   const filtered = alertFilter ? bySearch.filter((r) => alertFilter.has(r.pseudonyme)) : bySearch;
 
-  // Dossier ouvert -> vue pleine page (plus de modale étroite), le reste
-  // (liste + recherche + alertes) reste monté en arrière-plan.
+ 
   if (viewPseudo) {
     return <DossierView pseudonyme={viewPseudo} onBack={() => setViewPseudo(null)} />;
   }
@@ -1382,12 +1226,7 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
 
       {showAdd && (
         <AjouterPatientWizard
-          // La `key` force React à démonter/remonter le composant dès que
-          // `ajoutPatient` change (ex. clic sur "Ajouter un document à ce
-          // dossier" depuis l'alerte doublon) : sans elle, c'est la même
-          // instance qui reste montée et son état interne (form, étape)
-          // ne se réinitialise jamais avec les infos du doublon — le
-          // wizard semblait alors "ne rien faire" au clic sur ce bouton.
+          
           key={ajoutPatient ? `ajout-${ajoutPatient.pseudonyme}` : 'nouveau'}
           existingPatient={ajoutPatient}
           onSwitchToAjout={(doublon) => setAjoutPatient({
@@ -1398,10 +1237,7 @@ export default function EntitesMedicalesTab({ alertType, onConsumed }) {
             date_inclusion: doublon.date_inclusion,
           })}
           onVoirDossier={(pseudonyme) => {
-            // "Voir le dossier" depuis l'alerte doublon : ferme le wizard et
-            // ouvre directement la vue détail (DossierView) de ce
-            // pseudonyme — équivalent au clic sur "Voir" dans la ligne du
-            // tableau Entités Médicales.
+            
             setShowAdd(false);
             setAjoutPatient(null);
             setViewPseudo(pseudonyme);

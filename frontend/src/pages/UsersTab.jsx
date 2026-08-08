@@ -21,8 +21,7 @@ function StatusBadges({ u }) {
   );
 }
 
-// Toggle inline pour l'état actif/inactif : action fréquente et réversible,
-// elle reste visible directement dans la ligne plutôt que noyée dans un menu.
+
 function StatusToggle({ user, busy, onToggle }) {
   return (
     <button
@@ -39,8 +38,7 @@ function StatusToggle({ user, busy, onToggle }) {
   );
 }
 
-// Menu groupé pour les actions secondaires : les actions à risque (2FA, désactivation)
-// sont visuellement séparées et colorées pour éviter tout mis-clic.
+
 function ActionsMenu({ user, busy, open, isSelf, onToggleOpen, onHistory, onResendPassword, onUnlock, onReset2FA }) {
   const isLocked = user.locked_until && new Date(user.locked_until) > new Date();
 
@@ -93,8 +91,7 @@ function ActionsMenu({ user, busy, open, isSelf, onToggleOpen, onHistory, onRese
 
 const DORMANT_DAYS = 60;
 
-// Filtres rapides déclenchés depuis la Vue d'ensemble ("revue groupée") :
-// évite à l'admin de recréer manuellement le filtre qu'il vient de voir sur un compteur.
+
 const QUICK_FILTERS = {
   dormant: {
     label: 'Comptes dormants (> 60j sans connexion)',
@@ -141,11 +138,9 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
     }
   }, [initialQuickFilter, onQuickFilterHandled]);
 
-  // Tri (correction #2)
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
-  // Formulaire de création (logique identique à l'existant)
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('clinicien');
@@ -157,7 +152,6 @@ export default function UsersTab({ onNavigateToUserLogs, initialQuickFilter, onQ
   const [createErr, setCreateErr] = useState('');
   const [busyId, setBusyId] = useState(null);
 
-  // Menu d'actions groupé (⋮) : un seul ouvert à la fois, fermé au clic extérieur / Échap
   const [openMenuId, setOpenMenuId] = useState(null);
   const tableRef = useRef(null);
 

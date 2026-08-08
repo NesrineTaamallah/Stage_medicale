@@ -5,13 +5,7 @@ import Toast from '../components/Toast';
 
 const ROLE_LABELS = { admin: 'Admins', clinicien: 'Cliniciens', chercheur: 'Chercheurs', statisticien: 'Statisticiens' };
 
-/**
- * Onglet "Communications" : permet à un admin (souvent un médecin, pas
- * forcément à l'aise avec l'outil) d'envoyer un email libre — sujet + texte —
- * depuis la plateforme, à un ou plusieurs utilisateurs précis. Demande de
- * l'encadrante : parfois un mail personnalisé est nécessaire en dehors des
- * emails automatiques (mot de passe, rappel).
- */
+
 export default function CommunicationsTab() {
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);

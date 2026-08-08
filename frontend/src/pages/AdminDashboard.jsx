@@ -16,12 +16,7 @@ const NAV_ITEMS = [
   { key: 'logs', Icon: IconSearch, label: 'Journaux' },
 ];
 
-/**
- * Extrait un "Prénom Nom" présentable à partir d'un email du type
- * prenom.nom@domaine.tld (format utilisé par tous les comptes du registre).
- * Pas de casse-tête si le format ne matche pas : on retombe sur la partie
- * locale de l'email telle quelle plutôt que d'afficher un email brut.
- */
+
 function displayNameFromEmail(email) {
   if (!email) return 'Administrateur';
   const local = email.split('@')[0];
@@ -32,7 +27,6 @@ function displayNameFromEmail(email) {
     .join(' ');
 }
 
-/** "Nesrine Taamallah" → "NT", pour l'avatar rond du pied de sidebar. */
 function initialsFromName(name) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return 'AD';
@@ -40,7 +34,6 @@ function initialsFromName(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** "Dimanche 2 août 2026" — capitalisée, format lu par toute l'app côté admin. */
 function todayFr() {
   const str = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -66,9 +59,7 @@ export default function AdminDashboard() {
     setTab('logs');
   }
 
-  // Boutons "revue groupée" de la Vue d'ensemble : envoie directement vers
-  // l'onglet Utilisateurs avec un filtre rapide déjà appliqué, plutôt que de
-  // laisser l'admin re-chercher les comptes un par un.
+
   function goToUsersFilter(quickFilter) {
     setUsersQuickFilter(quickFilter);
     setTab('users');

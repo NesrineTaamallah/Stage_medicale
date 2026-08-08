@@ -6,12 +6,7 @@ import {
   IconShield, IconUpload, IconMoon, IconX,
 } from '../components/Icons';
 
-/**
- * Découpe une action stockée en base (ex. "DEACTIVATE_ACCOUNT:5c2617e0-...")
- * en libellé lisible + email du compte concerné, pour ne jamais afficher
- * un UUID brut à l'admin. target_email est résolu côté backend (getLogs /
- * getUserTimeline) via une jointure sur l'UUID cible.
- */
+
 const ACTION_LABELS = {
   VIEW_USER_TIMELINE: 'Consultation timeline',
   DEACTIVATE_ACCOUNT: 'Désactivation de compte',
@@ -48,10 +43,6 @@ function fmtDate(d) {
   return new Date(d).toLocaleString('fr-FR');
 }
 
-/**
- * Parse volontairement simple (pas de lib externe) : suffisant pour repérer
- * un changement d'appareil visuellement, pas pour du fingerprinting précis.
- */
 function parseUserAgent(ua) {
   if (!ua) return null;
   let browser = 'Navigateur inconnu';
@@ -81,12 +72,7 @@ function SuccessBadge({ success }) {
 const SEVERITY_HEX = { high: '#D6484B', medium: '#E8A33D', low: '#8CA0B3' };
 const SEVERITY_TEXT = { high: 'Élevée', medium: 'Moyenne', low: 'Faible' };
 
-/**
- * Donut de répartition par sévérité — vue d'ensemble en 1 seconde du niveau
- * de risque global, pattern classique des dashboards de sécurité (SOC-style
- * "posture" widget : SentinelOne, Datadog Security, etc.). Le total est
- * affiché au centre.
- */
+
 function SeverityDonut({ counts, size = 132 }) {
   const total = counts.high + counts.medium + counts.low;
   const r = size / 2 - 14;
@@ -200,13 +186,11 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
   useEffect(() => { fetchAnomalies(); }, [fetchAnomalies]);
 
-  // Navigation croisée : arrivée depuis un autre onglet avec un user ciblé
   useEffect(() => {
     if (focusUserId) {
       openTimeline(focusUserId);
       onFocusUserHandled?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusUserId]);
 
   async function openTimeline(userId) {
@@ -234,16 +218,13 @@ export default function LogsTab({ initialFilters, focusUserId, onFocusUserHandle
     if (ipFilter) params.set('ip', ipFilter);
     if (dateFrom) params.set('dateFrom', dateFrom);
     if (dateTo) params.set('dateTo', dateTo);
-    // withCredentials est requis (cookie httpOnly) : on ouvre l'URL absolue du backend
     window.open(`http://localhost:4000/admin/logs/export?${params.toString()}`, '_blank');
   }
 
   const totalPages = Math.max(Math.ceil(total / pageSize), 1);
   const hasAnyAnomaly = anomalies && Object.values(anomalies).some((arr) => Array.isArray(arr) && arr.length > 0);
 
-  // Config des catégories d'anomalies : une seule source de vérité pour
-  // l'icône, le libellé, la couleur de gravité et le rendu de détail,
-  // utilisée à la fois par les puces-résumé et l'accordéon déplié.
+  
   const ANOMALY_CATEGORIES = anomalies ? [
     {
       key: 'bruteForceSuccesses',

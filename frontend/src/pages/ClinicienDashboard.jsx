@@ -20,12 +20,7 @@ const NAV_ITEMS = [
   { key: 'analyses', Icon: IconWave, label: 'Analyse Statistique', disabled: false },
 ];
 
-/**
- * Extrait un "Prénom Nom" présentable à partir d'un email du type
- * prenom.nom@domaine.tld (format utilisé par tous les comptes du registre).
- * Pas de casse-tête si le format ne matche pas : on retombe sur la partie
- * locale de l'email telle quelle plutôt que d'afficher un email brut.
- */
+
 function displayNameFromEmail(email) {
   if (!email) return 'Clinicien';
   const local = email.split('@')[0];
@@ -36,7 +31,6 @@ function displayNameFromEmail(email) {
     .join(' ');
 }
 
-/** "Nesrine Taamallah" → "NT", pour l'avatar rond du pied de sidebar. */
 function initialsFromName(name) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return 'CL';
@@ -44,7 +38,6 @@ function initialsFromName(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** "Dimanche 2 août 2026" — capitalisée, même format que côté admin. */
 function todayFr() {
   const str = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -55,13 +48,11 @@ function todayFr() {
 export default function ClinicienDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('overview');
-  // Type d'alerte en attente de consultation dans "Entités Médicales" —
-  // défini quand on clique une carte d'alerte depuis la Vue d'Ensemble.
+  
   const [alerteEntites, setAlerteEntites] = useState(null);
 
   const displayName = displayNameFromEmail(user?.email);
 
-  /** Passée à OverviewTabClinicien : ouvre Entités Médicales pré-filtrée. */
   function goToEntitesMedicales(alertType) {
     setAlerteEntites(alertType);
     setTab('entites');

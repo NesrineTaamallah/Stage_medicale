@@ -42,38 +42,29 @@ function BlurCell({ value, revealed }) {
 }
 
 export default function PatientsTab() {
-  const [rows, setRows] = useState([]); // [{ pseudonyme, createdAt, data?: {...decrypted} }]
+  const [rows, setRows] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState(null); // pseudonyme en attente, ou 'ALL', ou null
+  const [modal, setModal] = useState(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // ---- Modale "Détail" : textes/audios/scans associés à un pseudonyme,
-  // disponibles dès l'upload même si l'extraction d'entités n'a pas
-  // encore été faite (auquel cas les autres colonnes restent vides).
-  // Protégée par mot de passe (même mécanisme que "Voir"/BlurCell,
-  // POST /api/coordonnees/reveal) : les textes transcrits sont aussi
-  // sensibles que les coordonnées, ils ne s'affichent qu'après confirmation.
+  
   const [detailPseudonyme, setDetailPseudonyme] = useState(null);
   const [detailRegistre, setDetailRegistre] = useState(null);
   const [detailDocuments, setDetailDocuments] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
-  // Pseudonyme/registre en attente de confirmation mot de passe avant
-  // d'ouvrir la modale "Détail" ci-dessus.
+  
   const [pendingDetail, setPendingDetail] = useState(null);
   const [detailAuthPassword, setDetailAuthPassword] = useState('');
   const [detailAuthError, setDetailAuthError] = useState('');
   const [detailAuthSubmitting, setDetailAuthSubmitting] = useState(false);
 
-  // Correction en ligne du texte transcrit d'un document, directement dans
-  // la modale — réutilise le même endpoint que la relecture après création
-  // dans le wizard (PATCH /api/dossiers/documents/:id/texte), pour ne pas
-  // avoir à rouvrir tout le wizard juste pour corriger une coquille.
-  const [correctionId, setCorrectionId] = useState(null); // id du document en cours d'édition, ou null
+ 
+  const [correctionId, setCorrectionId] = useState(null); 
   const [correctionTexte, setCorrectionTexte] = useState('');
   const [correctionSaving, setCorrectionSaving] = useState(false);
   const [correctionError, setCorrectionError] = useState('');
@@ -104,13 +95,7 @@ export default function PatientsTab() {
   }
 
   useEffect(() => {
-    // On liste depuis /api/dossiers (table `patients`) et non /api/coordonnees
-    // (table `coordonnee_patient`) : un dossier créé par le wizard "Ajouter
-    // un patient" existe immédiatement dans `patients` (ligne stub avec
-    // pseudonyme + date_inclusion), mais `coordonnee_patient` ne sera
-    // rempli que par une future étape d'extraction d'identité. Si on
-    // écoutait /api/coordonnees, les nouveaux dossiers n'apparaîtraient
-    // jamais tant que cette étape n'existe pas.
+    
     client.get('/api/dossiers')
       .then((res) => setRows(res.data.map((r) => ({ ...r, data: null }))))
       .catch(() => setError('Impossible de charger la liste des patients.'))
@@ -170,8 +155,7 @@ export default function PatientsTab() {
     setCorrectionError('');
   }
 
-  // Étape 1 : au clic sur "Détail", on ouvre la modale mot de passe au lieu
-  // de charger les documents directement.
+  
   function requestDetail(pseudonyme, registre) {
     setPendingDetail({ pseudonyme, registre });
     setDetailAuthPassword('');
@@ -184,9 +168,7 @@ export default function PatientsTab() {
     setDetailAuthError('');
   }
 
-  // Étape 2 : mot de passe confirmé (re-vérifié côté serveur via le même
-  // endpoint que "Voir les coordonnées") -> on ouvre enfin la modale
-  // "Détail" avec les textes en clair.
+  
   async function confirmDetailAuth() {
     if (!detailAuthPassword || !pendingDetail) return;
     setDetailAuthSubmitting(true);
@@ -211,14 +193,7 @@ export default function PatientsTab() {
     setError('');
     try {
       if (modal === 'ALL') {
-        // Une requête par ligne, avec le même mot de passe déjà saisi une
-        // fois côté utilisateur — le serveur re-vérifie quand même à chaque
-        // appel (aucune confiance accordée côté client).
-        // allSettled plutôt que all : une fiche en erreur (ex. mot de passe
-        // rejeté entre-temps sur une requête isolée, ou tout autre souci
-        // ponctuel) ne doit pas empêcher d'afficher les autres fiches qui,
-        // elles, ont réussi — sinon "Toutes les lignes" échoue en bloc dès
-        // qu'une seule ligne pose problème.
+        
         const results = await Promise.allSettled(
           rows.map((r) =>
             client.post('/api/coordonnees/reveal', { pseudonyme: r.pseudonyme, password })
@@ -230,19 +205,12 @@ export default function PatientsTab() {
           return res.status === 'fulfilled' ? { ...r, data: res.value.data } : r;
         }));
         if (failed.length > 0 && failed.length === results.length) {
-          // Aucune fiche déchiffrée : probablement un mot de passe incorrect,
-          // on garde le modal ouvert avec le message d'erreur habituel.
+          
           throw failed[0].reason;
         }
-        // Échec partiel (une fraction seulement) : on ferme quand même le
-        // modal, les fiches qui ont réussi restent affichées — closeModal()
-        // réinitialiserait un message d'erreur ici de toute façon.
+        
       } else if (modal === 'EXPORT') {
-        // Export chiffré : le mot de passe sert à la fois à réauthentifier
-        // le clinicien ET à dériver la clé de chiffrement du fichier
-        // téléchargé côté serveur (voir exportController.js) — le fichier
-        // reçu n'est donc déchiffrable qu'avec ce même mot de passe, via
-        // backend/scripts/decrypt_export.js.
+        
         const res = await client.post(
           '/api/coordonnees/export',
           { password, pseudonymes: filtered.map((r) => r.pseudonyme) },
@@ -263,10 +231,7 @@ export default function PatientsTab() {
       }
       closeModal();
     } catch (err) {
-      // La réponse d'erreur de /export arrive en Blob (à cause de
-      // responseType: 'blob' utilisé pour le téléchargement en cas de
-      // succès) : il faut la relire en texte avant de pouvoir en extraire
-      // le message JSON, sinon err.response.data.error est undefined.
+      
       if (err.response?.data instanceof Blob) {
         try {
           const texte = await err.response.data.text();
@@ -319,12 +284,7 @@ export default function PatientsTab() {
                   placeholder="Rechercher un pseudonyme..."
                   autoComplete="off"
                   name="patient-search"
-                  // Astuce anti-autofill : le champ démarre en lecture seule
-                  // (donc ignoré par le remplissage automatique du navigateur,
-                  // qui l'avait confondu avec un champ "identifiant" à cause
-                  // du champ mot de passe présent ailleurs sur la page) et
-                  // redevient éditable dès le premier focus, avant toute
-                  // saisie de l'utilisateur — aucun impact sur l'usage normal.
+                  
                   readOnly
                   onFocus={(e) => e.target.removeAttribute('readonly')}
                   style={{
@@ -454,14 +414,7 @@ export default function PatientsTab() {
               type="password"
               autoFocus
               autoComplete="new-password"
-              // Empêche le navigateur de proposer/remplir automatiquement un
-              // mot de passe déjà enregistré pour ce site (ex. celui du
-              // compte clinicien) : ce champ sert à RE-confirmer une
-              // identité, pas à se connecter — un remplissage automatique
-              // serait trompeur (on ne saurait plus si c'est vraiment
-              // l'utilisateur qui a tapé son mot de passe) et peu sûr si
-              // quelqu'un d'autre utilise le même poste avec la session
-              // ouverte.
+              
               data-lpignore="true"
               data-1p-ignore="true"
               readOnly

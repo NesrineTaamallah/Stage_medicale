@@ -5,36 +5,11 @@ import {
   IconWave, IconActivity, IconChart, IconAlert, IconCheckCircle,
   IconRefresh, IconArrowRight, IconArrowLeft, IconDownload,
 } from '../components/Icons';
-// Photos des deux registres. Copier les fichiers depuis
-// C:\Users\nesri\OneDrive\Desktop\etape1-security\images\ vers
-// frontend/src/assets/pathologies/ (mêmes noms) : Vite les intègre au
-// build comme n'importe quel import JS, pas besoin de les servir à part.
+
 import imgSEP from '../assets/pathologies/SEP.avif';
 import imgEPR from '../assets/pathologies/EPR.jpg';
 
-/* ---------------------------------------------------------------------- */
-/* Fenêtre 4 - Analyse statistique.                                       */
-/* Ne connaît AUCUN test spécifique en dur : la liste et les formulaires   */
-/* viennent de GET /api/analyses (backend Node -> service Python).        */
-/* Ajouter un 9e test SEP ou un 6e test EPR ne touche pas ce fichier :     */
-/* il suffit de l'ajouter dans registry.py côté service d'analyse.        */
-/*                                                                          */
-/* Parcours en 3 étapes pour rester lisible pour un clinicien non-technique:*/
-/*   1) choix du registre (SEP / EPR), avec un résumé général              */
-/*   2) liste des tests de ce registre, chacun avec son "but" en une ligne */
-/*   3) formulaire de paramètres + résultats du test choisi                */
-/* Seuls registreActif / analyseSelectionnee pilotent l'étape affichée :   */
-/* aucun état dupliqué à synchroniser.                                     */
-/*                                                                          */
-/* Notes de charte : cette page réutilise exactement les tokens définis    */
-/* dans App.css (--card, --paper, --line, --primary, --slate, ...). Les    */
-/* anciennes variables --surface / --surface-alt / --border n'existent     */
-/* nulle part ailleurs dans l'app : elles retombaient sur des valeurs      */
-/* par défaut du navigateur, d'où le rendu "plat" précédent.               */
-/* ---------------------------------------------------------------------- */
 
-/* Descriptif général par registre : rédigé ici (texte produit), les
- * descriptions par test restent celles renvoyées par l'API. */
 const REGISTRES = {
   SEP: {
     label: 'SEP',
@@ -75,8 +50,7 @@ function SectionHeading({ Icon, title, subtitle, accent, accentTint }) {
   );
 }
 
-/** Étape 1 — grande carte de sélection d'un registre, avec photo,
- * résumé en clair et nombre de tests disponibles. */
+
 function CarteRegistre({ config, nbTests, onClick }) {
   const { label, nomComplet, Icon, image, accent, accentTint, accentDeep, resume } = config;
   return (
@@ -146,12 +120,7 @@ function BoutonRetour({ onClick, children }) {
   );
 }
 
-/** Un champ "covariables" n'a de sens que si le schéma du test comporte
- * aussi un champ "mode_analyse" ET que ce dernier vaut une variante
- * "multivariée" ("multivariee" côté SEP, "multivariate" côté EPR). Dans
- * tous les autres cas (test sans mode_analyse, ou mode univarié choisi),
- * le champ covariables reste masqué : évite d'afficher un choix de
- * covariables qui ne sera pas pris en compte par le script. */
+
 function covariablesVisibles(nomChamp, parametresSchema, config) {
   if (nomChamp !== 'covariables') return true;
   if (!('mode_analyse' in parametresSchema)) return true;
@@ -195,7 +164,6 @@ function ChampFormulaire({ schema, valeur, onChange }) {
       </div>
     );
   }
-  // number / text par défaut
   return (
     <input
       type={schema.type === 'number' ? 'number' : 'text'}
@@ -205,13 +173,7 @@ function ChampFormulaire({ schema, valeur, onChange }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Traduction des erreurs techniques en explication clinique lisible       */
-/* ---------------------------------------------------------------------- */
-/* Le backend renvoie parfois des messages statistiques bruts (matrice      */
-/* singulière, séparation parfaite...) : on les reformule ici en une        */
-/* phrase compréhensible par un clinicien non-statisticien, affichée        */
-/* directement dans la zone Résultats plutôt qu'en petit encart d'erreur.  */
+
 
 const EXPLICATIONS_ERREUR = [
   {
@@ -245,9 +207,7 @@ function explicationErreurClinique(message) {
   };
 }
 
-/** Affiché dans la colonne Résultats à la place de ResultatAnalyse quand
- * l'analyse a échoué : explication en langage clinique, pas de dossier
- * zip puisqu'il n'y a rien à détailler. */
+
 function ResultatErreur({ message, accent }) {
   const { titre, explication } = explicationErreurClinique(message);
   return (
@@ -268,14 +228,7 @@ function ResultatErreur({ message, accent }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Popover d'aide : but du test + effet de chaque paramètre                */
-/* ---------------------------------------------------------------------- */
-/* Le schéma des paramètres vient dynamiquement de l'API (registry.py) et   */
-/* varie par test : on donne une explication précise pour les clés          */
-/* connues (communes aux tests SEP/EPR de type régression), avec un         */
-/* repli générique pour toute clé nouvelle, afin de ne jamais rien casser   */
-/* quand un test futur ajoute un paramètre non prévu ici. */
+
 
 const EXPLICATIONS_PARAMETRES = {
   type_regression: "Modèle statistique utilisé : « linear » prédit une valeur d'EDSS continue ; « logistic » prédit la probabilité de dépasser un seuil de mauvais pronostic.",
@@ -336,16 +289,7 @@ function AideTest({ titre, description, parametresSchema, accent }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Interprétation "brute" des notes (stdout capturé)                       */
-/* ---------------------------------------------------------------------- */
-/* Les 12 scripts non encore refactorés (voir script_runner.py) renvoient   */
-/* tout dans `notes` : un dump du print() console d'origine, avec des       */
-/* bannières "====", des sous-titres "--- ... ---", des tableaux           */
-/* pandas.to_string() alignés par espaces, des lignes [ATTENTION ...] et    */
-/* des phrases d'interprétation "-> ...". Ce parseur reconstruit une        */
-/* structure (titres / sous-titres / tableaux / alertes / citations /      */
-/* texte) SANS toucher aux scripts originaux : il lit juste le texte.       */
+
 
 const LIGNE_BANNIERE = /^[=]{8,}\s*$/;
 const LIGNE_TIRETS = /^-{3,}\s*(.+?)\s*-{3,}$/;
@@ -354,7 +298,7 @@ const TOKEN_VALIDE = /^[A-Za-zÀ-ÿ0-9_.\-+%éèêàùç]+$/;
 function estLigneDeTableau(ligne) {
   const t = ligne.trim();
   if (!t) return false;
-  if (/[:,()]/.test(t)) return false; // ponctuation typique des phrases
+  if (/[:,()]/.test(t)) return false; 
   const tokens = t.split(/\s{1,}/).filter(Boolean);
   if (tokens.length < 2) return false;
   return tokens.every((tok) => TOKEN_VALIDE.test(tok));
@@ -364,10 +308,7 @@ function decouperLigneTableau(ligne) {
   return ligne.trim().split(/\s{1,}/).filter(Boolean);
 }
 
-/** Regroupe des lignes consécutives "tableau-compatibles" en un bloc
- * { entetes: [...], lignes: [[...]] }. Gère le cas fréquent où pandas
- * imprime une colonne d'index sans en-tête (une valeur de plus par ligne
- * de données que dans l'en-tête). */
+
 function construireTableau(lignesBrutes) {
   const entetes = decouperLigneTableau(lignesBrutes[0]);
   const corps = lignesBrutes.slice(1).map(decouperLigneTableau);
@@ -388,8 +329,7 @@ function classifierLigne(ligne) {
   return { type: 'texte', texte: t };
 }
 
-/** Cœur du parseur : transforme le tableau de lignes `notes` en une liste
- * de blocs typés, prêts à être rendus. */
+
 function parseNotes(notes) {
   const lignes = (notes || []).flatMap((l) => String(l).split('\n'));
   const blocs = [];
@@ -399,7 +339,6 @@ function parseNotes(notes) {
   while (i < lignes.length) {
     const ligne = lignes[i];
 
-    // Bannière "====...====\nTITRE\n====...====" (1 ou 2 lignes de titre)
     if (LIGNE_BANNIERE.test(ligne)) {
       let j = i + 1;
       const titreLignes = [];
@@ -419,7 +358,6 @@ function parseNotes(notes) {
       }
     }
 
-    // Sous-titre encadré par des tirets : "--- texte ---"
     const matchTirets = ligne.trim().match(LIGNE_TIRETS);
     if (matchTirets) {
       blocs.push({ type: 'titre', niveau: 3, texte: matchTirets[1] });
@@ -427,7 +365,6 @@ function parseNotes(notes) {
       continue;
     }
 
-    // Bloc de tableau : lignes consécutives compatibles (>= 2, dont un en-tête)
     if (estLigneDeTableau(ligne)) {
       const groupe = [ligne];
       let j = i + 1;
@@ -442,7 +379,6 @@ function parseNotes(notes) {
       }
     }
 
-    // Nom de figure sauvegardée -> servira de légende
     const matchFig = ligne.match(/Graphique sauvegard[ée]\s*:\s*(.+\.png)/i);
     if (matchFig) {
       dernierGraphiqueNomme = matchFig[1].trim();
@@ -459,9 +395,7 @@ function parseNotes(notes) {
   return blocs;
 }
 
-/* ---------------------------------------------------------------------- */
-/* Rendu                                                                    */
-/* ---------------------------------------------------------------------- */
+
 
 function TableauGenerique({ entetes, lignes, accent }) {
   return (
@@ -570,9 +504,7 @@ function BlocTexte({ type, texte }) {
   return <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: styles.color }}>{texte}</p>;
 }
 
-/** Construit un fichier .txt (chiffres clés + tableau + notes complètes)
- * et un dossier zip contenant ce texte + chaque graphique en .png, pour
- * que le clinicien garde une trace détaillée hors de l'application. */
+
 async function telechargerResultatsZip(resultat, titreAnalyse) {
   const zip = new JSZip();
   const lignes = [];
@@ -647,9 +579,7 @@ function BoutonTelecharger({ resultat, titreAnalyse, accent }) {
   );
 }
 
-/** Détermine un badge de signification statistique à partir du premier
- * champ "p_value" (ou équivalent) trouvé dans resume_stats, pour donner
- * une lecture immédiate en un coup d'œil (vrai réflexe dashboard clinique). */
+
 function badgeSignification(resumeStats) {
   if (!resumeStats) return null;
   const cleP = Object.keys(resumeStats).find((k) => /^p[_-]?value$|^p$/i.test(k));
@@ -668,11 +598,6 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   const blocs = useMemo(() => parseNotes(resultat.notes), [resultat.notes]);
   const couleurAccent = accent || 'var(--primary-deep)';
   const teinteAccent = accentTint || 'var(--primary-tint)';
-
-  // Vue "dashboard" : chiffres clés, TOUS les graphiques renvoyés par le
-  // script (chacun avec sa légende si le script l'a imprimée), et le
-  // tableau de résultats. Seul le détail texte complet (notes brutes, log)
-  // part dans le zip téléchargeable pour ne pas noyer le clinicien.
   const figureLegendes = blocs.filter((b) => b.type === 'figure_note');
   const nbNotesDetail = (resultat.notes || []).length;
 
@@ -765,15 +690,7 @@ function ResultatAnalyse({ resultat, accent, accentTint, titreAnalyse }) {
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Historique des derniers lancements (par test), en localStorage          */
-/* ---------------------------------------------------------------------- */
-/* Le formulaire de paramètres repartait de zéro à chaque ouverture d'un    */
-/* test, même si le clinicien relance le même test avec les mêmes réglages */
-/* d'une session à l'autre. On garde ici, par test (clé = id du test), les  */
-/* 3 dernières configurations lancées avec succès — juste dans le          */
-/* navigateur (pas de backend, pas de compte à gérer), pour préremplir le  */
-/* formulaire et proposer un retour rapide à un essai précédent. */
+
 
 const HISTORIQUE_MAX = 3;
 const historiqueKey = (testId) => `analyse_stat_historique_${testId}`;
@@ -795,13 +712,10 @@ function enregistrerHistorique(testId, config) {
     const nouveau = [{ config, date: new Date().toISOString() }, ...precedent].slice(0, HISTORIQUE_MAX);
     localStorage.setItem(historiqueKey(testId), JSON.stringify(nouveau));
   } catch {
-    // localStorage indisponible (navigation privée, quota...) : best-effort,
-    // le formulaire fonctionne quand même, juste sans préremplissage.
+    
   }
 }
 
-/** Résumé court d'une configuration pour l'étiquette d'un chip d'historique
- * (ex. "type_regression: linear · horizon_annees: 1"), tronqué si trop long. */
 function resumeConfig(config) {
   const parts = Object.entries(config)
     .filter(([, v]) => v !== '' && v !== undefined && !(Array.isArray(v) && v.length === 0))
@@ -812,7 +726,7 @@ function resumeConfig(config) {
 
 export default function AnalyseStatistiqueTab() {
   const [analyses, setAnalyses] = useState([]);
-  const [registreActif, setRegistreActif] = useState(null); // null = écran de choix SEP/EPR
+  const [registreActif, setRegistreActif] = useState(null); 
   const [analyseSelectionnee, setAnalyseSelectionnee] = useState(null);
   const [config, setConfig] = useState({});
   const [resultat, setResultat] = useState(null);
@@ -831,8 +745,7 @@ export default function AnalyseStatistiqueTab() {
 
   const choisirAnalyse = useCallback((a) => {
     setAnalyseSelectionnee(a);
-    // Préremplit avec le dernier lancement réussi de CE test, s'il en existe
-    // un — sinon formulaire vide comme avant.
+    
     const historique = chargerHistorique(a.id);
     setConfig(historique[0]?.config || {});
     setResultat(null);
@@ -847,9 +760,7 @@ export default function AnalyseStatistiqueTab() {
     try {
       const res = await client.post(`/api/analyses/${analyseSelectionnee.id}/run`, config);
       setResultat(res.data);
-      // On ne garde que les configurations qui ont effectivement abouti à
-      // un résultat exploitable — pas la peine de proposer de "relancer"
-      // une combinaison qui a échoué.
+      
       enregistrerHistorique(analyseSelectionnee.id, config);
     } catch (err) {
       setErreur(err.response?.data?.detail || err.response?.data?.error || "Échec de l'analyse.");
@@ -879,9 +790,7 @@ export default function AnalyseStatistiqueTab() {
     setErreur(null);
   };
 
-  /* -------------------------------------------------------------- */
-  /* Étape 1 — écran de chargement / erreur globale                  */
-  /* -------------------------------------------------------------- */
+  
   if (chargement) {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
@@ -912,9 +821,7 @@ export default function AnalyseStatistiqueTab() {
     );
   }
 
-  /* -------------------------------------------------------------- */
-  /* Étape 2 — écran de choix du registre (SEP / EPR)                 */
-  /* -------------------------------------------------------------- */
+  
   if (!registreActif) {
     return (
       <div>
@@ -933,9 +840,7 @@ export default function AnalyseStatistiqueTab() {
     );
   }
 
-  /* -------------------------------------------------------------- */
-  /* Étape 3 — liste des tests du registre choisi                     */
-  /* -------------------------------------------------------------- */
+  
   if (!analyseSelectionnee) {
     return (
       <div>
@@ -1001,9 +906,7 @@ export default function AnalyseStatistiqueTab() {
     );
   }
 
-  /* -------------------------------------------------------------- */
-  /* Étape 4 — formulaire de paramètres + résultats                   */
-  /* -------------------------------------------------------------- */
+  
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {/* Retour + titre du test, au-dessus du cadre blanc */}
@@ -1104,8 +1007,7 @@ export default function AnalyseStatistiqueTab() {
                     schema={schema}
                     valeur={config[nomChamp]}
                     onChange={(v) => setConfig((c) => {
-                      // Repasser en univarié vide la sélection de covariables,
-                      // pour ne pas envoyer au backend un choix devenu invisible.
+                      
                       if (nomChamp === 'mode_analyse' && !String(v).toLowerCase().includes('multivari')) {
                         return { ...c, [nomChamp]: v, covariables: [] };
                       }

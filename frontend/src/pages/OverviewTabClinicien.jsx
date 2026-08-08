@@ -18,16 +18,11 @@ const ACTIVITY_SERIES = [
   { key: 'documents_televerses', label: 'Documents téléversés', color: '#A9D6C6' },
 ];
 
-// NOTE (correction) : les clés étaient comparées telles quelles ('Epilepsie
-// active' sans accent) alors que schema_registre.sql documente la valeur
-// réellement saisie avec accent ('Épilepsie active'). On normalise désormais
-// la clé de recherche (accents + casse) au lieu de dupliquer chaque variante.
+
 const STATUT_LABELS = {
-  // SEP (sep_suivi.statut_dernier_suivi)
   'stable': 'Stable',
   'perdu de vue': 'Perdu de vue',
   'decede': 'Décédé',
-  // EPR (epr_suivi.statut_dernier_suivi)
   'libre de crises': 'Libre de crises',
   'epilepsie active': 'Épilepsie active',
 };
@@ -47,9 +42,7 @@ function statutColor(statut) {
   return STATUT_COLORS[normalizeKey(statut)] || 'var(--line)';
 }
 
-/* ------------------------------------------------------------------ */
 
-/** Courbe des inclusions par mois, deux séries (SEP / EPR) superposées. */
 function InclusionsLineChart({ months, width = 640, height = 220 }) {
   if (!months || months.length === 0) return null;
 
@@ -135,12 +128,7 @@ function InclusionsLineChart({ months, width = 640, height = 220 }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
 
-/**
- * Graphe à barres empilées, une barre par jour — repris du même patron que
- * l'historique d'activité admin (lisibilité immédiate : "quel jour, combien").
- */
 function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
   const n = days.length;
   if (n === 0) return null;
@@ -226,13 +214,7 @@ function DailyStackedBarChart({ days, series, width = 640, height = 230 }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
 
-/**
- * Fenêtre "Vue d'Ensemble" recentrée : uniquement Vue globale, Comparatif
- * SEP/EPR, Alertes de suivi et Activité récente. Le détail clinique propre
- * à chaque registre vit désormais dans RegistreSepTab / RegistreEprTab.
- */
 export default function OverviewTabClinicien({ onAlerteClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

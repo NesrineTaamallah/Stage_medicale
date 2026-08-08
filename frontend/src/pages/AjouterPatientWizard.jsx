@@ -27,26 +27,7 @@ const initialForm = {
   type_entree: '',
 };
 
-/**
- * Wizard plein écran d'ajout de patient.
- * 4 étapes : identification du dossier -> type de document (visite,
- * admission, ...) -> mode d'entrée (audio à transcrire / document scanné) +
- * upload du fichier -> confirmation. Le type de document est demandé AVANT
- * le type d'entrée (ordre volontaire) : le clinicien précise d'abord de
- * quelle fiche il s'agit (visite, admission, ...), puis seulement ensuite
- * s'il apporte une dictée audio ou un document scanné — c'est à ce moment-là
- * que le bouton d'upload apparaît, déjà filtré sur le bon format de fichier.
- *
- * onClose() referme le wizard (annulation ou succès).
- * onCreated(result) est appelé après création réussie côté serveur.
- *
- * `existingPatient`, si fourni ({ pseudonyme, pathologie, numero_dossier,
- * date_diagnostic, date_inclusion }), bascule le wizard en mode "ajout de
- * document à un dossier déjà existant" : l'étape 0 (numéro de dossier /
- * pathologie / dates) est sautée, ces valeurs étant déjà connues et
- * réutilisées telles quelles à la soumission — le clinicien n'a plus qu'à
- * choisir le type de fiche, puis le mode d'entrée (audio/scan) et uploader.
- */
+
 export default function AjouterPatientWizard({ onClose, onCreated, existingPatient = null, onSwitchToAjout = null, onVoirDossier = null }) {
   const isAjoutDocument = !!existingPatient;
   const STEPS_ACTIVES = isAjoutDocument ? STEPS.slice(1) : STEPS;
@@ -70,17 +51,10 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
   const [texteCorrige, setTexteCorrige] = useState('');
   const [validating, setValidating] = useState(false);
   const [showToast, setShowToast] = useState(false);
-  // Devient vrai une fois le texte transcrit validé (bouton "Valider" du
-  // pied de page) — c'est seulement à partir de ce moment que le bouton
-  // "Extraire données patient" doit apparaître, pas avant.
+  
   const [texteValide, setTexteValide] = useState(false);
 
-  // URL locale (blob:) pour prévisualiser/réécouter l'audio choisi, avant
-  // même l'envoi au serveur — recréée à chaque nouveau fichier, et toujours
-  // révoquée (evite une fuite mémoire) au changement de fichier ou à la
-  // fermeture du wizard. Reste valable à l'étape Confirmation ET après
-  // création (pendant la relecture/correction de la transcription), puisque
-  // `file` n'est jamais réinitialisé après la soumission.
+  
   const [audioUrl, setAudioUrl] = useState(null);
   useEffect(() => {
     if (file && form.type_entree === 'audio') {
@@ -91,9 +65,8 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
     setAudioUrl(null);
   }, [file, form.type_entree]);
 
-  // Alerte "patient déjà existant" détectée à l'étape 0 (mode création
-  // normale uniquement — sans objet en mode ajout de document).
-  const [doublon, setDoublon] = useState(null); // { pseudonyme, pathologie, numero_dossier, date_diagnostic, date_inclusion } | null
+  
+  const [doublon, setDoublon] = useState(null); 
   const [checkingDoublon, setCheckingDoublon] = useState(false);
 
   function update(field, value) {
@@ -104,12 +77,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
 
   async function checkDoublon() {
     if (isAjoutDocument) return;
-    // On fige le numéro/la pathologie interrogés dès le départ : si le
-    // clinicien modifie le champ pendant que la requête est en vol, on ne
-    // doit surtout pas réassocier la réponse (calculée pour l'ancienne
-    // valeur) à la valeur courante du formulaire au moment où le .then()
-    // s'exécute — c'était la cause du pseudonyme affiché ne correspondant
-    // plus au numéro de dossier visible à l'écran.
+    
     const numeroInterroge = form.numero_dossier.trim();
     const pathologieInterrogee = form.pathologie;
     if (!numeroInterroge || !pathologieInterrogee) return;
@@ -118,35 +86,25 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const res = await client.get('/api/dossiers/verifier', {
         params: { pathologie: pathologieInterrogee, numero_dossier: numeroInterroge },
       });
-      // Le formulaire a pu changer entre-temps : si le numéro/la pathologie
-      // actuels ne correspondent plus à ceux de cette requête, la réponse
-      // est obsolète et ne doit pas écraser l'état courant (une requête
-      // plus récente, déclenchée par le changement, s'en chargera).
+      
       if (form.numero_dossier.trim() !== numeroInterroge || form.pathologie !== pathologieInterrogee) {
         return;
       }
       setDoublon(res.data.existe ? res.data : null);
     } catch {
-      // Vérification best-effort : en cas d'échec on laisse le clinicien continuer.
     } finally {
       setCheckingDoublon(false);
     }
   }
 
-  // Le champ "numéro de dossier" déclenche déjà la vérification à son blur
-  // (checkDoublon ci-dessus) ; ici on la relance aussi quand la pathologie
-  // change (choisie en second, après avoir déjà saisi le numéro), pour ne
-  // pas dépendre de l'ordre dans lequel le clinicien remplit l'étape 0.
+  
   useEffect(() => {
     if (isAjoutDocument) return;
     if (form.numero_dossier.trim() && form.pathologie) checkDoublon();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.pathologie]);
 
   function canGoNext() {
-    // Étape 0 : un doublon détecté bloque systématiquement la suite tant
-    // que le numéro de dossier n'a pas été modifié (voir update() ci-dessus,
-    // qui réinitialise `doublon` dès que numero_dossier/pathologie changent).
+    
     if (step === 0) {
       return !doublon && form.numero_dossier.trim() && form.pathologie && form.date_diagnostic && form.date_inclusion;
     }
@@ -192,12 +150,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const body = new FormData();
       Object.entries(form).forEach(([k, v]) => body.append(k, v));
       body.append('fichier', file);
-      // En mode "ajout de document à un dossier existant", on transmet le
-      // pseudonyme déjà connu du patient (y compris pseudonymes legacy type
-      // SEP_MJ_001, non dérivables par hash) : le serveur le réutilise tel
-      // quel au lieu de recalculer un pseudonyme différent, ce qui créerait
-      // sinon un dossier fantôme dupliqué et empêcherait le texte extrait
-      // d'atterrir dans le bon dossier "détaillé".
+      
       if (isAjoutDocument) {
         body.append('pseudonyme_existant', existingPatient.pseudonyme);
       }
@@ -226,10 +179,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
       const res = await client.patch(`/api/dossiers/documents/${result.document_id}/texte`, {
         texte_transcrit: texteCorrige,
       });
-      // Le wizard ne se ferme plus automatiquement ici : on affiche un petit
-      // toast de confirmation, puis on laisse place au bouton "Extraire
-      // données patient" — le clinicien ferme lui-même une fois l'identité
-      // vérifiée (ou directement, s'il n'en a pas besoin).
+      
       setShowToast(true);
       setTimeout(() => setShowToast(false), 1600);
       setTexteValide(true);
@@ -249,9 +199,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
 
   return (
     <div style={{
-      // Ne recouvre que la zone de contenu (pas la sidebar, fixe à gauche
-      // sur 248px dans ClinicienDashboard) : la navigation reste utilisable
-      // pendant que le wizard est ouvert.
+      
       position: 'fixed', top: 0, right: 0, bottom: 0, left: 248,
       background: 'var(--paper)', zIndex: 20,
       display: 'flex', flexDirection: 'column',
@@ -603,11 +551,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
                     Identité du patient
                   </p>
                   <ExtractionCoordonneesPanel
-                    // Le texte peut avoir été corrigé juste au-dessus (relecture
-                    // médecin) avant même que le clinicien clique sur "Valider"
-                    // plus bas : on extrait depuis ce texte corrigé plutôt que
-                    // de repartir chercher le dossier en base, potentiellement
-                    // encore non à jour.
+                    
                     texte={texteCorrige}
                     pseudonymeCible={result.pseudonyme}
                     label="Extraire données patient"
@@ -636,12 +580,7 @@ export default function AjouterPatientWizard({ onClose, onCreated, existingPatie
               Terminer
             </button>
           ) : result.statut === 'erreur_transcription' ? (
-            // La transcription a échoué : il n'y a rien à valider (le texte
-            // serait vide). On laisse le clinicien sortir directement, sans
-            // passer par "Valider" — sinon un texte vide serait enregistré
-            // avec statut 'valide', et ce document apparaîtrait à tort dans
-            // les alertes "Fiches sans extraction des données" alors qu'il
-            // n'y a aucun contenu à en extraire.
+            
             <button onClick={onClose} style={{ ...secondaryBtn, marginLeft: 'auto' }}>
               Quitter sans valider
             </button>

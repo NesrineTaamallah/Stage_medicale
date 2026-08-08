@@ -6,10 +6,6 @@ import {
   SectionHeading, CardTitle, HeroStatCard, DonutCard, StackedBar, MultiLineChart,
 } from '../components/DashboardWidgets';
 
-/**
- * Fenêtre "Registre SEP" — détachée de la Vue d'Ensemble. Reprend tel quel
- * le bloc "3. REGISTRE SEP" de l'ancien OverviewTabClinicien.jsx.
- */
 export default function RegistreSepTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -97,12 +93,7 @@ export default function RegistreSepTab() {
         </div>
         <div className="card" style={{ flex: '1 1 400px' }}>
           {(() => {
-            // CORRECTION : le "dernier" affiché dans le titre doit être le
-            // dernier point réellement tracé sur CE graphique (dernier
-            // trimestre avec au moins 1 patient), et non un autre agrégat
-            // (moyenne du dernier EDSS connu par patient, tous trimestres
-            // confondus) qui ne correspondait pas visuellement au dernier
-            // point de la courbe et créait une confusion.
+            
             const tendance = data.edssTendance || [];
             const dernierPointValide = [...tendance].reverse().find((e) => e.nb_patients > 0);
             return (

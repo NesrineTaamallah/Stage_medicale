@@ -12,10 +12,7 @@ const STATUT_PALETTE = {
   'Perdu de vue': 'var(--warning, orange)',
 };
 
-/**
- * Fenêtre "Registre EPR" — détachée de la Vue d'Ensemble. Reprend tel quel
- * le bloc "4. REGISTRE EPR" de l'ancien OverviewTabClinicien.jsx.
- */
+
 export default function RegistreEprTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -35,8 +32,7 @@ export default function RegistreEprTab() {
     return <p className="hint" style={{ padding: '40px 0', textAlign: 'center', color: 'var(--error)' }}>{error || 'Erreur inattendue.'}</p>;
   }
 
-  // --- Regroupe etiologieDevenir (liste plate {etiologie, statut, count}) par
-  //     étiologie, pour tracer une barre empilée "statut de suivi" par étiologie. ---
+  
   const etiologieGroups = {};
   (data.etiologieDevenir || []).forEach((row) => {
     if (!etiologieGroups[row.etiologie]) etiologieGroups[row.etiologie] = [];

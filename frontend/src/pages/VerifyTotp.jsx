@@ -28,11 +28,7 @@ export default function VerifyTotp() {
     }
   }
 
-  // Recours d'urgence, réservé aux admins : réinitialise la 2FA du compte
-  // directement depuis cette page (le totpToken prouve déjà que le mot de
-  // passe était correct). Volontairement pas d'auto-connexion ensuite :
-  // l'admin doit se reconnecter normalement, ce qui l'enverra vers la
-  // configuration d'un nouveau QR code.
+  
   async function handleSelfReset() {
     setError('');
     const confirmed = window.confirm(
