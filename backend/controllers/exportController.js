@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const pool = require('../config/db');
 const { decrypt } = require('../utils/cryptoUtils');
 const { verifyPassword } = require('../utils/passwordUtils');
@@ -10,33 +9,51 @@ const SENSITIVE_FIELDS = [
   'frere', 'soeur', 'autre_antecedent',
 ];
 
-const SCRYPT_KEYLEN = 32; // AES-256
-const SALT_LEN = 16;
-const IV_LEN = 12; // recommandé pour GCM
-
 /**
  * POST /api/coordonnees/export
  * body: { password, pseudonymes: string[] }
  *
  * Exporte la fiche complète (déchiffrée) des patients demandés sous forme
- * d'un fichier BINAIRE CHIFFRÉ (.enc), jamais en clair sur le disque du
- * clinicien ni en transit.
+ * d'un fichier CSV en clair (ouvrable directement dans Excel).
  *
- * Choix de conception :
- * - Le mot de passe du compte sert DEUX rôles volontairement distincts :
- *   1) réauthentification (comme /reveal) pour vérifier que c'est bien le
- *      clinicien connecté qui demande l'export ;
- *   2) dérivation de la clé de chiffrement du fichier exporté (via scrypt +
- *      sel aléatoire propre à cet export). Ainsi le fichier exporté n'est
- *      déchiffrable qu'avec CE mot de passe, jamais avec la clé serveur
- *      statique (TOTP_ENCRYPTION_KEY) utilisée pour le stockage en base —
- *      un fichier exporté reste protégé même s'il quitte le serveur
- *      (clé USB, email, etc.) et même en cas de compromission de la clé
- *      serveur après coup.
- * - Format binaire du fichier produit : salt(16) || iv(12) || authTag(16) || ciphertext.
- *   Un script de déchiffrement autonome est fourni dans
- *   backend/scripts/decrypt_export.js.
+ * ATTENTION SÉCURITÉ : ce fichier contient des données identifiantes en
+ * clair (CIN, téléphone, adresse, nom, n° CNAM...). Contrairement à
+ * l'ancien export chiffré (.enc), rien ne protège plus ce fichier une fois
+ * téléchargé — c'est un choix explicite demandé côté clinicien pour
+ * pouvoir l'ouvrir directement dans Excel. Le mot de passe reste requis
+ * en amont pour réauthentifier le clinicien (empêcher un export "en un
+ * clic" par une session laissée ouverte) mais ne sert plus à chiffrer
+ * quoi que ce soit.
  */
+function versLigneCsv(valeurs) {
+  return valeurs
+    .map((v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      // Échappement CSV standard : guillemets doublés, champ entre guillemets
+      // dès qu'il contient une virgule, un guillemet ou un retour à la ligne.
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    })
+    .join(',');
+}
+
+const CSV_COLUMNS = [
+  { key: 'pseudonyme', label: 'Pseudonyme' },
+  { key: 'registre', label: 'Registre' },
+  { key: 'date_inclusion', label: "Date d'inclusion" },
+  { key: 'numero_dossier', label: 'N° Dossier' },
+  { key: 'nom_prenom', label: 'Nom et Prénom' },
+  { key: 'date_naissance', label: 'Date de naissance' },
+  { key: 'adresse', label: 'Adresse' },
+  { key: 'origine', label: 'Origine' },
+  { key: 'telephone', label: 'Téléphone' },
+  { key: 'cin', label: 'CIN' },
+  { key: 'num_cnam', label: 'N° CNAM' },
+  { key: 'nom_prenom_pere', label: 'Nom et Prénom (père)' },
+  { key: 'nom_prenom_mere', label: 'Nom et Prénom (mère)' },
+  { key: 'frere', label: 'Frère(s)' },
+  { key: 'soeur', label: 'Sœur(s)' },
+  { key: 'autre_antecedent', label: 'Autre antécédent' },
+];
 async function exportPatients(req, res) {
   const { password, pseudonymes } = req.body;
 
@@ -84,30 +101,20 @@ async function exportPatients(req, res) {
       patients.push(fiche);
     }
 
-    const payload = JSON.stringify({
-      genere_le: new Date().toISOString(),
-      exporte_par: user.email,
-      total: patients.length,
-      patients,
-    });
-
-    // --- Chiffrement du fichier exporté (clé dérivée du mot de passe, PAS
-    //     la clé serveur — voir commentaire d'en-tête) ---
-    const salt = crypto.randomBytes(SALT_LEN);
-    const key = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
-    const iv = crypto.randomBytes(IV_LEN);
-    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-    const ciphertext = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
-    const authTag = cipher.getAuthTag();
-
-    const fichierChiffre = Buffer.concat([salt, iv, authTag, ciphertext]);
+    // --- Génération du CSV (BOM UTF-8 pour qu'Excel affiche correctement
+    //     les accents dès l'ouverture) ---
+    const entete = versLigneCsv(CSV_COLUMNS.map((c) => c.label));
+    const lignes = patients.map((fiche) =>
+      versLigneCsv(CSV_COLUMNS.map((c) => fiche[c.key]))
+    );
+    const csv = '\uFEFF' + [entete, ...lignes].join('\r\n');
 
     await logAccess({ userId: req.user.sub, action: 'export_patients', success: true, req });
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="export_patients_${timestamp}.enc"`);
-    res.send(fichierChiffre);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="export_patients_${timestamp}.csv"`);
+    res.send(csv);
   } catch (err) {
     console.error('Erreur exportPatients :', err);
     res.status(500).json({ error: 'Erreur serveur.' });

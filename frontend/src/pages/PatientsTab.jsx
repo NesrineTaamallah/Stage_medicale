@@ -248,11 +248,11 @@ export default function PatientsTab() {
           { password, pseudonymes: filtered.map((r) => r.pseudonyme) },
           { responseType: 'blob' }
         );
-        const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+        const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }));
         const a = document.createElement('a');
         const horodatage = new Date().toISOString().replace(/[:.]/g, '-');
         a.href = blobUrl;
-        a.download = `export_patients_${horodatage}.enc`;
+        a.download = `export_patients_${horodatage}.csv`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -298,21 +298,6 @@ export default function PatientsTab() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={openExport}
-              disabled={filtered.length === 0}
-              title="Télécharge un fichier chiffré (AES-256-GCM) contenant les fiches actuellement affichées — protégé par votre mot de passe, à déchiffrer avec backend/scripts/decrypt_export.js"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
-                color: 'var(--teal-deep)', fontSize: 12, fontWeight: 600,
-                cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
-                opacity: filtered.length === 0 ? 0.5 : 1,
-              }}
-            >
-              <IconDownload size={14} />
-              Exporter (chiffré)
-            </button>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: rows.length === 0 ? 'not-allowed' : 'pointer', opacity: rows.length === 0 ? 0.5 : 1 }}>
               <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>Déchiffrer tout</span>
               <input
@@ -323,29 +308,48 @@ export default function PatientsTab() {
                 style={{ width: 'auto' }}
               />
             </label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate-soft)' }}>
-                <IconSearch size={14} />
-              </span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Rechercher un pseudonyme..."
-                autoComplete="off"
-                name="patient-search"
-                // Astuce anti-autofill : le champ démarre en lecture seule
-                // (donc ignoré par le remplissage automatique du navigateur,
-                // qui l'avait confondu avec un champ "identifiant" à cause
-                // du champ mot de passe présent ailleurs sur la page) et
-                // redevient éditable dès le premier focus, avant toute
-                // saisie de l'utilisateur — aucun impact sur l'usage normal.
-                readOnly
-                onFocus={(e) => e.target.removeAttribute('readonly')}
-                style={{
-                  width: 240, padding: '9px 12px 9px 32px', borderRadius: 10,
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate-soft)' }}>
+                  <IconSearch size={14} />
+                </span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Rechercher un pseudonyme..."
+                  autoComplete="off"
+                  name="patient-search"
+                  // Astuce anti-autofill : le champ démarre en lecture seule
+                  // (donc ignoré par le remplissage automatique du navigateur,
+                  // qui l'avait confondu avec un champ "identifiant" à cause
+                  // du champ mot de passe présent ailleurs sur la page) et
+                  // redevient éditable dès le premier focus, avant toute
+                  // saisie de l'utilisateur — aucun impact sur l'usage normal.
+                  readOnly
+                  onFocus={(e) => e.target.removeAttribute('readonly')}
+                  style={{
+                    width: 240, padding: '9px 12px 9px 32px', borderRadius: 10,
                   border: '1.5px solid var(--line)', fontSize: 12.8, background: 'var(--paper)',
                 }}
               />
+              </div>
+              <button
+                type="button"
+                onClick={openExport}
+                disabled={filtered.length === 0}
+                title="Télécharge un fichier CSV (ouvrable dans Excel) contenant les fiches actuellement affichées — mot de passe requis pour réauthentification"
+                style={{
+                  width: 'auto', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '9px 14px',
+                  borderRadius: 10, border: '1.5px solid var(--line)', background: 'var(--card)',
+                  color: 'var(--teal-deep)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                  cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: filtered.length === 0 ? 0.5 : 1,
+                }}
+              >
+                <IconDownload size={14} />
+                Exporter (CSV)
+              </button>
             </div>
           </div>
         </div>
@@ -443,7 +447,7 @@ export default function PatientsTab() {
               padding: '6px 10px', borderRadius: 8, display: 'inline-block', marginBottom: 16, color: 'var(--teal-deep)',
             }}>
               {modal === 'ALL' && `Toutes les lignes (${rows.length} patients)`}
-              {modal === 'EXPORT' && `Export chiffré (${filtered.length} patient(s))`}
+              {modal === 'EXPORT' && `Export CSV (${filtered.length} patient(s))`}
               {modal !== 'ALL' && modal !== 'EXPORT' && `Pseudonyme : ${modal}`}
             </div>
             <input
