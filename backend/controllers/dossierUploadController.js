@@ -26,11 +26,14 @@ const PADDLEOCR_SERVICE_URL = process.env.PADDLEOCR_SERVICE_URL || 'http://127.0
 // documents (page dense, upscaling important...) — sans ce dispatcher
 // dédié, Node abandonnait la requête AVANT que le service ait fini de
 // répondre, et basculait à tort sur le mode spawn (pourtant plus lent).
+// Aligné sur OCR_TIMEOUT_SECONDS = 1800 (30 min) côté paddleocr_service.py,
+// avec 2 min de marge pour laisser le serveur répondre avant que Node
+// n'abandonne (mesuré en pratique : ~22-23 min par image sur ce CPU).
 const LONG_INFERENCE_DISPATCHER = new Agent({
-  headersTimeout: 20 * 60 * 1000, // 20 min
-  bodyTimeout: 20 * 60 * 1000,
-  connectTimeout: 20 * 60 * 1000,
-  keepAliveTimeout: 20 * 60 * 1000,
+  headersTimeout: 32 * 60 * 1000, // 32 min
+  bodyTimeout: 32 * 60 * 1000,
+  connectTimeout: 32 * 60 * 1000,
+  keepAliveTimeout: 32 * 60 * 1000,
 });
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
